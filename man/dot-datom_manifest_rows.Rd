@@ -4,10 +4,19 @@
 \alias{.datom_manifest_rows}
 \title{A Manifest's Rows, From Its Text}
 \usage{
-.datom_manifest_rows(text)
+.datom_manifest_rows(text, current = FALSE, source = ".datom/manifest.json")
 }
 \arguments{
 \item{text}{The manifest as one string, or \code{NULL} when there is none.}
+
+\item{current}{\code{TRUE} to check the declared format and convert the document
+to the current shape before taking its rows, so two copies compare like
+for like. \code{FALSE} (the default) only reads names, from either shape, and
+never refuses: the callers that only need names include the merge-conflict
+message, which must not be replaced by a format refusal about the remote's
+copy.}
+
+\item{source}{The copy's name, for a format refusal.}
 }
 \value{
 A named list of rows (empty when there is no manifest), or \code{NULL}

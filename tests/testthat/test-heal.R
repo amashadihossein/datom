@@ -260,6 +260,36 @@ test_that("files staged before a break are unstaged and put back, and a first wr
 })
 
 
+test_that("a crash on a repo whose committed manifest is in the old format ties each change to its own write (review of task 4a)", {
+  # The write converts the manifest as it edits it, so HEAD's copy is v1
+  # (`tables`, no `kind`) and the working tree's is v2. Compared raw, every row
+  # differs and each write stops naming the other.
+  fx <- local_interrupt_project()
+  hl_write(fx$conn, "dm")
+  hl_write(fx$conn, "lb")
+  manifest_path <- file.path(fx$repo, ".datom", "manifest.json")
+  m <- jsonlite::read_json(manifest_path)
+  m$schema_version <- 1L
+  m$tables <- lapply(m$artifacts, function(row) { row$kind <- NULL; row })
+  m$artifacts <- NULL
+  jsonlite::write_json(m, manifest_path, auto_unbox = TRUE, pretty = TRUE)
+  git_commit_files(fx$repo, ".datom/manifest.json", "A manifest in the v1 format")
+  hl_break(fx$conn, "commit", "dm")
+
+  # Another write stops on dm alone, not on itself.
+  err <- expect_error(hl_write(fx$conn, "lb", 7L, "c"), class = "datom_unfinished_work")
+  msg <- hl_msg(err)
+  expect_match(msg, "\"dm\": 'dm/metadata.json'", fixed = TRUE)
+  expect_no_match(msg, "\"lb\":", fixed = TRUE)
+
+  # dm's re-run puts its files back and finishes; then lb's write runs.
+  run <- hl_reset_notes(datom_write(fx$conn, data = hl_df(5L, "b"), name = "dm"))
+  expect_match(run$notes, "\"dm\"")
+  expect_identical(run$value$action, "full")
+  expect_identical(hl_write(fx$conn, "lb", 7L, "c")$action, "full")
+  expect_true(hl_clean(fx$repo))
+})
+
 test_that("the manifest is put back only when every row that differs from HEAD's is the write's own", {
   fx <- local_interrupt_project()
   hl_write(fx$conn, "dm")
@@ -473,6 +503,36 @@ test_that("following the stash recipe, the write then finishes (P14)", {
   expect_identical(lb$action, "full")
   expect_identical(hl_stored_manifest(s$fx)$artifacts$lb$current_version,
                    lb$metadata_sha)
+})
+
+test_that("a pull blocked by an unfinished write names that write, not the stash recipe (review of task 4a)", {
+  # The stash recipe would set the write's manifest row aside, pull, and bring
+  # it back on top of the incoming manifest: conflict markers in datom's JSON.
+  # Re-running the write puts its files back and finishes instead.
+  fx <- local_interrupt_project()
+  hl_write(fx$conn, "dm")
+  b <- local_second_clone(fx)
+  hl_break(fx$conn, "commit", "dm")
+  lb <- hl_write(b$conn, "lb")
+  before <- hl_snapshot(fx)
+
+  err <- expect_error(suppressMessages(datom_pull(fx$conn)), class = "datom_pull_blocked")
+
+  msg <- hl_msg(err)
+  expect_match(msg, "an unfinished write of \"dm\"", fixed = TRUE)
+  expect_match(msg, "Re-run that write to finish it")
+  expect_match(msg, "datom_validate(fix = TRUE)", fixed = TRUE)
+  expect_no_match(msg, "git stash")
+  expect_identical(hl_snapshot(fx), before)
+
+  # The way out it names works: the write's re-run puts dm back, pulls lb in,
+  # and finishes, with both rows published.
+  dm <- hl_write(fx$conn, "dm", 5L, "b")
+  expect_identical(dm$action, "full")
+  stored <- hl_stored_manifest(fx)
+  expect_identical(stored$artifacts$dm$current_version, dm$metadata_sha)
+  expect_identical(stored$artifacts$lb$current_version, lb$metadata_sha)
+  expect_true(hl_clean(fx$repo))
 })
 
 test_that("with no upstream branch, a clone behind the remote has its push refused, naming datom_pull()", {

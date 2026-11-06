@@ -46,8 +46,27 @@ same day. The design spot-check before task 4a (covering 4a and 4b) was done and
 owner the same day (below): a write now heals only the artifact it is writing. Two reviews by
 another agent followed (of `4045fbd` on 2026-11-03, of `d616e98` on 2026-11-04, both below), and a
 publish-branch rule was split out as #156. Task 4a's two open points were settled on 2026-11-04.
-Task 4a done the same day (its entry below lists what differs from the plan). Next is its
-checkpoint review, then task 4b, awaiting the owner's go-ahead.**
+Task 4a done the same day (its entry below lists what differs from the plan); its checkpoint
+review on 2026-11-05 (below) found two fixes, made the same day, and one point to settle before
+task 4b's code. Next is that point, then task 4b, awaiting the owner's go-ahead.**
+
+**Task 4a's checkpoint review, 2026-11-05**, by another agent, of `1958036`, evaluated with the
+owner. The reviewer re-ran the full suite on 4a and its parent and five of the guard probes, and ran
+the no-upstream test on git2r 0.33.0. The three choices flagged at the checkpoint are kept (the
+metadata-only route's push before it publishes, until 4b replaces it; the set-upstream line on a
+refused push with no upstream; no `project.yaml` passes the floor, one that does not parse stops).
+Both findings were reproduced here before fixing:
+
+| Finding | Outcome |
+|---|---|
+| 1. `datom_pull()` after a write broken before its commit (S3 + S6): the write's uncommitted manifest blocks the merge, and the stash recipe then leaves conflict markers in `.datom/manifest.json`; every later write stops on a manifest it cannot tie to an artifact, so the only way out until task 7 is hand-merging datom's JSON | **Fixed**: when the pull cannot catch up and datom's own uncommitted files are among the local changes, the stop names the artifact and says to re-run that write (which finishes, traced) or `datom_validate(fix = TRUE)`; only the user's files gets the stash recipe as before. The artifacts are told apart by one helper shared with heal's reset, `.datom_unfinished_owners()`. Same class, `datom_pull_blocked` |
+| 2. A crash on a repo whose committed manifest is in the old format (S3; written by 0.1.x): the write converts the manifest as it edits it, so HEAD's rows (v1, no `kind`) and the working tree's all differed, and each write stopped naming the other | **Fixed**: `.datom_manifest_rows_changed()` checks the format of both copies and converts them before comparing, as `.datom_update_manifest_entry()` does. Not a rescue of a broken state (D7): a v1 manifest is a supported format every write converts |
+| 3. For 4b: the metadata-only route heals with no artifact of its own, but 4b's publish stops on any differing row the command does not write, and the route's own table is the only one it has work for | **Open**, to settle with the owner before 4b's code and record in design section 4 |
+
+The reviewer also listed the interim states that keep tasks 4a-7 in one PR: a merge with only the
+manifest left loops on "re-run your write" until task 5; `datom_validate(fix = TRUE)`, which the new
+stops name, resets nothing until task 7; another artifact's unpushed commit is still pushed, and its
+manifest row uploaded, by a different write until 4b.
 
 **Review of this task list, 2026-10-28.** A review by another agent, evaluated with the owner one
 point at a time. All fourteen points were taken, several with changes:
@@ -488,6 +507,11 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
        heal would otherwise reset it before the write, and the test would check nothing (the
        `column_hashes` tests in `test-forward-compat.R` stayed green that way until
        `fc_edit_clone_json()` was changed to commit).
+  - **Checkpoint review fixes, 2026-11-05** ("Where things stand"): a pull blocked by an unfinished
+    write names that write instead of the stash recipe; the manifest's rows are compared in the
+    current format. Two tests in `test-heal.R`, each probed red with its guard removed (results in
+    that commit's message). `research/task4a_guard_probes.R` now takes probe names on the command
+    line, to run some only.
   - **Escalation first: design spot-check on a more capable model**, covering 4a and 4b. **Done
     2026-10-31** ("Where things stand"); the bullets below include its outcome.
   - **Two points found while recording the spot-check, settled by the owner on 2026-11-04:**

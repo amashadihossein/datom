@@ -14,9 +14,16 @@ Artifact names; \code{NA_character_} when either copy cannot be parsed, so
 the changes cannot be tied to any artifact.
 }
 \description{
-Rows are compared as parsed from each copy, by artifact name: a row added,
-removed or rewritten differs. A write rewrites only its own row (and the
-summary and timestamp, which belong to no artifact), so the names returned
-are the artifacts whose writes touched the manifest.
+Rows are compared by artifact name, with \strong{both copies in the current
+format first}: a write converts an older manifest as it edits it, so a
+repo last written by an older datom has HEAD's copy in the old shape and the
+working tree's in the new one. Compared raw, every row would differ, and each
+write would stop naming the other artifacts. The format check runs on each
+copy first, as for every read that converts (a refusal names its evidence).
+}
+\details{
+A row added, removed or rewritten differs. A write rewrites only its own row
+(and the summary and timestamp, which belong to no artifact), so the names
+returned are the artifacts whose writes touched the manifest.
 }
 \keyword{internal}

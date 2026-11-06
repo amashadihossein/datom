@@ -325,19 +325,12 @@
 #' @keywords internal
 .datom_reset_unfinished <- function(conn, unfinished, artifact = NULL,
                                     all = FALSE) {
-  manifest_rel <- ".datom/manifest.json"
-  artifact_files <- setdiff(unfinished, manifest_rel)
-  by_artifact <- split(artifact_files, dirname(artifact_files))
+  owners <- .datom_unfinished_owners(conn, unfinished)
+  by_artifact <- owners$by_artifact
+  rows <- owners$rows
+  unknown_rows <- owners$unknown_rows
 
-  rows <- if (manifest_rel %in% unfinished) {
-    .datom_manifest_rows_changed(conn)
-  } else {
-    character()
-  }
-  unknown_rows <- anyNA(rows)
-  rows <- rows[!is.na(rows)]
-
-  touched <- union(names(by_artifact), rows)
+  touched <- owners$touched
   own <- if (isTRUE(all)) touched else intersect(touched, artifact)
   others <- setdiff(touched, own)
 
@@ -375,12 +368,55 @@
 }
 
 
+#' Whose Unfinished Work datom's Uncommitted Files Are
+#'
+#' Each uncommitted file in an artifact's folder belongs to that artifact; the
+#' manifest's changes belong to the artifacts whose rows differ from HEAD's.
+#' Shared by heal's reset, which decides from it what it may put back, and by
+#' the pull's stop when it cannot catch up, which names the same artifacts.
+#'
+#' @param conn A `datom_conn` object with a local path (a list with `path` is
+#'   enough).
+#' @param unfinished What [.datom_unfinished_files()] found.
+#' @return A list: `by_artifact` (the files, by artifact), `rows` (the artifacts
+#'   whose manifest rows differ), `unknown_rows` (`TRUE` when the manifest's
+#'   changes cannot be tied to any artifact) and `touched` (every artifact
+#'   named).
+#' @keywords internal
+.datom_unfinished_owners <- function(conn, unfinished) {
+  manifest_rel <- ".datom/manifest.json"
+  artifact_files <- setdiff(unfinished, manifest_rel)
+  by_artifact <- split(artifact_files, dirname(artifact_files))
+
+  rows <- if (manifest_rel %in% unfinished) {
+    .datom_manifest_rows_changed(conn)
+  } else {
+    character()
+  }
+  unknown_rows <- anyNA(rows)
+  rows <- rows[!is.na(rows)]
+
+  list(
+    by_artifact = by_artifact,
+    rows = rows,
+    unknown_rows = unknown_rows,
+    touched = union(names(by_artifact), rows)
+  )
+}
+
+
 #' The Manifest Rows That Differ From HEAD's
 #'
-#' Rows are compared as parsed from each copy, by artifact name: a row added,
-#' removed or rewritten differs. A write rewrites only its own row (and the
-#' summary and timestamp, which belong to no artifact), so the names returned
-#' are the artifacts whose writes touched the manifest.
+#' Rows are compared by artifact name, with **both copies in the current
+#' format first**: a write converts an older manifest as it edits it, so a
+#' repo last written by an older datom has HEAD's copy in the old shape and the
+#' working tree's in the new one. Compared raw, every row would differ, and each
+#' write would stop naming the other artifacts. The format check runs on each
+#' copy first, as for every read that converts (a refusal names its evidence).
+#'
+#' A row added, removed or rewritten differs. A write rewrites only its own row
+#' (and the summary and timestamp, which belong to no artifact), so the names
+#' returned are the artifacts whose writes touched the manifest.
 #'
 #' @param conn A `datom_conn` object with a local path.
 #' @return Artifact names; `NA_character_` when either copy cannot be parsed, so
@@ -388,13 +424,15 @@
 #' @keywords internal
 .datom_manifest_rows_changed <- function(conn) {
   head_rows <- .datom_manifest_rows(
-    .datom_git_head_file(conn$path, ".datom/manifest.json")
+    .datom_git_head_file(conn$path, ".datom/manifest.json"),
+    current = TRUE, source = ".datom/manifest.json (last commit)"
   )
   wt_path <- fs::path(conn$path, ".datom", "manifest.json")
   wt_rows <- .datom_manifest_rows(
     if (fs::file_exists(wt_path)) {
       paste(readLines(wt_path, warn = FALSE), collapse = "\n")
-    }
+    },
+    current = TRUE, source = ".datom/manifest.json"
   )
   if (is.null(head_rows) || is.null(wt_rows)) return(NA_character_)
 
@@ -406,16 +444,30 @@
 #' A Manifest's Rows, From Its Text
 #'
 #' @param text The manifest as one string, or `NULL` when there is none.
+#' @param current `TRUE` to check the declared format and convert the document
+#'   to the current shape before taking its rows, so two copies compare like
+#'   for like. `FALSE` (the default) only reads names, from either shape, and
+#'   never refuses: the callers that only need names include the merge-conflict
+#'   message, which must not be replaced by a format refusal about the remote's
+#'   copy.
+#' @param source The copy's name, for a format refusal.
 #' @return A named list of rows (empty when there is no manifest), or `NULL`
 #'   when the text does not parse.
 #' @keywords internal
-.datom_manifest_rows <- function(text) {
+.datom_manifest_rows <- function(text, current = FALSE,
+                                 source = ".datom/manifest.json") {
   if (is.null(text)) return(list())
   doc <- tryCatch(
     jsonlite::fromJSON(text, simplifyVector = FALSE),
     error = function(e) NULL
   )
   if (!is.list(doc)) return(NULL)
+
+  if (isTRUE(current)) {
+    declared <- .datom_check_schema_version(doc, source, operation = "write")
+    return(.datom_manifest_upgrade(doc, declared)$artifacts %||% list())
+  }
+
   # The artifact list's name before schema v2 is `tables`.
   doc$artifacts %||% doc$tables %||% list()
 }

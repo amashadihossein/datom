@@ -823,7 +823,7 @@
   # and when the user's files stopped it from doing anything.
   head_after <- .datom_git_head_sha(repo)
   if (!.datom_git_contains(repo, head_after, tip)) {
-    .datom_stop_pull_blocked(in_push, data_file_stored)
+    .datom_stop_pull_blocked(in_push, data_file_stored, path)
   }
 
   invisible(!identical(head_before, head_after))
@@ -977,20 +977,43 @@
 
 #' Stop When the Pull Could Not Catch Up
 #'
-#' The user's own uncommitted or untracked files are in the way of the commits
-#' the pull brings in. The recipe is traced (`research/dirty_pull_probe.R`):
-#' `-u`, because a plain `git stash` leaves an untracked file in the way; and
-#' "resolve anything `git stash pop` reports", because pop can report a conflict
-#' or refuse to restore an untracked file, keeping the stash, and a set write
-#' listing such a file in `include_paths` would otherwise commit conflict
-#' markers. The files are not named: that would mean comparing the clone's
-#' changes with what the incoming commits touch, for a rare case, and the recipe
-#' works without knowing which file blocks.
+#' Local changes are in the way of the commits the pull brings in. Which way
+#' out the message gives depends on whose changes they are, and only datom's
+#' own files are looked at, and only on this rare path:
+#'
+#' - **datom's own uncommitted files** (an unfinished write): the message names
+#'   the artifact and says to re-run that write, which puts its files back and
+#'   finishes, or `datom_validate(fix = TRUE)`. The stash recipe would be wrong
+#'   here: `git stash pop` brings the write's manifest row back on top of the
+#'   incoming manifest and leaves conflict markers in `.datom/manifest.json`,
+#'   which only hand-merging datom's JSON clears (review of task 4a, traced).
+#'   The artifacts are told apart as heal's reset tells them apart
+#'   ([.datom_unfinished_owners()]), so both name the same ones. If the user's
+#'   own files are in the way too, the re-run's own pull stops next with the
+#'   stash recipe.
+#' - **Only the user's own files**: the `git stash -u` recipe, traced
+#'   (`research/dirty_pull_probe.R`): `-u`, because a plain `git stash` leaves
+#'   an untracked file in the way; and "resolve anything `git stash pop`
+#'   reports", because pop can report a conflict or refuse to restore an
+#'   untracked file, keeping the stash, and a set write listing such a file in
+#'   `include_paths` would otherwise commit conflict markers. The files are not
+#'   named: that would mean comparing the clone's changes with what the incoming
+#'   commits touch, for a rare case, and the recipe works without knowing which
+#'   file blocks.
 #'
 #' @param in_push,data_file_stored See [.datom_git_pull()].
+#' @param path Repository path, to look for datom's own uncommitted files.
 #' @return Does not return.
 #' @keywords internal
-.datom_stop_pull_blocked <- function(in_push, data_file_stored) {
+.datom_stop_pull_blocked <- function(in_push, data_file_stored, path) {
+  clone <- list(path = path)
+  unfinished <- .datom_unfinished_files(clone)
+  if (length(unfinished) > 0L) {
+    .datom_stop_pull_blocked_by_write(
+      .datom_unfinished_owners(clone, unfinished), in_push, data_file_stored
+    )
+  }
+
   cli::cli_abort(
     c(
       "Could not bring the clone up to date: local changes are in the way of \\
@@ -1001,6 +1024,50 @@
              {.code datom_pull(conn)}, bring them back with \\
              {.code git stash pop}, resolve anything {.code git stash pop} \\
              reports, then re-run."
+    ),
+    class = "datom_pull_blocked"
+  )
+}
+
+
+#' Stop When an Unfinished Write Is Among What Blocks the Pull
+#'
+#' See [.datom_stop_pull_blocked()]. One class with it: the failure is the
+#' same, a pull that could not catch up; only the way out differs.
+#'
+#' @param owners What [.datom_unfinished_owners()] found.
+#' @param in_push,data_file_stored See [.datom_git_pull()].
+#' @return Does not return.
+#' @keywords internal
+.datom_stop_pull_blocked_by_write <- function(owners, in_push, data_file_stored) {
+  names <- owners$touched
+  what <- if (length(names) == 0L) {
+    cli::format_inline("uncommitted changes to {.file .datom/manifest.json}")
+  } else if (length(names) == 1L) {
+    cli::format_inline("an unfinished write of {.val {names}}")
+  } else {
+    cli::format_inline("unfinished writes of {.val {names}}")
+  }
+  way_out <- if (length(names) == 0L) {
+    "Run {.code datom_validate(fix = TRUE)} to discard them, then re-run this \\
+     command."
+  } else if (length(names) == 1L) {
+    "Re-run that write to finish it, or run {.code datom_validate(fix = TRUE)} \\
+     to discard the changes, then re-run this command."
+  } else {
+    "Re-run each of those writes to finish it, or run \\
+     {.code datom_validate(fix = TRUE)} to discard the changes, then re-run \\
+     this command."
+  }
+
+  cli::cli_abort(
+    c(
+      "Could not bring the clone up to date: local changes are in the way of \\
+       the incoming commits, including {what} (changes to datom's files that \\
+       were never committed).",
+      "i" = .datom_pull_outcome(in_push),
+      .datom_data_file_note(data_file_stored),
+      "i" = way_out
     ),
     class = "datom_pull_blocked"
   )

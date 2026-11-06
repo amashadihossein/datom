@@ -1,9 +1,11 @@
 # Guard probes for #155 task 4a. Each probe applies one deliberate edit to R/,
 # runs the named test files in a fresh R process, records what reddened, and
 # restores the files from a fixed backup taken once.
-# Run from the repo root on the tree of task 4a's commit; the edits match that
+# Run from the repo root on the tree of task 4a's commits; the edits match that
 # code exactly once each and the harness refuses one that does not.
 #   Rscript .kiro/specs/interrupted-commands/research/task4a_guard_probes.R
+# or, for some probes only (the control always runs first):
+#   Rscript .kiro/specs/interrupted-commands/research/task4a_guard_probes.R pull_blocked_by_write
 # Copied from task3_guard_probes.R; only the file list and the probes differ.
 main <- function() {
   root <- normalizePath(".")
@@ -120,8 +122,20 @@ main <- function() {
 
     # The caught-up check.
     no_caught_up_check = list(filter = heal_only, edit = function() sub1(gt,
-      "  if (!.datom_git_contains(repo, head_after, tip)) {\n    .datom_stop_pull_blocked(in_push, data_file_stored)\n  }\n",
+      "  if (!.datom_git_contains(repo, head_after, tip)) {\n    .datom_stop_pull_blocked(in_push, data_file_stored, path)\n  }\n",
       "")),
+
+    # Checkpoint review, finding 1: a pull blocked by an unfinished write names
+    # it instead of giving the stash recipe.
+    pull_blocked_by_write = list(filter = heal_only, edit = function() sub1(gt,
+      "  if (length(unfinished) > 0L) {\n    .datom_stop_pull_blocked_by_write(",
+      "  if (FALSE) {\n    .datom_stop_pull_blocked_by_write(")),
+
+    # Checkpoint review, finding 2: HEAD's manifest converted to the current
+    # format before its rows are compared.
+    manifest_rows_raw = list(filter = heal_only, edit = function() sub1(hl,
+      "    current = TRUE, source = \".datom/manifest.json (last commit)\"",
+      "    current = FALSE, source = \".datom/manifest.json (last commit)\"")),
 
     # The rejected-push message.
     no_rejected_push_message = list(filter = heal_only, edit = function() sub1(gt,
@@ -143,6 +157,15 @@ main <- function() {
       "  declared <- cfg$min_writer_version",
       "  declared <- conn$min_writer_version"))
   )
+
+  # Probe names on the command line run only those (the control is always run
+  # first); none runs them all.
+  wanted <- commandArgs(trailingOnly = TRUE)
+  if (length(wanted) > 0L) {
+    unknown <- setdiff(wanted, names(probes))
+    if (length(unknown) > 0L) stop("no such probe: ", paste(unknown, collapse = ", "))
+    probes <- probes[unique(c("control", wanted))]
+  }
 
   results <- character()
   for (nm in names(probes)) {
