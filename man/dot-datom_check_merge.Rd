@@ -4,14 +4,16 @@
 \alias{.datom_check_merge}
 \title{Stop While a Merge Is in Progress}
 \usage{
-.datom_check_merge(path)
+.datom_check_merge(path, finish_merge = FALSE)
 }
 \arguments{
 \item{path}{Repository path.}
+
+\item{finish_merge}{\code{TRUE} to finish a merge datom did not start; see above.}
 }
 \value{
-Invisibly \code{NULL} when no merge is in progress; otherwise does not
-return.
+Invisibly \code{TRUE} when it finished a merge, \code{FALSE} when none was in
+progress; otherwise does not return.
 }
 \description{
 Runs before anything a command changes: at the start of every pull
@@ -30,14 +32,26 @@ upstream, or a detached HEAD, it is any other merge.
 \itemize{
 \item \strong{Any other merge} (a local branch, another remote) stops, changing
 nothing, naming the merge and the two ways out.
-\item \strong{A merge of the remote branch} stops with the files that still conflict
-and how to finish: take the remote copy of all of each conflicted
-artifact's datom files, resolve your own files, re-run.
+\item \strong{A merge of the remote branch} with a file other than
+\code{.datom/manifest.json} still in conflict stops with those files and how to
+finish: take the remote copy of all of each conflicted artifact's datom
+files, resolve your own files, re-run.
+\item \strong{A merge of the remote branch with only the manifest left in conflict, or
+nothing}, is finished: the manifest is rebuilt from the artifacts' files
+and the merge committed, with a message
+(\code{\link[=.datom_resolve_manifest_conflict]{.datom_resolve_manifest_conflict()}}). The command then carries on.
 }
+
+\code{finish_merge = TRUE} (only \code{\link[=datom_pull]{datom_pull()}} passes it) treats any other merge
+like a merge of the remote branch: it is finished once only the manifest is
+left, and while another file conflicts it stops with the other-merge
+message, since the recipe for the remote branch does not apply to it.
 
 Without the first stop datom would commit, and the next push share, a merge
 the user started (one made with \code{--no-commit} to inspect it). Without the
 second, heal's reset would put a file the user had resolved back to the local
-side, and the next pull would conflict again.
+side, and the next pull would conflict again. Without the finish, the user
+would have to take the remote's whole manifest by hand, whose rows for the
+clone's other unpushed writes would then stay stale with nothing reporting it.
 }
 \keyword{internal}

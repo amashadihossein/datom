@@ -11,6 +11,10 @@
 #' Requires developer role (readers have no git access).
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
+#' @param finish_merge `TRUE` to let datom finish a merge in progress that it
+#'   did not start, once nothing but `.datom/manifest.json` conflicts: it
+#'   rebuilds the manifest and commits the merge. With no merge in progress it
+#'   changes nothing. Default `FALSE`, under which such a merge stops the pull.
 #'
 #' @return Invisibly, a list with:
 #'   \describe{
@@ -40,10 +44,14 @@
 #'   unlink(tmp, recursive = TRUE)
 #' }
 #' @export
-datom_pull <- function(conn) {
+datom_pull <- function(conn, finish_merge = FALSE) {
 
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
+  }
+
+  if (!isTRUE(finish_merge) && !isFALSE(finish_merge)) {
+    cli::cli_abort("{.arg finish_merge} must be {.code TRUE} or {.code FALSE}.")
   }
 
   if (conn$role != "developer") {
@@ -67,8 +75,8 @@ datom_pull <- function(conn) {
   head_before <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
   branch_name <- .datom_git_branch(repo_path)
 
-  # Git pull (fetch + merge)
-  .datom_git_pull(repo_path, pat = conn$github_pat)
+  # Git pull (the merge check, fetch, merge)
+  .datom_git_pull(repo_path, pat = conn$github_pat, finish_merge = finish_merge)
 
   # Count commits pulled by comparing HEAD before/after
   head_after <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
@@ -1222,6 +1230,38 @@ datom_sync <- function(conn,
 }
 
 
+#' The Manifest's Summary Block, Counted From Its Artifact Rows
+#'
+#' The one place the counters are computed, for the three writers of a whole
+#' manifest: a write's row update (`.datom_update_manifest_entry()`), a reader's
+#' rebuild from storage ([.datom_rebuild_manifest()]) and the rebuild of a
+#' manifest a merge left in conflict ([.datom_resolve_manifest_conflict()]).
+#'
+#' Every counter but `total_sets` keeps its original meaning, which is tables
+#' only, so each one selects by kind. An entry with no kind is counted by none
+#' of them, deliberately (see [.datom_artifacts_of_kind()]).
+#'
+#' @param artifacts The manifest's `artifacts` list.
+#' @return The `summary` block: `total_tables`, `total_size_bytes`,
+#'   `total_versions` and `total_sets`.
+#' @keywords internal
+.datom_manifest_summary <- function(artifacts) {
+  tables <- .datom_artifacts_of_kind(artifacts, "table")
+  sets <- .datom_artifacts_of_kind(artifacts, "set")
+
+  list(
+    total_tables = length(tables),
+    total_size_bytes = sum(purrr::map_dbl(
+      tables, ~ as.numeric(.x$size_bytes %||% 0L)
+    )),
+    total_versions = sum(purrr::map_int(
+      tables, ~ as.integer(.x$version_count %||% 0L)
+    )),
+    total_sets = length(sets)
+  )
+}
+
+
 #' Read a Manifest and Check Its Schema Version
 #'
 #' The single manifest read. Every reader that takes a manifest *into* datom
@@ -1604,25 +1644,11 @@ datom_sync <- function(conn,
 
   manifest$artifacts[[name]] <- entry
 
-  # Update summary. Every existing counter keeps its current meaning, which is
-  # tables only, so each one selects by kind; total_sets is the new counter for
-  # the other kind. No fallback for an entry with no kind: by here the document
-  # has been through the upgrade, which types every entry, so an untyped entry
-  # means the conversion was skipped and a visibly wrong count is the point.
-  tables <- .datom_artifacts_of_kind(manifest$artifacts, "table")
-  sets <- .datom_artifacts_of_kind(manifest$artifacts, "set")
-
+  # By here the document has been through the upgrade, which types every entry,
+  # so an untyped entry means the conversion was skipped, and the visibly wrong
+  # count the summary then gives is the point.
   manifest$updated_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-  manifest$summary <- list(
-    total_tables = length(tables),
-    total_size_bytes = sum(purrr::map_dbl(
-      tables, ~ as.numeric(.x$size_bytes %||% 0L)
-    )),
-    total_versions = sum(purrr::map_int(
-      tables, ~ as.integer(.x$version_count %||% 0L)
-    )),
-    total_sets = length(sets)
-  )
+  manifest$summary <- .datom_manifest_summary(manifest$artifacts)
 
   .datom_notify_manifest_upgraded(declared, "this repo's manifest")
 

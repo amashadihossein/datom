@@ -35,7 +35,7 @@
 
 # --- The merge check -----------------------------------------------------------
 
-#' Stop While a Merge Is in Progress
+#' The Merge Check: Stop, or Finish, While a Merge Is in Progress
 #'
 #' Runs before anything a command changes: at the start of every pull
 #' ([.datom_git_pull()]), and in [.datom_heal()] before its reset. On the common
@@ -52,20 +52,33 @@
 #'
 #' - **Any other merge** (a local branch, another remote) stops, changing
 #'   nothing, naming the merge and the two ways out.
-#' - **A merge of the remote branch** stops with the files that still conflict
-#'   and how to finish: take the remote copy of all of each conflicted
-#'   artifact's datom files, resolve your own files, re-run.
+#' - **A merge of the remote branch** with a file other than
+#'   `.datom/manifest.json` still in conflict stops with those files and how to
+#'   finish: take the remote copy of all of each conflicted artifact's datom
+#'   files, resolve your own files, re-run.
+#' - **A merge of the remote branch with only the manifest left in conflict, or
+#'   nothing**, is finished: the manifest is rebuilt from the artifacts' files
+#'   and the merge committed, with a message
+#'   ([.datom_resolve_manifest_conflict()]). The command then carries on.
+#'
+#' `finish_merge = TRUE` (only [datom_pull()] passes it) treats any other merge
+#' like a merge of the remote branch: it is finished once only the manifest is
+#' left, and while another file conflicts it stops with the other-merge
+#' message, since the recipe for the remote branch does not apply to it.
 #'
 #' Without the first stop datom would commit, and the next push share, a merge
 #' the user started (one made with `--no-commit` to inspect it). Without the
 #' second, heal's reset would put a file the user had resolved back to the local
-#' side, and the next pull would conflict again.
+#' side, and the next pull would conflict again. Without the finish, the user
+#' would have to take the remote's whole manifest by hand, whose rows for the
+#' clone's other unpushed writes would then stay stale with nothing reporting it.
 #'
 #' @param path Repository path.
-#' @return Invisibly `NULL` when no merge is in progress; otherwise does not
-#'   return.
+#' @param finish_merge `TRUE` to finish a merge datom did not start; see above.
+#' @return Invisibly `TRUE` when it finished a merge, `FALSE` when none was in
+#'   progress; otherwise does not return.
 #' @keywords internal
-.datom_check_merge <- function(path) {
+.datom_check_merge <- function(path, finish_merge = FALSE) {
   repo <- tryCatch(
     git2r::repository(path),
     error = function(e) {
@@ -75,16 +88,22 @@
 
   # `repo$path` is the git directory, which is also right for a worktree.
   merge_head_file <- fs::path(repo$path, "MERGE_HEAD")
-  if (!fs::file_exists(merge_head_file)) return(invisible(NULL))
+  if (!fs::file_exists(merge_head_file)) return(invisible(FALSE))
 
   merge_head <- trimws(readLines(merge_head_file, n = 1L, warn = FALSE))
 
-  if (!.datom_merge_is_of_upstream(repo, merge_head)) .datom_stop_other_merge(repo)
+  of_upstream <- .datom_merge_is_of_upstream(repo, merge_head)
+  if (!of_upstream && !isTRUE(finish_merge)) .datom_stop_other_merge(repo)
 
-  # A merge of the remote branch. Finishing it by rebuilding the manifest, once
-  # nothing but the manifest conflicts, is not built yet; until it is, every
-  # such merge stops here with the instructions for finishing it.
-  .datom_stop_merge_conflict(path)
+  # Finished only once nothing but the manifest conflicts.
+  others <- setdiff(.datom_git_conflicted(repo), ".datom/manifest.json")
+  if (length(others) > 0L) {
+    if (!of_upstream) .datom_stop_other_merge(repo)
+    .datom_stop_merge_conflict(path)
+  }
+
+  .datom_resolve_manifest_conflict(path)
+  invisible(TRUE)
 }
 
 
@@ -221,6 +240,230 @@
 }
 
 
+# --- A conflict only in the manifest -------------------------------------------
+
+#' Finish a Merge Whose Only Conflict Is the Manifest
+#'
+#' Requirements R3.8 (design section 5). The manifest is derived: every fact on
+#' a row is also recorded in the artifact's own files. So a manifest a merge
+#' left in conflict is rebuilt from those files rather than merged by hand. Two
+#' callers: the pull ([.datom_git_pull()]), when its merge conflicts in
+#' `.datom/manifest.json` and nowhere else (every write rewrites the manifest's
+#' timestamp and summary, so two clones writing different artifacts conflict
+#' there), and the merge check ([.datom_check_merge()]), once a merge in
+#' progress has nothing but the manifest left in conflict.
+#'
+#' In order, and the order matters:
+#'
+#' 1. **The merged-in side's copy** (`MERGE_HEAD`'s, or HEAD's if that one does
+#'    not parse) is written in place of the conflict markers. Its top level,
+#'    `project_name` included, is kept as it is.
+#' 2. **The format check** ([.datom_check_write_entry()]) runs on that copy and
+#'    on every artifact's files in the merged clone, before anything else is
+#'    written. The merge may have brought documents from a newer datom, which
+#'    this build must not rewrite in its own shape, commit and share. A refusal
+#'    stages and commits nothing and leaves the merge in progress; its message
+#'    keeps the refusal's class and evidence and adds the ways out.
+#' 3. **Each row is compared with its artifact's files**, and only a row naming
+#'    a different version, or a missing one, is rebuilt
+#'    ([.datom_manifest_row()]), carrying forward any field this build cannot
+#'    place. There is no comparison with the merge base: a row the local side
+#'    did not touch already agrees with the files the merge brought in, so
+#'    whichever side changed an artifact, its row ends up naming what its files
+#'    record.
+#' 4. The summary is recomputed, the timestamp set, and the merge committed
+#'    ("Merge finished by datom (manifest rebuilt)"), together with whatever
+#'    the user resolved and staged. A message says so.
+#'
+#' **It needs no connection.** Everything it reads is in the clone: since the
+#' writer floor is read from `.datom/project.yaml`, the format check uses only
+#' the clone's path, so a stand-in holding the path is passed (design section
+#' 10, item 6). That is how the pull inside [datom_get_conn()], which runs
+#' before the connection exists, reaches it.
+#'
+#' It runs only on the conflict path, so the common path never reaches it.
+#'
+#' @param path Repository path.
+#' @param data_file_stored See [.datom_git_push()]; a refusal then adds the line
+#'   about the write's data file.
+#' @return Invisibly, the artifacts whose rows were rebuilt.
+#' @keywords internal
+.datom_resolve_manifest_conflict <- function(path, data_file_stored = FALSE) {
+  rel <- ".datom/manifest.json"
+  parses <- function(text) {
+    !is.null(text) && is.list(tryCatch(
+      jsonlite::fromJSON(text, simplifyVector = FALSE),
+      error = function(e) NULL
+    ))
+  }
+  start <- purrr::detect(
+    list(
+      .datom_git_head_file(path, rel, head = "MERGE_HEAD"),
+      .datom_git_head_file(path, rel)
+    ),
+    parses
+  )
+  if (is.null(start)) .datom_stop_merge_manifest_unusable()
+
+  manifest_path <- fs::path(path, rel)
+  writeBin(charToRaw(enc2utf8(start)), manifest_path)
+
+  # Before anything else is written. Only the path is read (see above).
+  clone <- list(path = path)
+  refused <- tryCatch(
+    {
+      .datom_check_write_entry(clone, NULL)
+      NULL
+    },
+    error = function(e) e
+  )
+  if (!is.null(refused)) .datom_stop_merge_refused(refused, data_file_stored)
+
+  read <- .datom_read_manifest(clone, "clone", operation = "write")
+  manifest <- read$manifest
+
+  artifacts <- .datom_clone_artifact_names(clone)
+  fresh <- stats::setNames(
+    lapply(artifacts, function(nm) {
+      .datom_row_from_clone(path, nm, manifest$artifacts[[nm]])
+    }),
+    artifacts
+  )
+  fresh <- purrr::compact(fresh)
+  manifest$artifacts[names(fresh)] <- fresh
+
+  manifest$updated_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  manifest$summary <- .datom_manifest_summary(manifest$artifacts)
+
+  .datom_notify_manifest_upgraded(read$declared, "this repo's manifest")
+  jsonlite::write_json(manifest, manifest_path, auto_unbox = TRUE, pretty = TRUE)
+  .datom_git_commit(path, rel, "Merge finished by datom (manifest rebuilt)")
+
+  rebuilt <- names(fresh)
+  cli::cli_inform(
+    c("i" = if (length(rebuilt) > 0L) {
+      "Finished the merge in progress: rebuilt the {.file .datom/manifest.json} \\
+       row{?s} of {.val {rebuilt}} from {?its/their} files, and committed the \\
+       merge."
+    } else {
+      "Finished the merge in progress: every row of {.file .datom/manifest.json} \\
+       already agreed with its artifact's files, and the merge is committed."
+    }),
+    class = "datom_merge_finished"
+  )
+
+  invisible(rebuilt)
+}
+
+
+#' One Artifact's Manifest Row, Rebuilt From Its Files in the Clone
+#'
+#' @param path Repository path.
+#' @param name Artifact name.
+#' @param row The row the manifest holds for it now, or `NULL`.
+#' @return The rebuilt row, or `NULL` when `row` already names the version the
+#'   files describe, or the clone holds no `metadata.json` to rebuild from.
+#' @keywords internal
+.datom_row_from_clone <- function(path, name, row) {
+  meta <- .datom_read_clone_json(path, paste0(name, "/metadata.json"))
+  if (is.null(meta)) return(NULL)
+  history <- .datom_read_clone_json(path, paste0(name, "/version_history.json"))
+
+  version <- .datom_clone_files_version(meta, history)
+  if (is.list(row) && identical(row$current_version, version)) return(NULL)
+
+  # A set's count is the length of its payload, which the clone holds as
+  # `set.json`: the same tidied member list the write counted.
+  member_count <- if (identical(meta$kind %||% "table", "set")) {
+    payload <- .datom_read_clone_json(path, paste0(name, "/set.json"))
+    if (is.list(payload$members)) as.integer(length(payload$members))
+  }
+
+  .datom_carry_unknown_fields(
+    .datom_manifest_row(meta, history, member_count = member_count, version = version),
+    row,
+    .datom_manifest_entry_known_fields
+  )
+}
+
+
+#' The Version an Artifact's Files in the Clone Describe
+#'
+#' The document's own version (`.datom_compute_metadata_sha()` of its
+#' `metadata.json`) when its history names that version; otherwise the version
+#' the history records for the document ([.datom_recorded_current_version()]).
+#'
+#' **Why the document's own version first.** The history alone cannot tell two
+#' versions of the same data apart when only their custom metadata differs. A
+#' write that sets custom metadata back to earlier values returns to a version
+#' the history already holds: it appends no entry and stamps a fresh
+#' `created_at`, so the history matches neither entry's timestamp and falls back
+#' to its newest one for that data, which is the wrong one. Hashing the document
+#' gives the id the write recorded. It is exact here, where it would not be in a
+#' reader's rebuild from storage, because the format check has just passed: this
+#' build can place every field of every document in the clone.
+#'
+#' **Why the history must name it.** A row names a version the history records,
+#' never a manufactured one, which is the rule every rebuild keeps. A document
+#' committed by hand hashes to an id no entry holds, and gets the recorded one.
+#'
+#' @param meta The artifact's parsed `metadata.json`.
+#' @param history Its parsed `version_history.json`, or `NULL`.
+#' @return A version string, or `NULL` when the history records nothing usable.
+#' @keywords internal
+.datom_clone_files_version <- function(meta, history) {
+  own <- .datom_compute_metadata_sha(meta)
+  if (own %in% .datom_history_versions(history %||% list())) return(own)
+  .datom_recorded_current_version(meta, history)
+}
+
+
+#' Stop When the Format Check Refuses What a Merge Brings In
+#'
+#' The refusal's own class is kept, so a caller matches it as it would at a
+#' write's door, and its message, with its evidence (the document, what this
+#' build cannot read, the installed datom version), follows as the cause.
+#'
+#' @param e The refusal.
+#' @param data_file_stored See [.datom_git_push()].
+#' @return Does not return.
+#' @keywords internal
+.datom_stop_merge_refused <- function(e, data_file_stored = FALSE) {
+  cli::cli_abort(
+    c(
+      "A merge is in progress, and this build of datom cannot write what it \\
+       brings in (below), so datom did not finish it.",
+      "i" = "The merge is still in progress: datom committed nothing for it, \\
+             and nothing was pushed or published.",
+      .datom_data_file_note(data_file_stored),
+      "i" = "Upgrade datom and re-run, or drop the merge with \\
+             {.code git merge --abort}."
+    ),
+    class = setdiff(class(e), c("rlang_error", "error", "condition")),
+    parent = e
+  )
+}
+
+
+#' Stop When Neither Side of a Merge Holds a Manifest datom Can Start From
+#'
+#' Only a manifest broken outside datom on both sides reaches this.
+#'
+#' @return Does not return.
+#' @keywords internal
+.datom_stop_merge_manifest_unusable <- function() {
+  cli::cli_abort(
+    c(
+      "A merge is in progress, and datom cannot finish it: neither side of the \\
+       merge holds a {.file .datom/manifest.json} that parses.",
+      "i" = "datom changed nothing.",
+      "i" = "Drop the merge with {.code git merge --abort}."
+    ),
+    class = "datom_merge_conflict"
+  )
+}
+
+
 # --- Heal ------------------------------------------------------------------------
 
 #' Heal What an Interrupted Write Left Behind: the Reset
@@ -266,7 +509,9 @@
 #' - **another artifact's unfinished work**: a write never acts on an artifact it
 #'   is not writing. It stops before anything changes, naming the artifact and
 #'   `datom_validate(fix = TRUE)`;
-#' - a merge in progress: the merge check stops first ([.datom_check_merge()]);
+#' - a merge in progress: the merge check runs first and stops, unless it is a
+#'   merge of the remote branch with nothing but the manifest left in conflict,
+#'   which it finishes ([.datom_check_merge()]);
 #' - every file datom does not own: `project.yaml`, a set write's
 #'   `include_paths`, `input_files/`, and a user's own `app/metadata.json` (only
 #'   folders the manifest names, or whose `metadata.json` declares a datom

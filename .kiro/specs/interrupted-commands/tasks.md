@@ -52,8 +52,9 @@ the same day (heal takes two lists). A review of the fixes closed task 4a. Task 
 2026-11-06 (its entry below lists seven differences from the plan, the first being that heal is now
 two calls with the command's pull between them); its checkpoint review the same day (below) found
 two regressions on the ordinary write path, fixed the same day in `bbab170`. A review of the fixes
-closed task 4b the same day. Next is task 5 (a conflict only in the manifest), to start in a new
-session on the owner's go-ahead.**
+closed task 4b the same day. Task 5 (a conflict only in the manifest) done on 2026-11-06 (its
+entry below lists six differences from the plan, the first being which version a rebuilt row
+names); awaiting its checkpoint review. Next is task 6 (scan and sync), on the owner's go-ahead.**
 
 **Review of `bbab170`, 2026-11-06**, by the same reviewer: both fixes verified, and **task 4b
 closes**. The reviewer re-ran the full suite (+32 checks, matching the commit); confirmed that
@@ -860,7 +861,40 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     `research/other_command_probe.R` shows `lb`'s write stopping and naming `dm` when `dm`'s write
     broke after its commit.
 
-- [ ] **5. A conflict only in the manifest** (R3.8, R3.9; DD2; design section 5)
+- [x] **5. A conflict only in the manifest** (R3.8, R3.9; DD2; design section 5)
+  - **Done 2026-11-06.** Suite 5747 -> 5859 expectations, none removed; the 112 new ones are all in
+    the new `tests/testthat/test-manifest-conflict.R`. Every guard listed below probed red against
+    its own tests, with a control that reddened nothing (`research/task5_guard_probes.R`; every test
+    each probe reddens is in the commit message), plus five not listed: the manifest-only condition
+    loosened to "the manifest is among the conflicted files", the version the files describe,
+    starting from the merged-in side's copy, `datom_pull()` passing `finish_merge` on, and the
+    other-merge stop while a file still conflicts under `finish_merge`.
+    `research/two_writers_probe.R` updated for the pull every write now makes, and rerun: the second
+    write finishes (`research/README.md`). Design section 10 item 6 settled there: the format check
+    needs only the clone's path. Names: `.datom_resolve_manifest_conflict()`,
+    `.datom_row_from_clone()`, `.datom_clone_files_version()`, `.datom_stop_merge_refused()`,
+    `.datom_stop_merge_manifest_unusable()`, `.datom_manifest_row()`, `.datom_manifest_summary()`;
+    the finish message has class `datom_merge_finished`. Differences from the list below, each
+    flagged at the checkpoint:
+    1. **Which version a row is compared with, and names when rebuilt**: the document's own version
+       (`.datom_compute_metadata_sha()`) when its history names it, else the one the history
+       records (`.datom_clone_files_version()`; design section 5, step 3). The plan said the
+       recorded one, which names the wrong version after custom metadata is set back to earlier
+       values: a teammate's correct row would be replaced, and every later write of another
+       artifact would stop on it. A test covers it.
+    2. The rebuild starts from HEAD's copy when the merged-in side's does not parse, and stops,
+       naming `git merge --abort`, when neither does.
+    3. The format check's refusal keeps its class and its evidence, wrapped in a message giving the
+       merge's state and the two ways out. A write run while that merge is still in progress meets
+       the same refusal at its own door first, which names the upgrade but not `git merge --abort`;
+       `datom_pull()` repeats the full message.
+    4. `.datom_manifest_summary()` extracted: the summary counters were computed in two places, and
+       the rebuild would have been a third.
+    5. `datom_pull()`'s `finish_merge` has a one-line `@param` now, since `R CMD check` requires
+       every argument documented; its help text proper is task 10's.
+    6. The test of the case the manual path got wrong builds "unpushed writes of `dm` and `lb`" with
+       the second write skipping heal (`.healed = TRUE`): since task 4b a write stops on another
+       artifact's unfinished work, so only a sync whose pushes all fail leaves that state.
   - `R/manifest-rebuild.R`: extract `.datom_manifest_row()` from `.datom_rebuild_manifest_entry()`,
     which keeps its behaviour.
   - `R/heal.R`: `.datom_resolve_manifest_conflict()`, simplified (design section 5): start from the

@@ -732,7 +732,8 @@
 #' In order:
 #'
 #' 1. **The merge check** ([.datom_check_merge()]): a merge in progress stops
-#'    the command before anything changes.
+#'    the command before anything changes, unless it is one datom can finish
+#'    (only the manifest left in conflict), which it then finishes.
 #' 2. **Fetch.** A failure stops the command with a message saying the remote
 #'    could not be reached; nothing has changed.
 #' 3. **Merge only if the clone is behind**: HEAD does not contain the upstream
@@ -740,9 +741,14 @@
 #'    nothing. With no upstream branch nothing is merged, as before: a new code
 #'    branch never has one, and on the project's branch heal pushes before it
 #'    publishes, which git refuses when the clone is behind.
-#' 4. A conflict stops the command, leaving the merge in progress, with the
-#'    merge check's message (it lists the conflicted files and says how to
-#'    finish) ending "No version is published."
+#' 4. **A conflict only in `.datom/manifest.json` is resolved**
+#'    ([.datom_resolve_manifest_conflict()]): every write rewrites the
+#'    manifest's timestamp and summary, so two clones writing different
+#'    artifacts conflict there and nowhere else. The manifest is derived from
+#'    the artifacts' own files, so it is rebuilt from them and the merge
+#'    committed. Any other conflict stops the command, leaving the merge in
+#'    progress, with the merge check's message (it lists the conflicted files
+#'    and says how to finish) ending "No version is published."
 #' 5. **It confirms it caught up**: HEAD must contain the tip. git2r's merge
 #'    silently does nothing when the user's own uncommitted or untracked files
 #'    are in the way of the incoming commits -- no error, no `MERGE_HEAD`, and
@@ -764,11 +770,13 @@
 #'   already in storage; a stop then says the file may be there, unnamed.
 #' @param reset The artifacts heal's reset put back just before this pull, so
 #'   a stop says datom put them back rather than that it changed nothing.
+#' @param finish_merge See [datom_pull()]; passed to the merge check.
 #' @return Invisibly, `TRUE` when HEAD moved (a merge or a fast-forward),
 #'   `FALSE` otherwise.
 #' @keywords internal
 .datom_git_pull <- function(path, pat = NULL, in_push = FALSE,
-                            data_file_stored = FALSE, reset = character()) {
+                            data_file_stored = FALSE, reset = character(),
+                            finish_merge = FALSE) {
   .datom_check_git2r()
 
   repo <- tryCatch(
@@ -780,7 +788,7 @@
 
   # Before the fetch: a merge in progress is the user's or an interrupted pull's,
   # and nothing below may touch the clone while it lasts.
-  .datom_check_merge(path)
+  .datom_check_merge(path, finish_merge = finish_merge)
 
   remotes <- git2r::remotes(repo)
   if (length(remotes) == 0L) {
@@ -822,8 +830,12 @@
   merge_result <- .datom_git_merge_upstream(repo, upstream_ref)
 
   if (isTRUE(merge_result$conflicts)) {
-    .datom_stop_merge_conflict(path, after_pull = TRUE,
-                               data_file_stored = data_file_stored)
+    if (identical(.datom_git_conflicted(repo), ".datom/manifest.json")) {
+      .datom_resolve_manifest_conflict(path, data_file_stored = data_file_stored)
+    } else {
+      .datom_stop_merge_conflict(path, after_pull = TRUE,
+                                 data_file_stored = data_file_stored)
+    }
   }
 
   # Decided by commit: merge() returns conflicts = NULL both when it succeeded

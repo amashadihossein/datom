@@ -43,7 +43,13 @@ Rerun from the repo root, for example:
   anything: HEAD unmoved, GitHub's log and storage still at `dm` v1, nothing of `lb` in storage.
 - `two_writers_probe.R`: two clones of one project write different tables without pulling in
   between; reports whether the second write's push hits a merge conflict, and in which files
-  (result: a conflict in `.datom/manifest.json` only).
+  (result: a conflict in `.datom/manifest.json` only). Updated in task 5 (2026-11-06): since task
+  4a every write pulls first, so the other clone's write is now run right after this write's
+  commit (a mocked `.datom_git_commit()` that fires once), landing its push between this write's
+  pull and its own push. Result after task 5: the second write reports `full` and says it rebuilt
+  `lb`'s manifest row and finished the merge; HEAD is the two-parent "Merge finished by datom
+  (manifest rebuilt)" with no `MERGE_HEAD` left; the stored manifest names `ae`, `dm` and `lb`, and
+  a reader reads both new tables.
 - `merge_completion_probe.R`: after such a conflict, rewrites the manifest, stages it and commits
   through git2r (R3.8). Result: a two-parent merge commit, `MERGE_HEAD` removed, the push lands,
   and a fresh clone sees every table.
@@ -149,3 +155,12 @@ Added 2026-11-04 in task 4a:
   heal's push not pulling, the shared reader's stop, reading the history before writing, the reset
   limited to `rewrite`, the `rewrite` subset check, the "changed nothing" line). Same usage as task
   4a's; the whole sweep takes about two minutes. Results are in task 4b's commit message.
+
+Added 2026-11-06 in task 5:
+
+- `task5_guard_probes.R`: the harness with task 5's probes (the manifest-only condition at the
+  pull, both as "never" and as "whenever the manifest is among the conflicts"; the row-against-files
+  comparison; the version the files describe; starting from the merged-in side's copy; the format
+  check before the rebuild; the merge check's finishing branch; `finish_merge`, its passing through
+  `datom_pull()`, and the other-merge stop while a file still conflicts under it). Same usage as
+  task 4b's; the whole sweep takes about four minutes. Results are in task 5's commit message.

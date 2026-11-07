@@ -443,10 +443,11 @@ test_that("a stored row for an artifact the clone lacks stops a write, and the r
 
 # A write of `dm` whose push brings in the teammate's commit of `lb`, made (and,
 # with `teammate_published`, published) after this write's opening pull and
-# heal. A real merge of two datom writes conflicts in the manifest until datom
-# rebuilds it (a later task), so the push is replaced by one that leaves the
-# clone as that merge would -- the teammate's `lb` files and manifest row
-# committed -- then pushes, and says it pulled commits in.
+# heal. The push is replaced by one that leaves the clone as that merge would --
+# the teammate's `lb` files and manifest row committed -- then pushes, and says
+# it pulled commits in, so these tests reach the agreement check without the
+# manifest rebuild. The end-to-end case, through a real merge, is in
+# test-manifest-conflict.R.
 hp_push_bringing_in <- function(fx, b, teammate_published = FALSE,
                                 env = parent.frame()) {
   real_push <- get(".datom_git_push", envir = asNamespace("datom"))
@@ -510,8 +511,7 @@ test_that("heal's push does not pull, so a teammate's commit landing after the r
   # dm's commit. A teammate's commit of lb (its publish not yet landed) reaches
   # the remote just after this write's pull. Had heal's push pulled it in, the
   # manifest heal uploads would name lb's version before lb's documents were in
-  # storage (today the merge would stop on the manifest instead; once datom
-  # rebuilds a manifest-only conflict, it would not).
+  # storage: the merge's manifest-only conflict would be rebuilt, naming it.
   fx <- local_interrupt_project()
   hp_write(fx$conn, "dm")
   b <- local_second_clone(fx)

@@ -9,7 +9,8 @@
   pat = NULL,
   in_push = FALSE,
   data_file_stored = FALSE,
-  reset = character()
+  reset = character(),
+  finish_merge = FALSE
 )
 }
 \arguments{
@@ -27,6 +28,8 @@ already in storage; a stop then says the file may be there, unnamed.}
 
 \item{reset}{The artifacts heal's reset put back just before this pull, so
 a stop says datom put them back rather than that it changed nothing.}
+
+\item{finish_merge}{See \code{\link[=datom_pull]{datom_pull()}}; passed to the merge check.}
 }
 \value{
 Invisibly, \code{TRUE} when HEAD moved (a merge or a fast-forward),
@@ -42,7 +45,8 @@ leave it in place.
 In order:
 \enumerate{
 \item \strong{The merge check} (\code{\link[=.datom_check_merge]{.datom_check_merge()}}): a merge in progress stops
-the command before anything changes.
+the command before anything changes, unless it is one datom can finish
+(only the manifest left in conflict), which it then finishes.
 \item \strong{Fetch.} A failure stops the command with a message saying the remote
 could not be reached; nothing has changed.
 \item \strong{Merge only if the clone is behind}: HEAD does not contain the upstream
@@ -50,9 +54,14 @@ tip just fetched. A clone level with the remote, or ahead of it, merges
 nothing. With no upstream branch nothing is merged, as before: a new code
 branch never has one, and on the project's branch heal pushes before it
 publishes, which git refuses when the clone is behind.
-\item A conflict stops the command, leaving the merge in progress, with the
-merge check's message (it lists the conflicted files and says how to
-finish) ending "No version is published."
+\item \strong{A conflict only in \code{.datom/manifest.json} is resolved}
+(\code{\link[=.datom_resolve_manifest_conflict]{.datom_resolve_manifest_conflict()}}): every write rewrites the
+manifest's timestamp and summary, so two clones writing different
+artifacts conflict there and nowhere else. The manifest is derived from
+the artifacts' own files, so it is rebuilt from them and the merge
+committed. Any other conflict stops the command, leaving the merge in
+progress, with the merge check's message (it lists the conflicted files
+and says how to finish) ending "No version is published."
 \item \strong{It confirms it caught up}: HEAD must contain the tip. git2r's merge
 silently does nothing when the user's own uncommitted or untracked files
 are in the way of the incoming commits -- no error, no \code{MERGE_HEAD}, and

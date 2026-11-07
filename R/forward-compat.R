@@ -357,11 +357,15 @@
   unknown <- setdiff(keys, known)
   if (length(unknown) == 0L) return(invisible(NULL))
 
+  # The evidence in full, so a wrong inference can be reported: the document,
+  # the names, and the build that could not place them.
+  installed <- as.character(utils::packageVersion("datom"))
   cli::cli_abort(
     c(
       "{.val {source}} carries {length(unknown)} field{?s} this build of datom \\
        cannot place.",
       "x" = "Unrecognised: {.field {unknown}}.",
+      "x" = "Installed datom is {installed}.",
       "i" = "A newer datom wrote this document, and this build would rewrite it \\
              without accounting for what it cannot place.",
       .datom_upgrade_bullets(),
@@ -430,11 +434,13 @@
   # on the same file moments later with the parser's own error.
   if (read$ok) {
     if (!("artifacts" %in% names(read$manifest))) {
+      installed <- as.character(utils::packageVersion("datom"))
       cli::cli_abort(
         c(
           "Cannot find an artifact list in {.file .datom/manifest.json}.",
           "x" = "The document declares schema v{read$declared} and holds no \\
                  artifact list this build can reach.",
+          "x" = "Installed datom is {installed}.",
           "i" = "A newer datom may have restructured it. Writing now would \\
                  replace it with a shape this build invented.",
           .datom_upgrade_bullets(),

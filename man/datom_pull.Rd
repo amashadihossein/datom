@@ -4,10 +4,15 @@
 \alias{datom_pull}
 \title{Pull Latest Changes from Remote}
 \usage{
-datom_pull(conn)
+datom_pull(conn, finish_merge = FALSE)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
+
+\item{finish_merge}{\code{TRUE} to let datom finish a merge in progress that it
+did not start, once nothing but \code{.datom/manifest.json} conflicts: it
+rebuilds the manifest and commits the merge. With no merge in progress it
+changes nothing. Default \code{FALSE}, under which such a merge stops the pull.}
 }
 \value{
 Invisibly, a list with:
