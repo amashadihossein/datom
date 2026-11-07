@@ -54,7 +54,25 @@ two calls with the command's pull between them); its checkpoint review the same 
 two regressions on the ordinary write path, fixed the same day in `bbab170`. A review of the fixes
 closed task 4b the same day. Task 5 (a conflict only in the manifest) done on 2026-11-06 (its
 entry below lists six differences from the plan, the first being which version a rebuilt row
-names); awaiting its checkpoint review. Next is task 6 (scan and sync), on the owner's go-ahead.**
+names); its checkpoint review the same day (below) approved it with nothing to fix, and task 5
+closed. The review's point for task 7 was settled by the owner the same day (task 7's version rule).
+Next is task 6 (scan and sync), to start in a new session on the owner's go-ahead. It opens with an
+open point to settle with the owner before any code (task 6's first bullet: what a sync does after
+one table's write fails partway, found 2026-11-06 by probing the plan).**
+
+**Task 5's checkpoint review, 2026-11-06**, by another agent, of `6d622e9`: approved, nothing to
+fix. The reviewer re-ran the full suite (+112 checks, matching the commit) and probed three guards
+(the version rule, the manifest-only condition, the format check before the rebuild), each failing
+exactly the tests the commit lists, with a harmless edit failing nothing. Evaluated with the owner:
+
+| Point | Outcome |
+|---|---|
+| Keep the version-from-`metadata.json` rule of task 5 (the open question at the checkpoint) | **Kept** (owner) |
+| For task 7: its planned `manifest_mismatch_s3` check takes the version from the history alone (`.datom_recorded_current_version()`), which names the wrong version after custom metadata goes `"x"` -> `"y"` -> `"x"`, so it would report a consistent store and its fix would not clear it | **Confirmed here** on a throwaway project: the stored manifest names the first version, the history lookup names the second, before and after republishing from the clone. **Owner chose (a)**: the same rule as task 5, the document's own version only when every field of the stored `metadata.json` is one this build can place and the history names it (task 7's bullets, design section 6). Set aside, (b): a write returning to a version keeps that version's original `created_at` (changes a datom-owned file, new writes only, misses two versions within one second) |
+| (b) would also fix the version `datom_read()` gives the current version after a revert | **Not so**: `datom_read()` returns a plain data frame with no version (datom-py's table read too), and a set cannot reach the case (its version hashes content and kind only) |
+
+R5.5 names the history lookup as the check's mechanism; rewording it to the rule above awaits the
+owner's ok (asked 2026-11-06; task 7's first bullet). Task 5's checkpoint is closed.
 
 **Review of `bbab170`, 2026-11-06**, by the same reviewer: both fixes verified, and **task 4b
 closes**. The reviewer re-ran the full suite (+32 checks, matching the commit); confirmed that
@@ -336,8 +354,17 @@ The probe scripts in `research/` reproduce today's failures; rerunning them afte
 is part of its acceptance. Since task 4b every write starts with three calls in one place
 (`.datom_heal()`, `.datom_pull_before_write()`, `.datom_heal_publish()`; design section 4, "Who
 calls heal"), and unit tests on mock connections stub all three (`test-read-write.R` shows how);
-`test-heal.R` and `test-heal-publish.R` show the real-project fixtures. The newest guard-probe
-harness to copy is `research/task4b_guard_probes.R`.
+`test-heal.R` and `test-heal-publish.R` show the real-project fixtures. Since task 5 a merge that
+conflicts only in `.datom/manifest.json` is finished by the pull or the merge check
+(`.datom_resolve_manifest_conflict()`; `test-manifest-conflict.R`, whose header says how a test
+makes two clones write without a pull in between). The newest guard-probe harness to copy is
+`research/task5_guard_probes.R`.
+
+**Starting task 6 cold** (written 2026-11-06): read this section's first paragraph and the review
+just below it, then task 6 in full (its first bullet is an open point to settle with the owner,
+one point, before any code), design section 7 and section 10 item 7, and requirements R4, R3.4 and
+R3.7. Rerun `research/sync_batch_probe.R` to see the open point's three cases on the current code.
+Baseline: 5859 expectations, 0 failed, 0 skipped, at `6d622e9`.
 
 **Shared test helpers** (created in task 2, extended later): `tests/testthat/helper-interrupt.R`
 with a project fixture (folder git remote and local store, as in the probes), a second-clone fixture,
@@ -951,6 +978,31 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     finishing.
 
 - [ ] **6. Scan and sync** (R4, R3.7; DD3; design section 7)
+  - **Open point, to settle with the owner before any code** (found 2026-11-06 by probing this plan,
+    `research/sync_batch_probe.R`; design section 10 item 7). This task's sync heals once for the
+    batch and then writes each table with `datom_write(.healed = TRUE)`, so no later table's write
+    runs heal. When one table's write fails partway and a later one succeeds:
+    - table `t2` broken at its push or its metadata upload: `t3`'s publish uploads a manifest naming
+      `t2`'s new version while storage holds `t2`'s old `metadata.json`; readers get the old
+      version, and a re-run publishes nothing for `t2` (the manifest rows agree), so this task's own
+      break-table test ("re-scan and re-sync, and every table reads") would fail;
+    - `t2` broken at its commit: `t3`'s commit takes `t2`'s uncommitted manifest row, and `t3`'s
+      publish puts it in storage (P4).
+    Options to put to the owner, one point: **stop the sync at the first table whose failed write
+    left anything in the clone** (uncommitted datom files, or HEAD moved: one `git status` and a
+    HEAD comparison, on the error path only), skipping the rest with a message to re-run
+    `datom_sync()`, which then finishes the broken table through heal; failures that leave the clone
+    untouched (the import, a refused data frame, the data file upload) still carry on as
+    `continue_on_error` promises. Or **keep a heal per table**, as today: each later table then
+    stops naming `t2` and `datom_validate(fix = TRUE)`, at one fetch and one stored-manifest read per
+    table, which R3.7's once-per-sync rule and R3.4 set out to remove. Lean: stop the sync. A
+    re-check of storage before each later manifest upload is not enough on its own (the commit
+    case). Record the decision in design section 7 and this bullet, and amend R4 if it changes what
+    `continue_on_error` promises (ask whether the owner's answer approves that).
+  - Build `.datom_pushed_artifacts(path)` in `R/heal.R` (left from task 4b for its first user):
+    the artifacts whose files the commits the remote lacks touch, from local refs only (design
+    section 2). Decide here what it returns with no upstream branch, where `.datom_git_ahead()` is
+    `NA`.
   - `R/sync.R`: `.datom_read_manifest()` gains the `"head"` scope; `datom_sync_manifest()` compares
     against it and reports `unpushed` for tables `.datom_pushed_artifacts()` names, from the clone
     alone: no fetch, no storage read, no warning branches, no special case for a clone that is behind
@@ -972,7 +1024,16 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     through a mock (R3.7, R3.4); a scan makes no fetch and no storage read, recorded through mocks
     (R4.2); a table pushed but not yet published shows `unchanged`, and the `datom_sync()` that
     follows publishes it (R4.4, R4.5).
-  - Guards to probe: the comparison against the last commit, the unpushed check.
+  - Guards to probe: the comparison against the last commit, the unpushed check, and whatever the
+    open point above adds (for "stop the sync": the stop itself, each of its two tests -- datom
+    files left uncommitted, HEAD moved -- against its own break, and a failure that left the clone
+    untouched still carrying on).
+  - Helpers to reuse, each local to one test file today (move one to `helper-interrupt.R` when a
+    second file needs it): `local_heal_counter()` in `test-heal.R` counts heal's two halves; the
+    stored-manifest read counter in `test-heal-publish.R`'s "a write reads the stored manifest once
+    (R3.4)"; `local_teammate_after_commit()` in `test-manifest-conflict.R` lands another clone's
+    push between this command's commit and its push. A sync test needs rio (installed here) and an
+    `input_files/` folder, which a fresh `datom_clone()` lacks.
   - Acceptance: R4.1-R4.5 and R3.7's once-per-sync rule; `research/sync_and_manifest_probe.R` and
     `research/stale_preview_probe.R` show the table published and the honest message.
 
@@ -999,10 +1060,25 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     per-artifact publish call. Update the header of `test-version-commit.R` and the "Three functions
     upload that file" line in `dev/engineering-notes.md`: one function uploads the history from this
     task on.
+  - **Before code: R5.5's wording.** R5.5 names the history lookup
+    (`.datom_recorded_current_version()`) as the check's mechanism, and the owner chose a different
+    rule on 2026-11-06 (next bullet). Rewording R5.5 to match awaits the owner's ok, asked the same
+    day; if the answer is not recorded here by the time this task starts, ask before editing R5.5.
   - `R/validate.R`: `datom_validate()` reports per artifact what was reset, pushed and published
     (R5.3); `.datom_validate_one_table()` reports `manifest_mismatch_s3`, naming the fix, when the
-    version recorded for the stored `metadata.json` and history (`.datom_recorded_current_version()`)
-    differs from the stored manifest's row: storage reads only, no fetch (R5.5; design section 6).
+    version the stored `metadata.json` and history describe differs from the stored manifest's row:
+    storage reads only, no fetch (R5.5; design section 6). **Which version they describe** (owner,
+    2026-11-06, option (a) of task 5's checkpoint review): the document's own version
+    (`.datom_compute_metadata_sha()`) when every top-level field of the stored `metadata.json` is
+    one this build can place (`.datom_metadata_known_fields()`) and the stored history names that
+    version; otherwise `.datom_recorded_current_version()`. Task 5's `.datom_clone_files_version()`
+    is the same rule without the placeability check (its caller's format check has just passed):
+    share one helper, adding the check, and rename it if it no longer reads only the clone (name
+    settled here). Tests: custom metadata set `"x"` -> `"y"` -> `"x"` on one table is not reported,
+    before and after `fix = TRUE`; a stored `metadata.json` carrying a field this build cannot
+    place, whose identity fields alone hash to an older history entry while the recorded entry is
+    the newer one the manifest names, is not reported. Guards to probe: the document's own version
+    (against the revert test), the placeability check (against the unplaceable-field test).
   - Tests: R5.1-R5.4; the break table's repair row; R7.8 (a crossed publish, stored manifest newer
     than stored metadata, reported naming the fix and cleared by `fix = TRUE`; a write broken before
     its manifest upload reported; a consistent store not reported); a

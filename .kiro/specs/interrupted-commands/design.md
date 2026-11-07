@@ -198,7 +198,7 @@ write commands.
 | `R/sync.R` | `.datom_restore_set_payload()` | changed | Uploads through `.datom_storage_upload_absent()` |
 | `R/sync.R` | `.datom_sync_one_artifact()` | deleted | Its snapshot loop copied from a clone `{name}/.metadata/` folder no datom command writes, so it never published a snapshot; the repair uses `.datom_publish_artifacts()` and calls `.datom_restore_set_payload()` directly (section 6) |
 | `R/validate.R` | `datom_validate()` | changed | The fix now pushes and reports per artifact (R5.3); the new status `manifest_mismatch_s3`, read from storage only (R5.5, section 6) |
-| `R/validate.R` | `.datom_validate_one_table()` | changed | Reads the stored `metadata.json` and history, and reports `manifest_mismatch_s3` when the version recorded for them (`.datom_recorded_current_version()`) differs from the stored manifest's row (section 6) |
+| `R/validate.R` | `.datom_validate_one_table()` | changed | Reads the stored `metadata.json` and history, and reports `manifest_mismatch_s3` when the version they describe differs from the stored manifest's row: the document's own version when every field is one this build can place and the history names it, else the recorded one (section 6; owner, 2026-11-06, replacing the history lookup alone) |
 | `R/repo.R` | `datom_repo_commit()` | changed | The merge check, then, before staging, a stop naming `datom_validate(fix = TRUE)` when the commit would include datom's own uncommitted files (R3.5, R3.9; no reset since the spot-check before task 4a); the R3.6 message when it pushes |
 | `R/repo.R` | `datom_repo_push()`, `datom_repo_attach_governance()`, `datom_repo_set_data_store()` | changed | The R3.6 message around their push |
 | `R/conn.R` | `datom_init_repo()` | changed | Finishes a half-initialised folder (section 8) |
@@ -764,17 +764,41 @@ owner, from `metadata_stale_s3`, which compared storage against the clone's last
 a fetch, a skip for a behind clone and a like-for-like rule). Without it, `datom_validate()` says "All
 checks passed" while storage disagrees with itself, because today it only checks that each stored
 file exists. `.datom_validate_one_table()` now also reads the stored `metadata.json` and history (two
-small reads per artifact, in `datom_validate()` only) and compares the version recorded for them,
-`.datom_recorded_current_version()`, the lookup `datom_read()` uses, with that artifact's row in the
-stored manifest; a difference is `manifest_mismatch_s3`, and the report names the fix,
-`datom_validate(fix = TRUE)` or the table's next write.
+small reads per artifact, in `datom_validate()` only) and compares the version they describe with
+that artifact's row in the stored manifest; a difference is `manifest_mismatch_s3`, and the report
+names the fix, `datom_validate(fix = TRUE)` or the table's next write.
+- **Which version the stored files describe** (owner, 2026-11-06, from task 5's checkpoint review;
+  option (a)). The document's own version, `.datom_compute_metadata_sha()` of the stored
+  `metadata.json`, when **every top-level field of that document is one this build can place**
+  (`.datom_metadata_known_fields()`) and the stored history names that version; otherwise the
+  version the history records, `.datom_recorded_current_version()`. This is task 5's rule
+  (`.datom_clone_files_version()`, section 5 step 3) with the placeability check made explicit:
+  there the format check had just passed, here nothing has checked the stored document.
+  - Why not the history alone, as first designed: it names the wrong version after custom metadata
+    is set back to earlier values (`note = "x"`, then `"y"`, then `"x"`; the third write returns to
+    the first version's id, appends no history entry and stamps a fresh `created_at`, so the lookup
+    falls back to the newest entry for that data, the second). Reproduced 2026-11-06 on a throwaway
+    project: the stored manifest names the first version, correctly; the history lookup names the
+    second, before and after republishing from the clone. The check would have reported a
+    consistent store, and `fix = TRUE` would not have cleared it.
+  - Why the placeability check: the hash takes only the identity fields this build knows. A
+    document from a newer datom with a field this build cannot place can hash, ignoring that field,
+    to an older entry written before the field existed, and the check would then report a mismatch
+    that is not there. Such a document gets the recorded version.
+  - Set aside: (b) a write that returns to a version the history holds keeps that version's
+    original `created_at` in `metadata.json`, so the history lookup finds it. It changes what a
+    datom-owned file holds, helps new writes only, and still misses two versions written within one
+    second (timestamps go to the second). The review said (b) would also fix the version
+    `datom_read()` gives the current version after a revert; checked, `datom_read()` returns a plain
+    data frame with no version (in datom-py too), and a set cannot reach this case (its version
+    hashes its content and kind only).
 - It catches the crossed publish of section 4 (the stored manifest names the newer version, the
   stored metadata holds the older one) and a write broken just before its manifest upload (the
   reverse). Either side may be the stale one, hence the name.
 - Storage only: no fetch, no git read, so nothing to skip on a behind clone.
-- The recorded version, not a recomputed one, so a hand edit published by 0.2.0, whose document no
-  record names, is not reported for good (its recorded version is the previous one, which is also
-  what its manifest row names).
+- A hand edit published by 0.2.0, whose document no record names, is not reported for good: it
+  hashes to an id no history entry holds, so the rule falls back to the recorded version, the
+  previous one, which is also what its manifest row names.
 - No read and no write pays for it. `.datom_validate_unfixable_tables()` does not list it: the
   repair fixes it.
 
@@ -812,6 +836,10 @@ preview as `artifact`, which pushes and publishes every `unpushed` row, and any 
 pushed but not yet published; `unpushed` rows come back with `result = "success"` without an import
 (R4.3). Unfinished work on a table outside the preview stops the sync before anything changes,
 naming `datom_validate(fix = TRUE)` (R4.4, design spot-check before task 4a).
+
+**Open, to settle with the owner before task 6's code** (found 2026-11-06, section 10 item 7): what
+the sync does after one table's write fails partway. Healing once for the batch means no later
+table's write runs heal, and heal is what protects a write from another table's unfinished work.
 
 ## 8. `datom_init_repo()` re-run (R6)
 
@@ -987,6 +1015,27 @@ Not yet traced, each resolved in the task that needs it:
    artifact's `metadata.json`) reads `conn$path` and nothing else. The function passes a stand-in,
    `list(path = path)`, as `.datom_unfinished_owners()` already does. The pull keeps taking a path,
    and the migration pull reaches the rebuild with no connection.
+7. **What `datom_sync()` does after one table's write fails partway** (found 2026-11-06, after task
+   5, checking task 6's plan; settle with the owner before task 6's code). The plan heals once for
+   the batch, then writes each table with `datom_write(.healed = TRUE)`, so no later table's write
+   runs heal. Probed (`research/sync_batch_probe.R`, simulating the planned calls on `6d622e9`),
+   tables `t1`-`t3`, `t2` broken, then `t3` written:
+   - `t2` broken at its push or at its metadata upload (committed, not published): `t3`'s publish
+     uploads the clone's whole manifest, which names `t2`'s new version while storage holds `t2`'s
+     old `metadata.json`. Readers get `t2`'s old version, `datom_list()` names the new one, and a
+     re-run publishes nothing for `t2`, because heal compares manifest rows and they now agree. The
+     break table's "re-scan and re-sync, and every table reads" would fail (S2).
+   - `t2` broken at its commit (its files and manifest row written, not committed): `t3`'s commit
+     takes `t2`'s uncommitted manifest row, so the last commit names `t2`'s new version beside its
+     old `metadata.json`, and `t3`'s publish puts that row in storage (P4 broken).
+   - Today, each write in a sync heals for itself, so `t3`'s write stops on `t2`'s unfinished
+     work, naming `datom_validate(fix = TRUE)`, and so does every later table.
+   Options, as put in task 6's open point: stop the sync at the first table whose failed write left
+   anything in the clone (uncommitted datom files, or a commit), skipping the rest with a message to
+   re-run `datom_sync()`, while a failure that left the clone untouched (the import, a refused data
+   frame, the data file upload) still lets the sync carry on as `continue_on_error` promises; or keep
+   a heal per table, as today. Not sufficient alone: re-checking storage before each later table's
+   manifest upload (the commit case stays).
 
 ## 11. Correctness properties (what the tests pin)
 
@@ -1002,7 +1051,7 @@ Not yet traced, each resolved in the task that needs it:
 | P8 | Files datom does not own are never reset | R3.1, R3.5 |
 | P9 | A failed fetch at the start leaves the clone, git and storage unchanged | DD1, R3.7 |
 | P10 | After a publish lands behind a colleague's newer one, the table's next write or `datom_validate(fix = TRUE)` in an up-to-date clone leaves storage at git's latest, and any other write stops naming that fix (amended 2026-10-31) | DD4 |
-| P11 | `datom_validate()` reports `manifest_mismatch_s3`, naming the fix, when an artifact's stored manifest row names a different version from the one recorded for its stored `metadata.json`, and `fix = TRUE` clears it; it is not reported for a hand edit published by 0.2.0, nor on a consistent store | R5.5, R7.8 |
+| P11 | `datom_validate()` reports `manifest_mismatch_s3`, naming the fix, when an artifact's stored manifest row names a different version from the one its stored `metadata.json` and history describe (section 6), and `fix = TRUE` clears it; it is not reported for a hand edit published by 0.2.0, nor on a consistent store, including one where custom metadata was set back to earlier values (amended 2026-11-06) | R5.5, R7.8 |
 | P12 | On a clean, current, fully published clone, nothing before a command's own work writes to the clone, git or storage | D14 |
 | P13 | A write never changes another artifact's files, git state or stored documents: on another artifact's unfinished work it stops before changing anything, naming `datom_validate(fix = TRUE)` (added 2026-10-31) | R3, D14 principle 8 |
 | P14 | No command publishes anything when its pull did not catch up, or when storage names a version of the artifact that the clone's history does not contain; and no write uploads a manifest while another artifact's row disagrees with storage (added 2026-10-31) | R3.7, R3.10 |

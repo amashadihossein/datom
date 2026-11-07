@@ -164,3 +164,11 @@ Added 2026-11-06 in task 5:
   check before the rebuild; the merge check's finishing branch; `finish_merge`, its passing through
   `datom_pull()`, and the other-merge stop while a file still conflicts under it). Same usage as
   task 4b's; the whole sweep takes about four minutes. Results are in task 5's commit message.
+- `sync_batch_probe.R` (2026-11-06, after task 5, checking task 6's plan before its code): the
+  planned sync heals once and then writes each table with `datom_write(.healed = TRUE)`; the probe
+  makes those calls for tables `t1`-`t3` with `t2`'s write broken at its push, its metadata upload
+  or its commit, then writes `t3`. Result on `6d622e9`: after a push or metadata break, `t3`'s
+  publish puts a manifest naming `t2`'s new version in storage beside `t2`'s old `metadata.json`,
+  a reader gets the old version, and a re-run publishes nothing for `t2`; after a commit break,
+  `t3`'s commit takes `t2`'s uncommitted manifest row and publishes it. Task 6's open point
+  (`../design.md` section 10, item 7).
