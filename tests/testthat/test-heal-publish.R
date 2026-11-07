@@ -111,6 +111,26 @@ test_that("a re-run after a break in the metadata upload says it finished the ea
   ))
 })
 
+test_that("a write with nothing to save leaves the user's own unpushed commit alone", {
+  # `datom_repo_commit(push = FALSE)` says "push later". The clone is ahead, but
+  # nothing of datom's is unfinished, so heal's publish has nothing to do and
+  # must not push it. (Review of 5bdb7da: before the fix it pushed it, and the
+  # user saw only "No changes detected".)
+  fx <- local_interrupt_project()
+  hp_write(fx$conn, "dm")
+  writeLines("build <- function() NULL", file.path(fx$repo, "build.R"))
+  suppressMessages(datom_repo_commit(fx$conn, "Add build", paths = "build.R", push = FALSE))
+  user_commit <- hp_head(fx$repo)
+  remote_before <- snapshot_remote(fx)
+  storage_before <- snapshot_storage(fx)
+
+  expect_identical(hp_write(fx$conn, "dm")$action, "none")
+
+  expect_identical(snapshot_remote(fx), remote_before)
+  expect_identical(snapshot_storage(fx), storage_before)
+  expect_identical(hp_head(fx$repo), user_commit)
+})
+
 test_that("a write reads the stored manifest once (R3.4)", {
   fx <- local_interrupt_project()
   hp_write(fx$conn, "dm")
@@ -214,6 +234,37 @@ test_that("datom_write(conn, name =) pushes a commit the remote lacks before it 
   expect_true("upload" %in% events)
   expect_identical(hp_head(fx$repo), head)
   expect_identical(unname(snapshot_remote(fx)), head)
+})
+
+test_that("datom_write(conn, name =) pushes first when it uploads a committed metadata.json the remote lacks", {
+  # The stored manifest row agrees (a document committed outside datom), so
+  # heal's publish finds nothing to finish and does not push; the route's own
+  # upload must not name a document GitHub does not have. (Review of 5bdb7da.)
+  fx <- local_interrupt_project()
+  hp_write(fx$conn, "dm")
+  meta_path <- file.path(fx$repo, "dm", "metadata.json")
+  meta <- jsonlite::read_json(meta_path)
+  meta$custom <- list(note = "edited by hand")
+  jsonlite::write_json(meta, meta_path, auto_unbox = TRUE, pretty = TRUE)
+  git_commit_files(fx$repo, "dm/metadata.json", "Edit dm's metadata by hand", push = FALSE)
+  events <- character()
+  real_push <- get(".datom_git_push", envir = asNamespace("datom"))
+  real_write <- get(".datom_storage_write_json", envir = asNamespace("datom"))
+  local_mocked_bindings(
+    .datom_git_push = function(...) {
+      events <<- c(events, "push")
+      real_push(...)
+    },
+    .datom_storage_write_json = function(conn, key, data) {
+      events <<- c(events, "upload")
+      real_write(conn, key, data)
+    }
+  )
+
+  expect_identical(suppressMessages(datom_write(fx$conn, name = "dm"))$action, "published")
+
+  expect_identical(events[[1]], "push")
+  expect_identical(unname(snapshot_remote(fx)), hp_head(fx$repo))
 })
 
 test_that("datom_write(conn, name =) broken at its push finishes on a re-run", {
@@ -455,16 +506,17 @@ test_that("a write whose push brings in a teammate's version already in storage 
 
 
 test_that("heal's push does not pull, so a teammate's commit landing after the route's pull is refused, not published", {
-  # This clone has a commit of the user's own to push. A teammate's commit of lb
-  # (pushed, its publish not yet landed) reaches the remote just after this
-  # write's pull. Had heal's push pulled it in, the manifest heal uploads would
-  # name lb's version before lb's documents were in storage.
+  # This clone re-runs a write of dm whose push broke, so heal's publish pushes
+  # dm's commit. A teammate's commit of lb (its publish not yet landed) reaches
+  # the remote just after this write's pull. Had heal's push pulled it in, the
+  # manifest heal uploads would name lb's version before lb's documents were in
+  # storage (today the merge would stop on the manifest instead; once datom
+  # rebuilds a manifest-only conflict, it would not).
   fx <- local_interrupt_project()
   hp_write(fx$conn, "dm")
   b <- local_second_clone(fx)
   hp_break(b$conn, "push", "lb")
-  writeLines("mine", file.path(fx$repo, "mine.R"))
-  git_commit_files(fx$repo, "mine.R", "Own work", push = FALSE)
+  hp_break(fx$conn, "push", "dm")
   real_pull <- get(".datom_pull_before_write", envir = asNamespace("datom"))
   local_mocked_bindings(.datom_pull_before_write = function(conn, ...) {
     moved <- real_pull(conn, ...)

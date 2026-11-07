@@ -49,7 +49,11 @@ two lists, what the command publishes (`artifact`) and the subset whose files it
 and 4); the manifest's rows are compared in the current format (section 4, step a).
 **Task 4b, 2026-11-06** (choices flagged at its checkpoint): heal is two calls, the reset and the
 publish, with the command's pull between them; heal's push does not pull, and with no upstream it
-pushes before its checks (section 4, step d); section 10 items 3 and 5 settled.
+pushes before its checks (section 4, step d); section 10 items 3 and 5 settled. **Its checkpoint
+review, the same day**, by another agent, evaluated with the owner: heal's publish is decided by
+the manifests alone, not by the clone being ahead (section 4, step d), and the metadata-only route
+pushes before its own upload (section 4, the route table); `datom_write()` refuses `NA`, `NaN` and
+`Inf` in custom metadata (section 2); two rows added to section 12.
 **Read first**: `requirements.md` (terms, findings, decisions D1-D14, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
 
@@ -149,7 +153,8 @@ write commands.
 | File | Function | New / changed | Role |
 |---|---|---|---|
 | `R/heal.R` | `.datom_heal(conn, artifact = NULL, rewrite = artifact, all = FALSE)` | new | Heal's first half: the merge check, then step a of section 4, the reset, run only when its own check finds something. **Two lists** (task 4a's checkpoint review, owner, 2026-11-05): `artifact` names the artifacts the command publishes (several for `datom_sync()`); `rewrite`, a subset of `artifact` (by default all of it; heal refuses a name outside it, an internal error, `datom_internal_error`), names those whose files the command writes again, and step a may put back only their files and their manifest rows, with "writing it again now". The two differ for the metadata-only route (it publishes its table and rewrites nothing) and for `datom_sync()` (it publishes every table in its preview and rewrites only the rows it writes). Any other artifact's uncommitted files, including those of one in `artifact` but not in `rewrite`, stop the command before changing anything, naming `datom_validate(fix = TRUE)`. The repair passes `all = TRUE`, which covers both halves for every artifact. Returns what it reset. **Split from the publish in task 4b** (2026-11-06): the command's own pull runs between the two halves, and the pull is not heal's, so heal is two calls with the pull between them (section 4, "Who calls heal") |
-| `R/heal.R` | `.datom_heal_publish(conn, artifact = NULL, all = FALSE)` | new (task 4b) | Heal's second half, step d of section 4: push and publish the committed versions of the artifacts in `artifact` that GitHub or storage lacks, each run only when its check (local refs and one read of the stored manifest) finds something. Pushes without pulling again (section 4, step d). Stops on any other artifact's differing row, on a stored version the clone's history lacks (R3.10; the repair overrides), and on a stored manifest it cannot read. Returns the versions it published, named by artifact, and whether it pushed |
+| `R/heal.R` | `.datom_heal_publish(conn, artifact = NULL, all = FALSE)` | new (task 4b) | Heal's second half, step d of section 4: push and publish the committed versions of the artifacts in `artifact` that GitHub or storage lacks, run only when its check (one read of the stored manifest: does any row differ?) finds something. Whether the clone is ahead is not the check (review of `5bdb7da`): it pushes only to finish a version of its own, so a user's commit made with `datom_repo_commit(push = FALSE)` is never pushed by a write with nothing to save. Pushes without pulling again; with no upstream, before its checks (section 4, step d). Stops on any other artifact's differing row, on a stored version the clone's history lacks (R3.10; the repair overrides), and on a stored manifest it cannot read. Returns the versions it published, named by artifact, and whether it pushed |
+| `R/read_write.R` | `.datom_check_custom_storable(custom)` | new (review of `5bdb7da`) | Called while `.datom_build_metadata()` builds the document, before any hash, heal or file write: refuses `NA` of any type, `NaN` and `Inf` anywhere in custom metadata (`datom_custom_value_unstorable`), naming each place, because none reads back from JSON as written, and `NA` (saved as `null`) changed the version id once read back |
 | `R/heal.R` | `.datom_check_merge(path)` (named in task 4a) | new | Step 0 of section 4, independent of heal. For a merge of the remote branch: stops while a file other than the manifest conflicts, and otherwise rebuilds the manifest and finishes the merge. Any other merge: stops, changing nothing, unless `datom_pull(conn, finish_merge = TRUE)` asked it to finish. Called at the start of `.datom_git_pull()`, by heal before its reset, and by `datom_repo_commit()` before it stages anything |
 | `R/heal.R` | `.datom_read_clone_json(path, rel)` (named in task 4b) | new | The shared reader for datom's own files in the clone. Parses an artifact's `version_history.json` and `metadata.json` (`NULL` when absent); on a file that does not parse, stops with class `datom_clone_file_unreadable` and section 4's short message (restore the artifact's datom files from a commit where they parse, `git commit`, re-run). Used by heal's publish (the containment check and the publish path), `.datom_push_metadata_s3()`, `.datom_lookup_history_object_sha()`, `.datom_write_metadata_local()` (which now reads the history before it writes anything, so the stop changes nothing) and the manifest row's version count in `.datom_update_manifest_entry()`. `.datom_prior_metadata()` keeps treating a broken `metadata.json` as absent, since the write replaces it |
 | `R/heal.R` | `.datom_unfinished_files(conn)`, `.datom_reset_unfinished(conn, unfinished, artifact, all)` | new | Step a. The first is heal's gate: one `git status`, returning datom-owned files that differ from the last commit. The second decides whose they are (an artifact's folder, or the manifest rows that differ from HEAD's), stops on any other artifact's, and otherwise puts them back (section 4) |
@@ -497,10 +502,14 @@ in the merge was just checked, and anything else heal publishes is this clone's 
 refusal says to upgrade datom (D11) and comes before any publish (simplification pass, owner,
 2026-10-30, replacing a separate check of step d's publish list and a `touch` argument).
 
-**d. Push and publish** (heal; R3.2-R3.4, R3.10). Runs only if the clone is ahead of the remote
-(`.datom_git_ahead()` above 0, or `NA`) or a stored manifest row differs from the clone's; deciding
-that costs one read of the stored manifest, which step d then reuses (R3.4). "Differs", not
-"behind": a revert to earlier content is a different row, not an older one.
+**d. Push and publish** (heal; R3.2-R3.4, R3.10). Runs only if a stored manifest row differs from
+the clone's; deciding that costs one read of the stored manifest, which step d then reuses (R3.4).
+"Differs", not "behind": a revert to earlier content is a different row, not an older one. **Not**
+when the clone is merely ahead of the remote (review of `5bdb7da`, owner, 2026-11-06): an unfinished
+datom version always shows as a differing row, since the manifest is published after the push,
+while a commit of the user's own made with `datom_repo_commit(push = FALSE)` makes the clone ahead
+with nothing of datom's to finish; as first built, a write with nothing to save pushed it, and the
+user saw only "No changes detected". With no upstream it still pushes first (below).
 - `.datom_unpublished_artifacts()` = every artifact whose clone row's `current_version` differs from
   the stored row's (an absent stored manifest means all of them). A stored row for an artifact the
   clone does not have counts as differing too (2026-11-04): the clone cannot publish it, so a write
@@ -647,7 +656,9 @@ answer for the reset; task 4b gives it the table's name in `artifact` together w
 that needs it. After heal's publish, the route checks the stored `metadata.json` itself and
 publishes through the same path when it differs, which catches what a comparison of manifest rows
 cannot (a crossed publish; a document committed outside datom, whose own version then gets its own
-snapshot).
+snapshot). Before that upload it pushes when the clone is ahead (without pulling again, as heal's
+push), since heal pushes only to finish a differing row and storage must never name a document
+GitHub lacks (review of `5bdb7da`).
 
 `datom_write()` itself does not heal on the two routes without data: it hands them to those helper
 functions before anything else runs. `datom_repo_commit()` calls the merge check, then stops if the
@@ -992,6 +1003,8 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | A file put at a data address by hand, adopted by a re-run | Its content is read without a content check | Documented in `dev/engineering-notes.md`; not checked |
 | A teammate still on a released datom (D11) | An upgraded teammate's write can publish their data-less version | Documented in `NEWS.md` |
 | GitHub unreachable at the start of a command (DD1) | The command stops with a message and changes nothing; the user re-runs when online | Guarded (P9); documented in `?datom_write` |
+| A table whose committed `metadata.json` holds a `null` for an `NA` in custom metadata, written by an earlier datom (review of `5bdb7da`) | A write now refuses `NA`, so no new version can hold one. For an existing one, heal's publish after an interrupted write by that earlier build re-reads the file, and the document then hashes to a version id no history names: its snapshot is filed under that id, a lookup of the recorded version fails, and the stored `metadata.json` says `{}` where it said `null`. The commit-by-version lookup already missed such versions before this spec | Documented only (D7: a state an earlier release created). `.datom_check_custom_storable()` guards new writes |
+| Custom metadata decimals past four places (found in the same review) | Stored rounded (`0.123456` as `0.1235`), and two values differing only past the fourth decimal get one version id, because the version hash uses `jsonlite`'s default of four digits too | Not this spec's: fixing it changes existing version ids. Drafted as a follow-up issue in `draft-issue-metadata-decimals.md` |
 
 ## 13. Tasks
 

@@ -76,8 +76,30 @@ main <- function() {
 
     # The publish gate (P12).
     publish_gate = list(filter = "^heal$", edit = function() sub1(hl,
-      "  if (!ahead && length(differ) == 0L) {",
-      "  if (FALSE) {")),
+      "  if (length(differ) == 0L) {\n    return(invisible(list(published = character(), pushed = pushed)))",
+      "  if (FALSE) {\n    return(invisible(list(published = character(), pushed = pushed)))")),
+
+    # Review of 5bdb7da: the gate decided by the manifests alone, not by the
+    # clone being ahead (a user's own unpushed commit opened it, and the write
+    # pushed it).
+    gate_ignores_ahead = list(filter = publish, edit = function() sub1(hl,
+      "  if (length(differ) == 0L) {\n    return(invisible(list(published = character(), pushed = pushed)))",
+      "  if (!ahead && length(differ) == 0L) {\n    return(invisible(list(published = character(), pushed = pushed)))")),
+
+    # Review of 5bdb7da: the metadata-only route pushes before its own upload.
+    route_pushes_before_own_upload = list(filter = publish, edit = function() sub1(us,
+      "  ahead <- .datom_git_ahead(repo_path)\n  if (is.na(ahead) || ahead > 0L) {\n    .datom_git_push(repo_path, pat = conn$github_pat, pull_first = FALSE)\n  }\n",
+      "")),
+
+    # Review of 5bdb7da: a missing or non-finite value in custom metadata.
+    refuse_unstorable_custom = list(filter = "^read-write$", edit = function() sub1(rw,
+      "    .datom_check_custom_storable(custom)\n",
+      "")),
+
+    # ... and Inf, which is.na() does not catch.
+    unstorable_infinite = list(filter = "^read-write$", edit = function() sub1(rw,
+      "  if (is.double(x)) bad <- bad | is.infinite(x)\n",
+      "")),
 
     # The stop on another artifact's differing (or stored-only) row.
     stop_on_other_artifact = list(filter = publish, edit = function() sub1(hl,

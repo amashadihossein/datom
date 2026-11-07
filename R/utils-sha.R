@@ -599,9 +599,11 @@
 #' lacks, so storage never names a version GitHub does not have), then change
 #' detection against the stored `metadata.json`, which catches what heal's
 #' comparison of manifest rows cannot see: a stored `metadata.json` that differs
-#' while the stored manifest row agrees. Everything goes up through the one
-#' publish path, [.datom_publish_artifacts()], with each history entry's commit
-#' worked out from git.
+#' while the stored manifest row agrees. In that case the route pushes first
+#' itself when the clone is ahead, since heal pushed only for a differing row.
+#' Everything goes up through the one publish path,
+#' [.datom_publish_artifacts()], with each history entry's commit worked out
+#' from git.
 #'
 #' @param conn Connection object.
 #' @param name Table name.
@@ -675,6 +677,15 @@
       metadata_sha = metadata_sha,
       action = "none"
     )))
+  }
+
+  # Storage never names a version GitHub lacks: heal's publish pushes only when
+  # it finishes a differing manifest row, which this case is not, so the route
+  # pushes here itself. Without pulling again, as heal's push does: the route's
+  # pull ran moments ago, and git refuses the push if the remote moved since.
+  ahead <- .datom_git_ahead(repo_path)
+  if (is.na(ahead) || ahead > 0L) {
+    .datom_git_push(repo_path, pat = conn$github_pat, pull_first = FALSE)
   }
 
   # The route makes no commit, so it has none to hand on: every history entry's

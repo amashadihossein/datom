@@ -424,10 +424,73 @@ datom_read <- function(conn,
     if (!is.list(custom) || is.null(names(custom))) {
       cli::cli_abort("{.arg metadata} must be a named list.")
     }
+    .datom_check_custom_storable(custom)
     meta$custom <- custom
   }
 
   meta
+}
+
+
+#' Refuse Custom Metadata That Cannot Survive Storage
+#'
+#' A missing value (`NA` of any type), `NaN` or `Inf`, anywhere in the user's
+#' metadata, is refused. None of them comes back from the JSON file as it went
+#' in: `NA` and `NA_character_` are saved as `null`, which reads back as
+#' nothing, and the others as the text `"NA"`, `"NaN"` or `"Inf"`. The first
+#' kind also changes the version id the document hashes to once it has been
+#' read back, so every lookup of that version by id fails (task 4b's checkpoint
+#' review, 2026-11-06). Absence is spelled by leaving the field out, as a set's
+#' tags already require.
+#'
+#' Runs while the metadata is built, before any hashing of it, any heal and any
+#' file write, so a refusal changes nothing.
+#'
+#' @param custom The user's named list.
+#' @return Invisibly `NULL`. Aborts naming every place such a value sits.
+#' @keywords internal
+.datom_check_custom_storable <- function(custom) {
+  paths <- .datom_unstorable_paths(custom, "metadata")
+  if (length(paths) == 0L) return(invisible(NULL))
+
+  cli::cli_abort(
+    c(
+      "{.arg metadata} holds {cli::qty(length(paths))}{?a value/values} datom \\
+       cannot store: a missing value ({.code NA}), {.code NaN} or {.code Inf}.",
+      "x" = "At {.field {paths}}.",
+      "i" = "Leave the field out instead. A missing value would be saved as \\
+             nothing, or as the text {.val NA}, so it could not be read back as \\
+             written. Nothing was written."
+    ),
+    class = "datom_custom_value_unstorable"
+  )
+}
+
+
+#' Where a Value Datom Cannot Store Sits in a Nested List
+#'
+#' @param x A value from the user's metadata.
+#' @param path Its place, as `metadata$a$b` (or `[[i]]` for an unnamed element).
+#' @return The places of every `NA`, `NaN` or `Inf`, possibly none.
+#' @keywords internal
+.datom_unstorable_paths <- function(x, path) {
+  if (is.list(x)) {
+    nms <- names(x)
+    places <- purrr::imap(unname(x), function(el, i) {
+      key <- if (!is.null(nms) && nzchar(nms[[i]])) {
+        paste0(path, "$", nms[[i]])
+      } else {
+        paste0(path, "[[", i, "]]")
+      }
+      .datom_unstorable_paths(el, key)
+    })
+    return(unlist(places, use.names = FALSE) %||% character())
+  }
+  if (!is.atomic(x) || length(x) == 0L) return(character())
+
+  bad <- is.na(x)
+  if (is.double(x)) bad <- bad | is.infinite(x)
+  if (any(bad)) path else character()
 }
 
 
@@ -1146,7 +1209,9 @@ datom_read <- function(conn,
 #'   that route a **set** whose stored payload is missing also has it restored
 #'   from the clone -- see [datom_validate()], which shares the mechanism, for
 #'   the conditions on that.
-#' @param metadata Optional list of custom metadata.
+#' @param metadata Optional named list of custom metadata. A missing value
+#'   (`NA`), `NaN` or `Inf` anywhere in it is refused, because it cannot be
+#'   read back as written: leave the field out instead.
 #' @param message Optional commit message.
 #' @param parents Optional list of parent records produced by
 #'   [datom_parent()], each carrying `source`, `table`, `version`,

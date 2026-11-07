@@ -30,7 +30,9 @@ that route a \strong{set} whose stored payload is missing also has it restored
 from the clone -- see \code{\link[=datom_validate]{datom_validate()}}, which shares the mechanism, for
 the conditions on that.}
 
-\item{metadata}{Optional list of custom metadata.}
+\item{metadata}{Optional named list of custom metadata. A missing value
+(\code{NA}), \code{NaN} or \code{Inf} anywhere in it is refused, because it cannot be
+read back as written: leave the field out instead.}
 
 \item{message}{Optional commit message.}
 

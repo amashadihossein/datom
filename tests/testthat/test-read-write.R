@@ -1357,6 +1357,51 @@ test_that("datom_write rejects raw parents lacking data_sha", {
   )
 })
 
+test_that("datom_write refuses a missing or non-finite value in custom metadata, changing nothing", {
+  # None of them reads back from the JSON file as written, and NA and
+  # NA_character_ (saved as null) also change the version id the document hashes
+  # to, so lookups of that version by id fail (review of 5bdb7da).
+  fx <- local_interrupt_project()
+  suppressMessages(datom_write(fx$conn, data = data.frame(id = 1:3), name = "dm"))
+  before <- list(clone = snapshot_clone(fx$repo), storage = snapshot_storage(fx))
+
+  refused <- list(
+    list(metadata = list(note = NA), at = "metadata$note"),
+    list(metadata = list(note = NA_character_), at = "metadata$note"),
+    list(metadata = list(n = NA_integer_), at = "metadata$n"),
+    list(metadata = list(x = NA_real_), at = "metadata$x"),
+    list(metadata = list(x = NaN), at = "metadata$x"),
+    list(metadata = list(x = Inf), at = "metadata$x"),
+    list(metadata = list(x = -Inf), at = "metadata$x"),
+    list(metadata = list(x = c(1, NA)), at = "metadata$x"),
+    list(metadata = list(tags = c("a", NA)), at = "metadata$tags"),
+    list(metadata = list(a = list(b = list(c = NA))), at = "metadata$a$b$c"),
+    list(metadata = list(a = list(1, NA)), at = "metadata$a[[2]]")
+  )
+  for (case in refused) {
+    err <- expect_error(
+      datom_write(fx$conn, data = data.frame(id = 1:5), name = "dm",
+                  metadata = case$metadata),
+      class = "datom_custom_value_unstorable", label = case$at
+    )
+    expect_match(cli::ansi_strip(conditionMessage(err)), case$at, fixed = TRUE,
+                 label = case$at)
+  }
+  expect_identical(
+    list(clone = snapshot_clone(fx$repo), storage = snapshot_storage(fx)),
+    before
+  )
+
+  # What is accepted keeps its version id through the trip to disk, so the
+  # version the history names is the one lookups find.
+  suppressMessages(datom_write(
+    fx$conn, data = data.frame(id = 1:5), name = "dm",
+    metadata = list(note = "fine", n = 2L, ok = TRUE, x = c(1.5, 2), a = list(b = "c"))
+  ))
+  version <- datom_history(fx$conn, "dm", short_hash = FALSE)$version[[1L]]
+  expect_no_error(suppressMessages(datom_member(fx$conn, "dm", version)))
+})
+
 test_that("datom_write does not read parent snapshots (no enrichment)", {
   withr::with_tempdir({
     repo <- git2r::init(".")
@@ -2741,6 +2786,7 @@ test_that("makes no commit", {
       .datom_has_changes = function(conn, name, d, m) list(change_type = "metadata_only", current = NULL),
       .datom_git_pull = function(...) invisible(FALSE),
       .datom_heal_publish = function(...) invisible(list(published = character(), pushed = FALSE)),
+      .datom_git_push = function(...) invisible(FALSE),
       .datom_storage_write_json = function(conn, s3_key, data) {
         events <<- c(events, "upload")
         invisible(TRUE)

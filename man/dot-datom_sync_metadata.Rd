@@ -39,8 +39,10 @@ exists, heal's publish (a push first when the clone holds commits the remote
 lacks, so storage never names a version GitHub does not have), then change
 detection against the stored \code{metadata.json}, which catches what heal's
 comparison of manifest rows cannot see: a stored \code{metadata.json} that differs
-while the stored manifest row agrees. Everything goes up through the one
-publish path, \code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}, with each history entry's commit
-worked out from git.
+while the stored manifest row agrees. In that case the route pushes first
+itself when the clone is ahead, since heal pushed only for a differing row.
+Everything goes up through the one publish path,
+\code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}, with each history entry's commit worked out
+from git.
 }
 \keyword{internal}

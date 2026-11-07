@@ -52,7 +52,14 @@ stop added to R3.7 the day before is dropped (heal's push already stops a clone 
 the stop would have blocked `datom_pull()` and the push commands on any new code branch); a stored
 manifest row for an artifact the clone lacks counts as differing (R3, R3.10); the metadata-only
 route stops, rather than resets, on uncommitted edits of its table's files (D13, settled);
-`datom_sync()`'s own tables are every table in its preview (R4.4, settled).
+`datom_sync()`'s own tables are every table in its preview (R4.4, settled). **Amended 2026-11-06**
+with the owner, from task 4b's checkpoint review: `datom_write()` refuses a missing value (`NA` of
+any type), `NaN` or `Inf` anywhere in custom metadata, naming where it sits and saying to leave the
+field out, before anything changes (a new refusal: none of these reads back from JSON as written,
+and `NA` also changed the version id once read back, so lookups by id failed); a write with nothing
+to save never pushes, so a commit of the user's own made with `datom_repo_commit(push = FALSE)`
+stays unpushed until a write saves something (R3.2). R5.2's push of unpushed commits stays the
+repair's own (task 7), since heal now pushes only to finish a version.
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -311,7 +318,10 @@ command, told apart by what they are asked to change:
    (D13).
 2. **Committed but not published** (in unpushed commits, or pushed while storage lacks its metadata
    or manifest row): after the pull in R3.7, the repair pushes it and publishes it from git, and the
-   message names it. A write does the same for its own artifact before its own work.
+   message names it. A write does the same for its own artifact before its own work. A commit that
+   holds no unfinished datom version (the user's own, made with `datom_repo_commit(push = FALSE)`)
+   is not a reason to push: a write with nothing to save leaves it unpushed (2026-11-06, task 4b's
+   checkpoint review).
 3. Publishing builds storage from git as it is after the pull in R3.7, never from a remembered state,
    so a newer version a colleague pushed in between is what storage ends up holding. A colleague who
    publishes after that pull can be overwritten until the table's next write or

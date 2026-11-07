@@ -615,10 +615,15 @@
 #' finishes a committed version that GitHub or storage lacks: a write whose push
 #' broke, or whose storage upload failed after the push.
 #'
-#' **Check, then act.** The check is local refs plus one read of the stored
-#' manifest: is the clone ahead of the remote, and does any stored row name a
-#' different version from the clone's? Only then does anything run. On a clean,
-#' current, published clone this reads and writes nothing else.
+#' **Check, then act.** The check is one read of the stored manifest: does any
+#' stored row name a different version from the clone's? Only then does
+#' anything run. Whether the clone is ahead of the remote is not the check: an
+#' unfinished datom version always shows as a differing row (the manifest is
+#' published after the push), while a commit of the user's own, made with
+#' `datom_repo_commit(push = FALSE)`, makes the clone ahead with nothing to
+#' finish, and a write with nothing to save must not push it (task 4b's
+#' checkpoint review). On a clean, current, published clone this reads and
+#' writes nothing else.
 #'
 #' **A write acts only on its own artifacts** (requirements D14 principle 8):
 #' - another artifact whose stored row differs, or a stored row for an artifact
@@ -631,7 +636,8 @@
 #'   this: it publishes the clone's version, says which stored version it
 #'   replaced, and drops a stored row whose artifact the clone lacks.
 #'
-#' Then it pushes if the clone is ahead, **without pulling again**: the route's
+#' Then, finishing a version of its own, it pushes if the clone is ahead,
+#' **without pulling again**: the route's
 #' pull ran moments ago, and a remote that moved since makes git refuse the
 #' push, which stops the command before storage changes. Pulling here could
 #' bring in a teammate's commit whose version is not in storage yet, and the
@@ -685,8 +691,13 @@
   clone_rows <- .datom_clone_manifest_rows(conn)
   differ <- .datom_unpublished_artifacts(clone_rows, stored)
 
-  # The gate: nothing unpushed, and storage names what the clone names.
-  if (!ahead && length(differ) == 0L) {
+  # The gate: storage names what the clone names. Decided from the manifests
+  # alone, not from whether the clone is ahead: a commit of the user's own
+  # (`datom_repo_commit(push = FALSE)`, which says "push later") makes the clone
+  # ahead with nothing of datom's unfinished, and a write with nothing to save
+  # must not push it. An unfinished datom version always shows here, because
+  # the stored manifest is updated only after the push.
+  if (length(differ) == 0L) {
     return(invisible(list(published = character(), pushed = pushed)))
   }
 
@@ -708,6 +719,8 @@
   }
   if (isTRUE(all)) .datom_warn_stored_replaced(own, unseen, stored$rows, clone_rows)
 
+  # Past the gate and the stop on other artifacts, every differing row is the
+  # command's own, so a push here always carries a version being finished.
   if (ahead) {
     .datom_git_push(conn$path, pat = conn$github_pat, pull_first = FALSE)
     pushed <- TRUE

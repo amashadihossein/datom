@@ -50,8 +50,26 @@ Task 4a done the same day (its entry below lists what differs from the plan); it
 review on 2026-11-05 (below) found two fixes, made the same day, and one point for task 4b, settled
 the same day (heal takes two lists). A review of the fixes closed task 4a. Task 4b done on
 2026-11-06 (its entry below lists seven differences from the plan, the first being that heal is now
-two calls with the command's pull between them); it awaits its checkpoint review. Next is task 5,
-awaiting the owner's go-ahead.**
+two calls with the command's pull between them); its checkpoint review the same day (below) found
+two regressions on the ordinary write path, fixed the same day. Next is task 5, awaiting the
+owner's go-ahead.**
+
+**Task 4b's checkpoint review, 2026-11-06**, by another agent, of `5bdb7da`, evaluated with the
+owner one point at a time. The reviewer re-ran the full suite and three of the guard probes, and
+agreed with the seven flagged differences. Both regressions were reproduced here on a throwaway
+project, and shown absent on `a4cd373`, before fixing:
+
+| Finding | Outcome |
+|---|---|
+| 1. An `NA` in custom metadata (`datom_write(conn, df, "dm", metadata = list(note = NA))`): `datom_member()` and `datom_parent()` cannot find the version the history names, and `datom_validate()` reports nothing (S1). The publish reads `metadata.json` back from the clone; `NA` is saved as `null`, which reads back as nothing, so the snapshot is filed under a version id no history names. Checked further here: only an `NA` saved as `null` (logical, text, alone or in text) changes the id; `NA_integer_`, `NA_real_`, `NaN` and `Inf` keep it but come back as the text `"NA"`, `"NaN"`, `"Inf"`; and since 4b the stored `metadata.json` said `{}` where it said `null` | **Reshaped by the owner: `datom_write()` refuses a missing value of any type, `NaN` and `Inf` anywhere in custom metadata** (`.datom_check_custom_storable()`, `datom_custom_value_unstorable`), naming each place and saying to leave the field out, as a set's tags already require. The review proposed passing the computed version to the write's publish; with the refusal every accepted value keeps its id through the trip to disk, so the publish keeps reading the file back. A table holding an `NA` from an earlier datom is documented only (design section 12). Requirements amended. The review's follow-up issue for the `NA` round trip is replaced by the refusal; one for **decimals rounded to four places** in storage and in the version id, found while checking, is drafted in `draft-issue-metadata-decimals.md` |
+| 2. A write with nothing to save pushes the user's own unpushed commit (S1, a joint repo): heal's publish opened on "the clone is ahead" | **Taken**: heal's publish is decided by differing manifest rows only, and pushes only to finish a version of its own; with no upstream it still pushes first. Added by this session, taken: `datom_write(conn, name =)` pushes before its own upload of a stored `metadata.json` that differs while the manifest row agrees, which until then relied on heal's push. R3.2 amended; the repair's push of unpushed commits (R5.2) stays the repair's own, in task 7 |
+| Nit: the "manifest held back after a failure" probe reddens five tests, not the one recorded in `5bdb7da`'s message | **Taken**: the four others break a write at its metadata upload as their setup, and with the guard removed that broken write already published its manifest. All five are listed in task 4b's entry and the fix's commit |
+
+Owner's direction during the review, recorded in requirements D14 principle 7 already: git is
+datom's internal tool, and direct git use in the clone is off the supported path. It did not change
+finding 2, since `datom_repo_commit(push = FALSE)`, the supported route, makes the same state, and
+datom cannot tell its commits from a plain `git commit`'s without a marker (set aside for merges on
+2026-10-31); the fix needs neither.
 
 **Task 4a's checkpoint review, 2026-11-05**, by another agent, of `1958036`, evaluated with the
 owner. The reviewer re-ran the full suite on 4a and its parent and five of the guard probes, and ran
@@ -703,6 +721,14 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     7. The two "push brings in a teammate's commit" tests replace the push with one that leaves
        the clone as that merge would: a real merge of two datom writes conflicts in the manifest
        until task 5, which now carries the end-to-end case.
+  - **Checkpoint review fixes, 2026-11-06** ("Where things stand"): `datom_write()` refuses `NA`,
+    `NaN` and `Inf` in custom metadata; heal's publish opens on differing manifest rows only and
+    pushes only to finish its own version; the metadata-only route pushes before its own upload.
+    Suite 5715 -> 5747 expectations, none removed. Each new guard probed red against its own test
+    (`research/task4b_guard_probes.R`; results in that commit's message), and the whole sweep re-run
+    on the fixed code. Recorded in full this time: the "manifest held back after a failure" probe
+    reddens five tests (the four whose setup breaks a write at its metadata upload, and "heal's
+    publish failing ...").
   - **Heal takes two lists (task 4a's checkpoint review, point 3; settled by the owner on
     2026-11-05, recorded in design sections 2 and 4).** The background, as it was put to the owner:
     Heal does two things for a command's own table, and they are safe under different conditions:
@@ -902,6 +928,12 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     (`.datom_restore_set_payload()`, data file first), publishes every artifact through
     `.datom_publish_artifacts()` (snapshot, history, `metadata.json` last), then the manifest, only
     if every artifact published (P7; design section 6).
+  - From task 4b's checkpoint review (2026-11-06): heal's publish now pushes only to finish a
+    differing manifest row, so the repair pushes any unpushed commits itself before it republishes
+    every artifact (R5.2), without pulling again; otherwise it could put a committed document
+    GitHub lacks into storage. A test: a committed, unpushed edit of an artifact's `metadata.json`
+    whose manifest row agrees, then `datom_validate(fix = TRUE)`: GitHub has the commit before
+    storage changes.
   - Delete `.datom_sync_one_artifact()` and its clone-folder snapshot loop: no datom command writes
     `{name}/.metadata/` in a clone (confirmed 2026-10-30 by a real write). Name in the commit
     message: the retired test "syncs metadata snapshots from .metadata dir" in `test-sync.R` and its
@@ -965,7 +997,9 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     headers, including that paws alone can trigger the latter (from `paws.common` 0.9.0 every upload
     carries a checksum by default).
     `NEWS.md` (R9.6; cite only `?verb` and `vignette(...)`, never `dev/` or `.kiro/`, conventions
-    item 7a).
+    item 7a). It includes, from task 4b's checkpoint review: `datom_write()` now refuses a missing
+    value (`NA`), `NaN` or `Inf` in custom metadata (a write that worked before now stops; leave
+    the field out); and a write with nothing to save no longer pushes the user's own commits.
   - Search `R/` for any old-order wording left after tasks 2-4b ("serialization point", "After git,
     never before", "local -> git -> S3") and correct it (R9.4).
   - `dev/datom_specification.md` (R9.2, R9.3, and R9.7: the route table's `data = NULL` with `name`
