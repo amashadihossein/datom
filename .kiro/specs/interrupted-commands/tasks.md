@@ -71,8 +71,8 @@ exactly the tests the commit lists, with a harmless edit failing nothing. Evalua
 | For task 7: its planned `manifest_mismatch_s3` check takes the version from the history alone (`.datom_recorded_current_version()`), which names the wrong version after custom metadata goes `"x"` -> `"y"` -> `"x"`, so it would report a consistent store and its fix would not clear it | **Confirmed here** on a throwaway project: the stored manifest names the first version, the history lookup names the second, before and after republishing from the clone. **Owner chose (a)**: the same rule as task 5, the document's own version only when every field of the stored `metadata.json` is one this build can place and the history names it (task 7's bullets, design section 6). Set aside, (b): a write returning to a version keeps that version's original `created_at` (changes a datom-owned file, new writes only, misses two versions within one second) |
 | (b) would also fix the version `datom_read()` gives the current version after a revert | **Not so**: `datom_read()` returns a plain data frame with no version (datom-py's table read too), and a set cannot reach the case (its version hashes content and kind only) |
 
-R5.5 names the history lookup as the check's mechanism; rewording it to the rule above awaits the
-owner's ok (asked 2026-11-06; task 7's first bullet). Task 5's checkpoint is closed.
+R5.5 and R7.8 were reworded to that rule the same day, approved by the owner (wording drafted by
+the same reviewer; requirements status line). Task 5's checkpoint is closed.
 
 **Review of `bbab170`, 2026-11-06**, by the same reviewer: both fixes verified, and **task 4b
 closes**. The reviewer re-ran the full suite (+32 checks, matching the commit); confirmed that
@@ -1060,10 +1060,6 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     per-artifact publish call. Update the header of `test-version-commit.R` and the "Three functions
     upload that file" line in `dev/engineering-notes.md`: one function uploads the history from this
     task on.
-  - **Before code: R5.5's wording.** R5.5 names the history lookup
-    (`.datom_recorded_current_version()`) as the check's mechanism, and the owner chose a different
-    rule on 2026-11-06 (next bullet). Rewording R5.5 to match awaits the owner's ok, asked the same
-    day; if the answer is not recorded here by the time this task starts, ask before editing R5.5.
   - `R/validate.R`: `datom_validate()` reports per artifact what was reset, pushed and published
     (R5.3); `.datom_validate_one_table()` reports `manifest_mismatch_s3`, naming the fix, when the
     version the stored `metadata.json` and history describe differs from the stored manifest's row:

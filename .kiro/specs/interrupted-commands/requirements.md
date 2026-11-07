@@ -59,7 +59,12 @@ field out, before anything changes (a new refusal: none of these reads back from
 and `NA` also changed the version id once read back, so lookups by id failed); a write with nothing
 to save never pushes, so a commit of the user's own made with `datom_repo_commit(push = FALSE)`
 stays unpushed until a write saves something (R3.2). R5.2's push of unpushed commits stays the
-repair's own (task 7), since heal now pushes only to finish a version.
+repair's own (task 7), since heal now pushes only to finish a version. **Amended again 2026-11-06**
+by the owner, from task 5's checkpoint review: R5.5 and R7.8 take the version the stored files
+describe as the document's own when every top-level field is one this build can place and the
+stored history names it, otherwise the version the history records; the history lookup alone
+named the wrong version after custom metadata was set back to earlier values, so the check would
+have reported a consistent store that its fix could not clear.
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -480,14 +485,16 @@ writes nothing and is unchanged.
    comparison against the clone's last commit needed a fetch, a skip for a behind clone and a
    like-for-like rule, for a race that corrects itself):
    - It reports `manifest_mismatch_s3` for an artifact whose row in the stored manifest names a
-     different version from the one recorded for the stored `metadata.json`
-     (`.datom_recorded_current_version()` on the stored `metadata.json` and history, the lookup
-     `datom_read()` uses). This catches two publishes crossing (design DD4) and a write broken just
-     before its manifest upload; either side may be the stale one.
+     different version from the one the stored `metadata.json` and history describe: the
+     document's own version when every top-level field of that document is one this build can
+     place and the stored history names it, otherwise the version the history records
+     (`.datom_recorded_current_version()`). This catches two publishes crossing (design DD4) and a
+     write broken just before its manifest upload; either side may be the stale one (amended
+     2026-11-06).
    - The report names the fix: `datom_validate(fix = TRUE)`, or the table's next write.
-   - It reads storage only: no fetch and no git read, so a behind clone needs no special case. The
-     recorded version, not a recomputed one, keeps a hand edit published by 0.2.0 (whose document no
-     record names) from being reported for good.
+   - It reads storage only: no fetch and no git read, so a behind clone needs no special case. A
+     computed version counts only when the stored history names it, so a hand edit published by
+     0.2.0 (whose document no record names) gets the recorded version and is not reported for good.
    - It runs in `datom_validate()` only; no read and no write pays for it.
 
 ### R6. `datom_init_repo()` re-run
@@ -531,7 +538,8 @@ writes nothing and is unchanged.
    `manifest_mismatch_s3`, naming the fix, for an artifact whose stored manifest row and stored
    `metadata.json` name different versions (a crossed publish, and a write broken before its manifest
    upload), and `datom_validate(fix = TRUE)` clears it. It is not reported for a hand edit published
-   by 0.2.0, nor on a consistent store.
+   by 0.2.0, nor on a consistent store, including one where custom metadata was set back to earlier
+   values (amended 2026-11-06).
 
 ### R8. Residual failure modes
 
