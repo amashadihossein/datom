@@ -51,8 +51,18 @@ review on 2026-11-05 (below) found two fixes, made the same day, and one point f
 the same day (heal takes two lists). A review of the fixes closed task 4a. Task 4b done on
 2026-11-06 (its entry below lists seven differences from the plan, the first being that heal is now
 two calls with the command's pull between them); its checkpoint review the same day (below) found
-two regressions on the ordinary write path, fixed the same day. Next is task 5, awaiting the
-owner's go-ahead.**
+two regressions on the ordinary write path, fixed the same day in `bbab170`. A review of the fixes
+closed task 4b the same day. Next is task 5 (a conflict only in the manifest), to start in a new
+session on the owner's go-ahead.**
+
+**Review of `bbab170`, 2026-11-06**, by the same reviewer: both fixes verified, and **task 4b
+closes**. The reviewer re-ran the full suite (+32 checks, matching the commit); confirmed that
+`datom_write()` with `NA`, `NaN`, `Inf` or a missing date anywhere in custom metadata stops naming
+the field, before the check for other tables' unfinished work, leaving the clone, GitHub and
+storage unchanged, and that a write with no changes leaves the user's own unpushed commit
+unpushed; and that removing the new refusal, or restoring the old "push whenever ahead" gate,
+fails exactly the matching new test while a harmless edit fails nothing. Agreed with the owner's
+refusal over passing the version through. No new findings.
 
 **Task 4b's checkpoint review, 2026-11-06**, by another agent, of `5bdb7da`, evaluated with the
 owner one point at a time. The reviewer re-ran the full suite and three of the guard probes, and
@@ -61,7 +71,7 @@ project, and shown absent on `a4cd373`, before fixing:
 
 | Finding | Outcome |
 |---|---|
-| 1. An `NA` in custom metadata (`datom_write(conn, df, "dm", metadata = list(note = NA))`): `datom_member()` and `datom_parent()` cannot find the version the history names, and `datom_validate()` reports nothing (S1). The publish reads `metadata.json` back from the clone; `NA` is saved as `null`, which reads back as nothing, so the snapshot is filed under a version id no history names. Checked further here: only an `NA` saved as `null` (logical, text, alone or in text) changes the id; `NA_integer_`, `NA_real_`, `NaN` and `Inf` keep it but come back as the text `"NA"`, `"NaN"`, `"Inf"`; and since 4b the stored `metadata.json` said `{}` where it said `null` | **Reshaped by the owner: `datom_write()` refuses a missing value of any type, `NaN` and `Inf` anywhere in custom metadata** (`.datom_check_custom_storable()`, `datom_custom_value_unstorable`), naming each place and saying to leave the field out, as a set's tags already require. The review proposed passing the computed version to the write's publish; with the refusal every accepted value keeps its id through the trip to disk, so the publish keeps reading the file back. A table holding an `NA` from an earlier datom is documented only (design section 12). Requirements amended. The review's follow-up issue for the `NA` round trip is replaced by the refusal; one for **decimals rounded to four places** in storage and in the version id, found while checking, is drafted in `draft-issue-metadata-decimals.md` |
+| 1. An `NA` in custom metadata (`datom_write(conn, df, "dm", metadata = list(note = NA))`): `datom_member()` and `datom_parent()` cannot find the version the history names, and `datom_validate()` reports nothing (S1). The publish reads `metadata.json` back from the clone; `NA` is saved as `null`, which reads back as nothing, so the snapshot is filed under a version id no history names. Checked further here: only an `NA` saved as `null` (logical, text, alone or in text) changes the id; `NA_integer_`, `NA_real_`, `NaN` and `Inf` keep it but come back as the text `"NA"`, `"NaN"`, `"Inf"`; and since 4b the stored `metadata.json` said `{}` where it said `null` | **Reshaped by the owner: `datom_write()` refuses a missing value of any type, `NaN` and `Inf` anywhere in custom metadata** (`.datom_check_custom_storable()`, `datom_custom_value_unstorable`), naming each place and saying to leave the field out, as a set's tags already require. The review proposed passing the computed version to the write's publish; with the refusal every accepted value keeps its id through the trip to disk, so the publish keeps reading the file back. A table holding an `NA` from an earlier datom is documented only (design section 12). Requirements amended. The review's follow-up issue for the `NA` round trip is replaced by the refusal; one for **decimals rounded to four places** in storage and in the version id, found while checking, is filed as [#157](https://github.com/amashadihossein/datom/issues/157) |
 | 2. A write with nothing to save pushes the user's own unpushed commit (S1, a joint repo): heal's publish opened on "the clone is ahead" | **Taken**: heal's publish is decided by differing manifest rows only, and pushes only to finish a version of its own; with no upstream it still pushes first. Added by this session, taken: `datom_write(conn, name =)` pushes before its own upload of a stored `metadata.json` that differs while the manifest row agrees, which until then relied on heal's push. R3.2 amended; the repair's push of unpushed commits (R5.2) stays the repair's own, in task 7 |
 | Nit: the "manifest held back after a failure" probe reddens five tests, not the one recorded in `5bdb7da`'s message | **Taken**: the four others break a write at its metadata upload as their setup, and with the guard removed that broken write already published its manifest. All five are listed in task 4b's entry and the fix's commit |
 
@@ -320,8 +330,13 @@ public lane's; nothing in tasks 4a-11 changes.
   is done.
 
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
-(terms, decisions D1-D14) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
-reproduce today's failures; rerunning them after the relevant task is part of its acceptance.
+(terms, decisions D1-D14) and `design.md` (sections 1-4 at least, and the section the task names).
+The probe scripts in `research/` reproduce today's failures; rerunning them after the relevant task
+is part of its acceptance. Since task 4b every write starts with three calls in one place
+(`.datom_heal()`, `.datom_pull_before_write()`, `.datom_heal_publish()`; design section 4, "Who
+calls heal"), and unit tests on mock connections stub all three (`test-read-write.R` shows how);
+`test-heal.R` and `test-heal-publish.R` show the real-project fixtures. The newest guard-probe
+harness to copy is `research/task4b_guard_probes.R`.
 
 **Shared test helpers** (created in task 2, extended later): `tests/testthat/helper-interrupt.R`
 with a project fixture (folder git remote and local store, as in the probes), a second-clone fixture,
@@ -868,6 +883,13 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   - `R/sync.R`: `datom_pull()` gains `finish_merge = FALSE` (R3.9). When `TRUE`, the merge check
     finishes a merge that is not of the remote branch the way it finishes one that is; with nothing
     in progress it does nothing. Its help text is task 10's.
+  - **Timing in the two-clone tests** (noted 2026-11-06): since task 4a every write pulls before its
+    own work, so "two clones write without a pull in between" only happens when the other clone's
+    push lands after this write's opening pull and before its own push. The tests make that happen
+    inside the write, for example by wrapping this clone's `.datom_git_commit()` so that, once, the
+    other clone's commit is pushed right after this one commits (a once-only flag, since mocked
+    bindings apply to every call). `test-heal-publish.R`'s `hp_push_bringing_in()` and its "heal's
+    push does not pull" test use the same idea.
   - Tests (R7.7): two clones writing different tables without a pull in between, and a write whose push
     broke while the other clone pushed, both finish with a manifest naming both tables; `datom_pull()`
     resolves a manifest-only conflict; two clones writing the same table still stop, publishing
