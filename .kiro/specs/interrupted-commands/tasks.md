@@ -398,6 +398,20 @@ table's write inside a sync; `local_heal_counter()` and `local_stored_manifest_r
 with `local_sync_on_folder()` (`test-sync.R`), and a scan test that needs a manifest commits it
 (`commit_clone_manifest()`), since the scan reads the last commit.
 
+**Starting task 7 cold** (written 2026-11-07): task 6 is done, with its checkpoint review's fixes in
+`aa4a680` and `1718023`. The reviewer's check of `1718023` was still pending when this was
+written: any finding from it comes before task 7, and task 6 closes on the owner's word. Read this
+section's first paragraph and the task 6 reviews just below it, then task 7 in full, design section
+6 (the repair) and section 4's route table (the repair heals with `all = TRUE`), and requirements
+R5, R3.10 (the repair overrides the "version never seen" stop and says what it replaced) and R7.8.
+Task 7 settles one name itself: the shared helper for "which version the stored or clone files
+describe" (task 5's `.datom_clone_files_version()` gains the check that every field is one this
+build can place, and is renamed if it no longer reads only the clone). Two tests in
+`test-sync-heal.R` follow `datom_validate(fix = TRUE)` as the way out of a held-back manifest;
+they must still pass once the repair changes. The guard-probe harness to copy is
+`research/task6_guard_probes.R` (name probes on the command line to run only those). Baseline:
+6006 expectations, 0 failed, 0 skipped, at `1718023`.
+
 **Shared test helpers** (created in task 2, extended later): `tests/testthat/helper-interrupt.R`
 with a project fixture (folder git remote and local store, as in the probes), a second-clone fixture,
 and `local_break_at(step)`, which raises at one named step through a mocked binding. Names and
