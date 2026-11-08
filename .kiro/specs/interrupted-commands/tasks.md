@@ -65,8 +65,9 @@ same day (below). The reviewer's check of that fix (`1718023`) found nothing mor
 closed. Task 7 (the repair) done the same day (its entry below lists seven differences from the
 plan, the first being that `datom_validate(fix = TRUE)` now runs the repair whether or not a
 check found something). Its checkpoint review the same day (below) agreed with that difference
-and found one gap and one ordering fault, fixed the same day with three smaller points; the fixes
-await the reviewer's check.**
+and found one gap and one ordering fault, fixed the same day with three smaller points in
+`ba57f3a`, and the owner closed task 7 the same day. Task 8 (the git and config commands) is next,
+in a new session: "Starting task 8 cold" below.**
 
 **Task 7's checkpoint review, 2026-11-07**, by another agent, of `9284ca9`, read against the code.
 Points 1 and 2 reproduced here on throwaway projects before fixing; evaluated with the owner:
@@ -434,6 +435,41 @@ on a real project live in `test-repair.R`; `rp_mirror()` there answers `datom_wr
 by mocking the `interactive` and `readline` bindings `R/sync.R` holds for that purpose. Mock-folder
 tests of the repair stub heal, the pull and the push with `local_repair_on_folder()` (`test-sync.R`).
 The newest guard-probe harness is `research/task7_guard_probes.R`.
+
+**Starting task 8 cold** (written 2026-11-07, after task 7 closed at `ba57f3a`): read this
+section's first paragraph, then task 8 in full, requirements D9, D10, R3.5, R3.6 and R7.2, and
+design section 4 ("0. The merge check", and the paragraph after its route table on
+`datom_repo_commit()` and the four push commands) and section 10's note that R3.6's message is
+task 8's. What the code holds today, checked 2026-11-07:
+- `datom_repo_commit()` (`R/repo.R`) validates its arguments, checks the remote (push only) and the
+  branch, then stages `paths %||% "."` through `.datom_git_commit()` and pushes with
+  `.datom_git_push()`, which pulls first and so meets the merge check. Nothing runs the merge check
+  before staging, and nothing looks at datom's own files: both are task 8's. With `push = FALSE`
+  no pull runs at all.
+- `datom_repo_push()`, `datom_repo_attach_governance()` and `datom_repo_set_data_store()` push
+  through `.datom_git_push()` and say nothing about datom versions in what they push.
+- Helpers to reuse, all in `R/heal.R`: `.datom_check_merge(path)`; `.datom_unfinished_files(conn)`
+  (datom's own files differing from HEAD) and `.datom_unfinished_owners(conn, files)` (whose they
+  are, the manifest's changed rows included); `.datom_pushed_artifacts(path)` (the artifacts whose
+  datom files the unpushed commits change, from local refs; names nothing with no upstream branch),
+  which R3.6's message is built on, so it needs no storage read.
+- **An existing test pins the behaviour D9 reverses**: "datom_repo_commit(paths = NULL) sweeps in
+  datom's own uncommitted files, and the repair reaches what it can (AC17)" in
+  `test-foreign-content.R`. Task 8 rewrites it to the stop and names it in the commit message.
+- **One open point to settle with the owner before any code**, one point: what counts as "an
+  explicit path naming one" of datom's files (R3.5). Checked 2026-11-07: `.datom_git_commit()`
+  refuses a path that does not exist before `git2r::add()`, so a glob never reaches git; the
+  candidates are the file itself, or the file or a folder above it (`paths = "dm"`, `"."`). Raise
+  with it one fact found while checking: a commit stages `paths` on top of whatever is already
+  staged, so a datom file the user staged earlier is committed by `datom_repo_commit(paths =
+  "build.R")` too. Whether the stop also looks at already-staged datom files is part of the point.
+- `research/task7_guard_probes.R` is the harness to copy; real-project fixtures are in
+  `helper-interrupt.R` (`local_interrupt_project()`, `local_break_at("push")`, `snapshot_*()`),
+  and `test-heal-publish.R`'s "a write with nothing to save leaves the user's own unpushed commit
+  alone" shows `datom_repo_commit(paths =, push = FALSE)` on a real project.
+- **After task 8 comes the purity audit on a more capable model** (tasks 2-8, flagged at
+  planning): say so at task 8's checkpoint and stop.
+Baseline: 6134 expectations, 0 failed, 0 skipped, at `ba57f3a`.
 
 **Shared test helpers** (created in task 2, extended later): `tests/testthat/helper-interrupt.R`
 with a project fixture (folder git remote and local store, as in the probes), a second-clone fixture,
