@@ -522,9 +522,8 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
 
 #' Commits on This Branch the Remote Does Not Have
 #'
-#' The ahead half of the count `.datom_check_git_current()` already computes for
-#' its behind half: `git2r::ahead_behind()` element `[[1]]` is ahead, `[[2]]` is
-#' behind. No new git machinery.
+#' The ahead half of `git2r::ahead_behind()`: element `[[1]]` is ahead, `[[2]]`
+#' is behind.
 #'
 #' **Does not fetch.** The comparison is against the cached remote-tracking ref,
 #' so a stale ref can only cause an unnecessary push -- and a push pulls first
@@ -661,14 +660,11 @@ datom_repo_commit <- function(conn, message, paths = NULL, push = TRUE) {
   # `.datom_git_branch()` and is reached only from `.datom_git_push()`, so with
   # `push = FALSE` nothing would check it.
   #
-  # Do NOT delete this as duplication of `.datom_check_git_current()`. That
-  # function does reach `.datom_git_branch()`, but only after four early returns
-  # -- no remote, the fetch failed, no upstream, and local SHA identical to
-  # upstream -- so it guards a detached HEAD only when you are already out of
-  # sync with the remote. A detached HEAD while up to date is the ordinary shape
-  # of the mistake and passes straight through. This is also why the guard earns
-  # a line at a low rate: a commit onto a detached HEAD succeeds, prints a SHA,
-  # and becomes unreachable the moment you switch branches -- and with
+  # Do NOT delete this as duplication of the push's own check: a detached HEAD
+  # while up to date is the ordinary shape of the mistake, and nothing else on
+  # this path looks at the branch before the commit. The guard earns its line at
+  # a low rate because a commit onto a detached HEAD succeeds, prints a SHA, and
+  # becomes unreachable the moment you switch branches -- and with
   # `push = FALSE` there is no later push failure to reveal it.
   branch_name <- .datom_git_branch(conn$path)
 

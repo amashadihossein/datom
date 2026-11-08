@@ -39,7 +39,7 @@ main <- function() {
   suppressMessages(datom_pull(you))
   out <- capture.output(r <- datom_sync(you, m), type = "message")
   cat("your sync result:", r$result, "\n")
-  cat("your sync said:", paste(grep("No changes|synced|Wrote",
+  cat("your sync said:", paste(grep("No changes|synced|Wrote|up to date",
                                     cli::ansi_strip(out), value = TRUE), collapse = " | "), "\n")
   hist <- datom_history(you, "dm")
   cat("versions of dm:", nrow(hist), "\n")

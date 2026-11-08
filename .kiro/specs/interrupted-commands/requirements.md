@@ -65,6 +65,9 @@ describe as the document's own when every top-level field is one this build can 
 stored history names it, otherwise the version the history records; the history lookup alone
 named the wrong version after custom metadata was set back to earlier values, so the check would
 have reported a consistent store that its fix could not clear.
+**Amended 2026-11-07** by the owner, settling task 6's open point: R4.6 added (a table's write that
+fails partway after changing the clone stops the sync; `continue_on_error = TRUE` carries on only
+past failures that leave the clone untouched).
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -470,6 +473,15 @@ writes nothing and is unchanged.
 5. `?datom_sync_manifest` defines "published" where it lists the statuses, and says that `unpushed`
    looks at the clone only: a table pushed but not yet published shows `unchanged` until the next
    `datom_sync()` or write publishes it.
+6. **A write that fails partway stops the sync** (added 2026-11-07, owner, task 6's open point).
+   Under `continue_on_error = TRUE`, when one table's write fails after it began changing the clone
+   (datom files left uncommitted, or a commit made), `datom_sync()` writes no later table: a later
+   table's commit or manifest upload would otherwise carry the failed table's unfinished row into
+   git or storage. The rows not attempted come back `"skipped"`, with the reason in `error`, and a
+   message names the table and says to run the scan and the sync again, which finishes it (R2) and
+   syncs the rest. A failure that leaves the clone untouched (a file that does not import, a refused
+   data frame, the data file upload) still lets the sync carry on. `?datom_sync` says so under
+   `continue_on_error`.
 
 ### R5. The repair: `datom_validate(fix = TRUE)`
 

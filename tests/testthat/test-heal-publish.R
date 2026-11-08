@@ -134,16 +134,11 @@ test_that("a write with nothing to save leaves the user's own unpushed commit al
 test_that("a write reads the stored manifest once (R3.4)", {
   fx <- local_interrupt_project()
   hp_write(fx$conn, "dm")
-  reads <- 0L
-  real <- get(".datom_storage_read_json", envir = asNamespace("datom"))
-  local_mocked_bindings(.datom_storage_read_json = function(conn, key) {
-    if (identical(key, ".metadata/manifest.json")) reads <<- reads + 1L
-    real(conn, key)
-  })
+  reads <- local_stored_manifest_reads()
 
   hp_write(fx$conn, "dm", 5L, "b")
 
-  expect_identical(reads, 1L)
+  expect_identical(reads(), 1L)
 })
 
 test_that("a revert to earlier content, then storage failing after the push, is published by the re-run (S4)", {

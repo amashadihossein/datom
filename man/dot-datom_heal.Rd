@@ -67,7 +67,9 @@ naming each artifact reset, since that write is not run again.
 \item \strong{another artifact's unfinished work}: a write never acts on an artifact it
 is not writing. It stops before anything changes, naming the artifact and
 \code{datom_validate(fix = TRUE)};
-\item a merge in progress: the merge check stops first (\code{\link[=.datom_check_merge]{.datom_check_merge()}});
+\item a merge in progress: the merge check runs first and stops, unless it is a
+merge of the remote branch with nothing but the manifest left in conflict,
+which it finishes (\code{\link[=.datom_check_merge]{.datom_check_merge()}});
 \item every file datom does not own: \code{project.yaml}, a set write's
 \code{include_paths}, \verb{input_files/}, and a user's own \code{app/metadata.json} (only
 folders the manifest names, or whose \code{metadata.json} declares a datom

@@ -200,3 +200,49 @@ git_commit_files <- function(path, files, message, push = TRUE) {
   }
   invisible(as.character(commit$sha))
 }
+
+
+#' Count calls to heal's two halves, the reset and the publish.
+#'
+#' Each call passes through to the real function.
+#'
+#' @param env Frame the counting lasts for.
+#' @return A function returning `c(reset = , publish = )`.
+local_heal_counter <- function(env = parent.frame()) {
+  calls <- c(reset = 0L, publish = 0L)
+  real_reset <- get(".datom_heal", envir = asNamespace("datom"))
+  real_publish <- get(".datom_heal_publish", envir = asNamespace("datom"))
+  testthat::local_mocked_bindings(
+    .datom_heal = function(...) {
+      calls[["reset"]] <<- calls[["reset"]] + 1L
+      real_reset(...)
+    },
+    .datom_heal_publish = function(...) {
+      calls[["publish"]] <<- calls[["publish"]] + 1L
+      real_publish(...)
+    },
+    .env = env
+  )
+  function() calls
+}
+
+
+#' Count reads of the stored manifest, `.metadata/manifest.json`.
+#'
+#' Each read passes through to the real function (requirements R3.4: finding
+#' unpublished work costs one read per command).
+#'
+#' @param env Frame the counting lasts for.
+#' @return A function returning the number of reads so far.
+local_stored_manifest_reads <- function(env = parent.frame()) {
+  reads <- 0L
+  real <- get(".datom_storage_read_json", envir = asNamespace("datom"))
+  testthat::local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (identical(key, ".metadata/manifest.json")) reads <<- reads + 1L
+      real(conn, key)
+    },
+    .env = env
+  )
+  function() reads
+}

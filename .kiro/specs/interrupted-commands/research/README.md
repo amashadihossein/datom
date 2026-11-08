@@ -31,6 +31,9 @@ Rerun from the repo root, for example:
   `test-interrupted-set.R` checks the stored manifest).
 - `sync_and_manifest_probe.R`: `datom_sync()` broken at the push, then re-scanned and re-synced; and
   a write broken at the manifest step, then compared with what a reader's `datom_list()` shows.
+  Rerun after task 6 (2026-11-07): the first sync's row is `error`, the re-scan says `unpushed`, the
+  re-sync's row `success`, and a reader reads the table; the write broken at its manifest upload
+  re-runs as `none`, and the reader's list names the current version.
 - `other_command_probe.R`: a write of `dm` broken at its commit or its push, then a write of `lb`;
   reads GitHub's copy of the manifest and of `dm/metadata.json` with the git CLI. Updated in task
   4a (2026-11-04): a row counts only if its break fired, and it reports whether `lb`'s write
@@ -58,7 +61,10 @@ Rerun from the repo root, for example:
   others alone, see an untracked directory. All four work on git2r 0.36.2.
 - `stale_preview_probe.R` (DD3): you build a sync preview, a colleague imports the same file and
   pushes, you pull and sync with the old preview. Result: the write finds no change, stores nothing,
-  and the row reports `success` (its line wrongly says "synced (new)").
+  and the row reports `success` (its line wrongly says "synced (new)"). Rerun after task 6
+  (2026-11-07), with "up to date" added to the lines it prints: the row is `success`, the sync says
+  `"dm" was already up to date` and no longer "synced (new)", one version of `dm`, no commit of
+  yours.
 - `publish_race_probe.R` (design DD4): you push `dm` v2; before your publish runs, a colleague
   pulls, writes v3, pushes and publishes it; then your publish lands. Result on today's code: GitHub's
   latest is v3, storage's current is v2, and a reader gets v2.
@@ -171,4 +177,16 @@ Added 2026-11-06 in task 5:
   publish puts a manifest naming `t2`'s new version in storage beside `t2`'s old `metadata.json`,
   a reader gets the old version, and a re-run publishes nothing for `t2`; after a commit break,
   `t3`'s commit takes `t2`'s uncommitted manifest row and publishes it. Task 6's open point
-  (`../design.md` section 10, item 7).
+  (`../design.md` section 10, item 7), settled by the owner on 2026-11-07: the sync stops after
+  such a write. The probe calls `datom_write()` directly, so its output is the same after task 6;
+  `tests/testthat/test-sync-heal.R` covers the sync itself.
+
+Added 2026-11-07 in task 6:
+
+- `task6_guard_probes.R`: the harness with task 6's probes (each of the stop's two signs, and the
+  stop made to fire on every failure; the loop's break; the scan reading the last commit; the
+  `unpushed` status, and measuring it from the commit shared with the remote; the format check
+  before the sync's one heal; heal once per sync; heal's reset limited to the rows the sync writes;
+  an `unpushed` row reported `success`). Same usage as task 5's; the whole sweep runs
+  `test-sync.R` and `test-sync-heal.R` once per probe and takes about 25 minutes. Results are in
+  task 6's commit message.

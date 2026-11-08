@@ -530,11 +530,20 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 #'
 #' Looks at the files in the project's `input_files/` folder and returns one
 #' row per file, saying whether it is new, changed, unchanged since it was last
-#' synced, or in a format datom cannot read. Nothing is written. Review the
-#' result, drop any rows you do not want, then pass it to [datom_sync()].
+#' synced, saved but not yet pushed, or in a format datom cannot read. Nothing
+#' is written. Review the result, drop any rows you do not want, then pass it to
+#' [datom_sync()].
 #'
 #' A file counts as changed when its bytes differ from the file last synced
-#' under that name.
+#' under that name, as recorded in the clone's last commit. A sync that stopped
+#' before committing a table therefore leaves it `changed`, and the next
+#' [datom_sync()] saves it again.
+#'
+#' The scan reads this clone only: no network, no storage. It cannot see what
+#' readers see, so a table pushed to GitHub but not yet **published** (readers
+#' get a version once its metadata and the project's manifest in storage name
+#' it) shows `unchanged`, and the next [datom_sync()], or a write of that table,
+#' publishes it.
 #'
 #' Files whose format is outside datom's ingestion allowlist (flat tabular
 #' formats only) are flagged `"unsupported_format"` up front, without blocking
@@ -591,8 +600,18 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 #' version for the whole edit, which you can look at or add to first.
 #'
 #' @return On an ordinary repo, a data frame with columns: name, file, format,
-#'   original_file_sha, status (one of `"new"`, `"changed"`, `"unchanged"`,
-#'   `"unsupported_format"`).
+#'   original_file_sha, status, one of:
+#'   * `"new"` -- no table of that name has been saved;
+#'   * `"changed"` -- the file differs from the one last synced;
+#'   * `"unpushed"` -- the file matches, but the version saved from it is in
+#'     commits this clone has not pushed (a sync that stopped at its push, for
+#'     example), so readers cannot see it yet. [datom_sync()] pushes and
+#'     publishes it without reading the file again;
+#'   * `"unchanged"` -- the file matches, and the version saved from it has been
+#'     pushed. It is published too, unless an earlier sync stopped after its
+#'     push; the next [datom_sync()] then publishes it;
+#'   * `"unsupported_format"` -- the format is outside datom's ingestion
+#'     allowlist.
 #'
 #'   On a product repo, a data frame with columns `project`, `name`, `kind`,
 #'   `version_from` (`NA` for a new artifact), `version_to` (`NA` for a member that
@@ -709,12 +728,14 @@ datom_sync_manifest <- function(conn,
     ))
   }
 
-  # Read current manifest (local git copy). .datom_read_manifest() also checks
-  # the declared schema version, because the clone can be ahead of this build (a
-  # collaborator wrote with a newer datom and this developer pulled) and the
-  # comparison below would otherwise run against a shape this build does not
-  # understand.
-  read <- .datom_read_manifest(conn, "clone")
+  # The manifest as last committed, not the working tree's: a write that stopped
+  # before its commit has already rewritten the working tree's row, and the
+  # table must still show as changed so the sync writes it again (R4.1).
+  # .datom_read_manifest() also checks the declared schema version, because the
+  # clone can be ahead of this build (a collaborator wrote with a newer datom and
+  # this developer pulled) and the comparison below would otherwise run against a
+  # shape this build does not understand.
+  read <- .datom_read_manifest(conn, "head")
 
   # No manifest yet means every input file is new. A manifest that exists but
   # will not parse keeps failing exactly as before -- re-signalled unchanged
@@ -757,13 +778,26 @@ datom_sync_manifest <- function(conn,
   result <- do.call(rbind, rows)
   rownames(result) <- NULL
 
+  # A table whose input file matches its last commit, but whose version is in
+  # commits not yet pushed (a sync or write that stopped at its push). Read from
+  # the clone alone: no fetch and no storage read (R4.2). Asked only when some
+  # row is unchanged, which a repo with no commits never has.
+  unchanged <- result$status == "unchanged"
+  if (any(unchanged)) {
+    unpushed <- unchanged & result$name %in% .datom_pushed_artifacts(conn$path)
+    result$status[unpushed] <- "unpushed"
+  }
+
   n_new <- sum(result$status == "new")
   n_changed <- sum(result$status == "changed")
+  n_unpushed <- sum(result$status == "unpushed")
   n_unchanged <- sum(result$status == "unchanged")
   n_unsupported <- sum(result$status == "unsupported_format")
 
+  # The common scan's line is unchanged; `unpushed` is named only when present.
+  unpushed_part <- if (n_unpushed > 0L) paste0(", ", n_unpushed, " unpushed") else ""
   cli::cli_alert_info(
-    "Scanned {nrow(result)} file{?s}: {n_new} new, {n_changed} changed, {n_unchanged} unchanged."
+    "Scanned {nrow(result)} file{?s}: {n_new} new, {n_changed} changed{unpushed_part}, {n_unchanged} unchanged."
   )
 
   if (n_unsupported > 0L) {
@@ -790,6 +824,16 @@ datom_sync_manifest <- function(conn,
 #' as `result = "error"` with the recourse in the `error` column; the rest of
 #' the batch still processes.
 #'
+#' **A sync that stops partway finishes when run again.** Before the first
+#' table it brings the clone up to date with GitHub, and finishes any table in
+#' the preview that an earlier run left unfinished: it pushes and publishes a
+#' table saved but not pushed (`"unpushed"` in the preview) or pushed but not
+#' published, and sets back the files of a table it is about to write again.
+#' If another table has unfinished work, or a preview row it does not write has
+#' changes to datom's files that were never committed, it stops before
+#' changing anything and names [datom_validate()]`(fix = TRUE)`. A failed
+#' fetch stops it too.
+#'
 #' On a product repo (`mode: product`) it applies a preview of the repo's set
 #' instead -- see "On a product repo" below.
 #'
@@ -799,9 +843,15 @@ datom_sync_manifest <- function(conn,
 #'   product repo, the set preview: `project`, `name`, `kind`, `version_from`,
 #'   `version_to`, `status`. Any subset of its rows will do.
 #' @param continue_on_error If `TRUE` (default), continues processing
-#'   remaining tables when one fails. If `FALSE`, stops on first error. Not
-#'   accepted on a product repo, where one failure stops the call and nothing
-#'   has been written.
+#'   remaining tables when one fails, as long as the failure left the clone
+#'   untouched: a file that does not import, a data frame datom refuses, or the
+#'   data file's upload. A table whose write fails after it has begun changing
+#'   the clone (written its files, or committed, for example on a dropped
+#'   connection at the push) stops the sync there: the tables after it come
+#'   back `"skipped"`, because their writes would carry its unfinished version
+#'   into git or storage. Run the scan and the sync again to finish it and sync
+#'   the rest. If `FALSE`, stops on first error. Not accepted on a product
+#'   repo, where one failure stops the call and nothing has been written.
 #' @param sources On a product repo only, and required there: one `datom_conn`,
 #'   or a list of them, for the projects named by the rows being applied -- the
 #'   same connections the preview was built with. Refused on an ordinary repo.
@@ -843,6 +893,12 @@ datom_sync_manifest <- function(conn,
 #'
 #' @return On an ordinary repo, the manifest data frame augmented with `result`
 #'   and `error` columns. `result` is `"success"`, `"skipped"`, or `"error"`.
+#'   An `"unpushed"` row, and an `"unchanged"` row whose table this call
+#'   published for an earlier run, come back `"success"` without the file being
+#'   read. A row whose write found nothing to save (a teammate synced the same
+#'   file first) is `"success"` too, and the call says it was already up to
+#'   date. Rows not attempted because the sync stopped carry the reason in
+#'   `error`.
 #'
 #'   On a product repo, the updated `datom_set`, with what changed appended to
 #'   its `datom_edits` attribute. Its `version` and `data_sha` are emptied when
@@ -942,13 +998,39 @@ datom_sync <- function(conn,
 
   .datom_check_rio()
 
-  # --- stale-state check ---
-  .datom_check_git_current(conn$path, pat = conn$github_pat)
+  # --- the start of every write: the format check, heal and the pull ---
+  # Once for the whole batch, so the sync pulls and reads the stored manifest
+  # once (R3.7, R3.4), and each table's write below skips them (`.healed`).
+  # Every table in the preview is the sync's own: heal pushes and publishes any
+  # of them an earlier run committed and storage lacks (an `unpushed` row, or one
+  # pushed but not published), and puts back the uncommitted files of the rows
+  # it writes again (`new`, `changed`). Unfinished work on any other table, or
+  # uncommitted edits of a row it does not write, stops the sync here, before
+  # anything changes (R4.4). The format check comes first, on every table heal
+  # may act on, as `datom_write()`'s door does for its one table.
+  own <- unique(manifest$name)
+  rewrite <- unique(manifest$name[manifest$status %in% c("new", "changed")])
+  .datom_check_write_entry(conn, own)
+  healed <- .datom_heal(conn, artifact = own, rewrite = rewrite)
+  .datom_pull_before_write(conn, reset = healed$reset)
+  published <- names(.datom_heal_publish(conn, artifact = own)$published)
 
   # --- filter to actionable rows ---
   actionable <- manifest$status %in% c("new", "changed")
   manifest$result <- ifelse(actionable, NA_character_, "skipped")
   manifest$error <- NA_character_
+
+  # An `unpushed` row is work, and heal has just done it: pushed and published
+  # without importing the file again (R4.3). So is an `unchanged` row whose
+  # table heal published (pushed by an earlier run, not published). Heal's own
+  # message has named each one it published.
+  finished <- manifest$status == "unpushed" |
+    (manifest$status == "unchanged" & manifest$name %in% published)
+  manifest$result[finished] <- "success"
+  purrr::walk(
+    setdiff(manifest$name[manifest$status == "unpushed"], published),
+    function(nm) cli::cli_alert_info("{.val {nm}} was already up to date.")
+  )
 
   # Non-allowlisted formats are reported as errors carrying the same recourse
   # .datom_import_file() would abort with -- one bad file does not block its
@@ -976,12 +1058,17 @@ datom_sync <- function(conn,
 
   # --- process each actionable table ---
   todo_idx <- which(actionable)
+  stopped_at <- NULL
 
   for (i in todo_idx) {
     tbl_name <- manifest$name[i]
     tbl_file <- manifest$file[i]
     tbl_format <- manifest$format[i]
     tbl_original_file_sha <- manifest$original_file_sha[i]
+
+    # For telling, if this table's write fails, whether it had begun changing
+    # the clone (R4.6).
+    head_before <- .datom_clone_head(conn$path)
 
     tryCatch({
       # Import file -> data frame
@@ -997,7 +1084,8 @@ datom_sync <- function(conn,
         version_sha = tbl_data_sha
       ))
 
-      # Write via datom_write (handles manifest update internally)
+      # Write via datom_write (handles manifest update internally). Heal and the
+      # pull ran once above, for the whole batch.
       write_result <- datom_write(
         conn,
         data = data,
@@ -1006,29 +1094,59 @@ datom_sync <- function(conn,
         .source_lineage = self_lineage,
         .table_type = "imported",
         .original_file_sha = tbl_original_file_sha,
-        .original_format = tbl_format
+        .original_format = tbl_format,
+        .healed = TRUE
       )
 
       manifest$result[i] <- "success"
 
-      cli::cli_alert_success("{.val {tbl_name}} synced ({manifest$status[i]}).")
+      # A stale preview (DD3): a teammate imported the same file, the pull above
+      # brought it in, and the write found nothing to save.
+      if (identical(write_result$action, "none")) {
+        cli::cli_alert_info("{.val {tbl_name}} was already up to date.")
+      } else {
+        cli::cli_alert_success("{.val {tbl_name}} synced ({manifest$status[i]}).")
+      }
 
     }, error = function(e) {
       manifest$result[i] <<- "error"
       # ansi_strip: this is a data frame column the caller prints, so cli's
       # colour and hyperlink escape codes would show up as literal text.
       manifest$error[i] <<- cli::ansi_strip(conditionMessage(e))
+      left_changes <- .datom_write_left_changes(conn, head_before)
 
-      if (continue_on_error) {
-        cli::cli_alert_danger("Failed to sync {.val {tbl_name}}: {conditionMessage(e)}")
-      } else {
+      if (!continue_on_error) {
+        hint <- if (left_changes) {
+          "Run {.code datom_sync(conn, datom_sync_manifest(conn))} again to \\
+           finish {.val {tbl_name}} and sync the rest."
+        } else {
+          "Set {.code continue_on_error = TRUE} to skip failures."
+        }
         cli::cli_abort(c(
           "Failed to sync {.val {tbl_name}}.",
           "x" = conditionMessage(e),
-          "i" = "Set {.code continue_on_error = TRUE} to skip failures."
+          "i" = hint
         ))
       }
+
+      cli::cli_alert_danger("Failed to sync {.val {tbl_name}}: {conditionMessage(e)}")
+      if (left_changes) stopped_at <<- tbl_name
     })
+
+    # The failed write had begun changing the clone, so no later table may be
+    # written (R4.6): its commit would take this table's uncommitted manifest
+    # row, and its manifest upload would name a version storage lacks.
+    if (!is.null(stopped_at)) break
+  }
+
+  not_run <- todo_idx[is.na(manifest$result[todo_idx])]
+  if (!is.null(stopped_at) && length(not_run) > 0L) {
+    manifest$result[not_run] <- "skipped"
+    manifest$error[not_run] <- cli::ansi_strip(cli::format_inline(
+      "Not attempted: the sync stopped after the write of {.val {stopped_at}} \\
+       failed partway."
+    ))
+    .datom_inform_sync_stopped(stopped_at, manifest$name[not_run])
   }
 
   # --- summary ---
@@ -1041,6 +1159,35 @@ datom_sync <- function(conn,
   )
 
   manifest
+}
+
+
+#' Say That a Sync Stopped After a Write That Failed Partway
+#'
+#' Requirements R4.6. The way out was traced for each place a write can stop
+#' after changing the clone: before its commit, the scan shows the table
+#' `changed` and heal puts its files back before the sync writes it again; at the
+#' push, the scan shows it `unpushed`, and heal pushes and publishes it; after
+#' the push, the scan shows it `unchanged`, and heal publishes it.
+#'
+#' @param stopped_at The table whose write failed.
+#' @param not_run The tables after it, not attempted.
+#' @return Invisibly `NULL`.
+#' @keywords internal
+.datom_inform_sync_stopped <- function(stopped_at, not_run) {
+  cli::cli_inform(
+    c(
+      "x" = "Stopped the sync after the write of {.val {stopped_at}} failed \\
+             partway: it had already changed this clone, and a later table's \\
+             write would have carried its unfinished version into git or \\
+             storage.",
+      "i" = "Not attempted: {.val {not_run}}.",
+      "i" = "Run {.code datom_sync(conn, datom_sync_manifest(conn))} again: it \\
+             finishes {.val {stopped_at}} and syncs the rest."
+    ),
+    class = "datom_sync_stopped"
+  )
+  invisible(NULL)
 }
 
 
@@ -1292,9 +1439,12 @@ datom_sync <- function(conn,
 #'
 #' @param conn A `datom_conn` object.
 #' @param scope `"storage"` for the copy in data storage
-#'   (`.metadata/manifest.json`), `"clone"` for the git-tracked copy
-#'   (`.datom/manifest.json`). Both exist; they can differ, and which one a
-#'   caller wants is a real choice rather than a default.
+#'   (`.metadata/manifest.json`), `"clone"` for the git-tracked copy as the
+#'   working tree holds it (`.datom/manifest.json`), `"head"` for that copy as
+#'   committed in HEAD. They can differ, and which one a caller wants is a real
+#'   choice rather than a default: the scan compares input files with what was
+#'   last committed, so a write that stopped before its commit leaves the table
+#'   `changed` rather than `unchanged` ([datom_sync_manifest()]).
 #' @param operation What the caller is about to do with the document --
 #'   `"read"` (default) or `"write"`. Passed through to
 #'   [.datom_check_schema_version()], where it only selects a word in the
@@ -1303,7 +1453,9 @@ datom_sync <- function(conn,
 #' @return A list with:
 #'   * `ok` -- `TRUE` when the manifest was read and parsed.
 #'   * `absent` -- `TRUE` only when the document is *known* not to exist. That
-#'     is decided for `scope = "clone"`, where testing a local path is free.
+#'     is decided for `scope = "clone"` and `scope = "head"`, where looking is
+#'     free (for `"head"`, HEAD holds no manifest, or the path is not a git
+#'     repo).
 #'     For `scope = "storage"` it is always `FALSE`, meaning "not known to be
 #'     absent": separating a missing object from an unreachable store would
 #'     cost an extra request on every read and no caller distinguishes them.
@@ -1323,22 +1475,30 @@ datom_sync <- function(conn,
 #'     re-deriving the comparison or reading the file twice.
 #' @keywords internal
 .datom_read_manifest <- function(conn,
-                                 scope = c("storage", "clone"),
+                                 scope = c("storage", "clone", "head"),
                                  operation = c("read", "write")) {
   scope <- match.arg(scope)
   operation <- match.arg(operation)
 
-  source <- if (scope == "storage") ".metadata/manifest.json" else ".datom/manifest.json"
+  source <- switch(scope,
+    storage = ".metadata/manifest.json",
+    clone = ".datom/manifest.json",
+    head = ".datom/manifest.json (last commit)"
+  )
+  absent <- list(
+    ok = FALSE, absent = TRUE, manifest = NULL, error = NULL,
+    declared = NA_integer_
+  )
 
-  if (scope == "clone") {
-    manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
-    if (!fs::file_exists(manifest_path)) {
-      return(list(
-        ok = FALSE, absent = TRUE, manifest = NULL, error = NULL,
-        declared = NA_integer_
-      ))
-    }
+  if (scope == "clone" &&
+      !fs::file_exists(fs::path(conn$path, ".datom", "manifest.json"))) {
+    return(absent)
   }
+
+  head_text <- if (scope == "head") {
+    .datom_git_head_file(conn$path, ".datom/manifest.json")
+  }
+  if (scope == "head" && is.null(head_text)) return(absent)
 
   # The handler covers the read ONLY. The schema check below must stay outside
   # it: inside, a refusal would come back as an IO failure and every caller's
@@ -1347,11 +1507,13 @@ datom_sync <- function(conn,
     list(
       ok = TRUE,
       absent = FALSE,
-      manifest = if (scope == "storage") {
-        .datom_storage_read_json(conn, ".metadata/manifest.json")
-      } else {
-        jsonlite::read_json(fs::path(conn$path, ".datom", "manifest.json"))
-      },
+      # `fromJSON(simplifyVector = FALSE)` is what `read_json()` does to a file,
+      # so the committed copy parses exactly as the working tree's would.
+      manifest = switch(scope,
+        storage = .datom_storage_read_json(conn, ".metadata/manifest.json"),
+        clone = jsonlite::read_json(fs::path(conn$path, ".datom", "manifest.json")),
+        head = jsonlite::fromJSON(head_text, simplifyVector = FALSE)
+      ),
       error = NULL,
       declared = NA_integer_
     ),

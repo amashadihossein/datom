@@ -647,11 +647,12 @@
   )
 
   # git2r::push() does not set upstream tracking. Without it, .datom_git_pull()
-  # and .datom_check_git_current() no-op (their branch_get_upstream() is NULL),
-  # so on the initializing developer's machine datom_pull() silently does
-  # nothing and the stale-state guard always passes. Set upstream after a
-  # successful push. Fetch first so the remote-tracking ref exists. Any failure
-  # here is warn-only -- it must not fail the push that already succeeded.
+  # merges nothing and .datom_git_ahead() cannot count (their
+  # branch_get_upstream() is NULL), so on the initializing developer's machine
+  # datom_pull() silently does nothing and every write pushes before it checks.
+  # Set upstream after a successful push. Fetch first so the remote-tracking ref
+  # exists. Any failure here is warn-only -- it must not fail the push that
+  # already succeeded.
   upstream <- tryCatch(
     git2r::branch_get_upstream(git2r::repository_head(repo)),
     error = function(e) NULL
@@ -1100,104 +1101,6 @@
     ),
     class = "datom_pull_blocked"
   )
-}
-
-
-#' Check Local Branch is Current with Remote
-#'
-#' Fetches from the remote and compares local HEAD SHA against the upstream
-#' HEAD SHA. If the local branch is behind, aborts with a clear message
-#' telling the developer to pull first.
-#'
-#' Does NOT auto-pull - lets the developer decide how to resolve.
-#'
-#' If the fetch fails (offline, unreachable remote), this warns and returns
-#' `TRUE` without comparing anything: the cached remote-tracking refs may be
-#' arbitrarily stale, so acting on them would abort an offline developer for
-#' being behind a remote they cannot reach. The backstop is
-#' `.datom_git_push()`, which pulls and aborts if the push is rejected, so a
-#' write cannot land on storage from a stale base.
-#'
-#' @param path Repository path.
-#' @param pat GitHub personal access token. Passed to
-#'   `.datom_git_credentials()`. NULL means unauthenticated.
-#' @return Invisible `TRUE` if the local branch is up to date.
-#' @keywords internal
-.datom_check_git_current <- function(path, pat = NULL) {
-  .datom_check_git2r()
-
-  repo <- tryCatch(
-    git2r::repository(path),
-    error = function(e) {
-      cli::cli_abort("Not a git repository: {.path {path}}")
-    }
-  )
-
-  remotes <- git2r::remotes(repo)
-  if (length(remotes) == 0L) return(invisible(TRUE))
-
-  remote_name <- remotes[[1L]]
-  remote_url <- git2r::remote_url(repo, remote_name)
-  cred <- .datom_git_credentials(remote_url, pat = pat)
-
-  # Fetch to update remote refs (cheap -- no merge)
-  #
-  # The fetch outcome is captured and acted on OUTSIDE the handler. A bare
-  # `return()` inside the error function returns from the handler, not from
-  # this function, so execution would continue and compare HEAD against
-  # whatever the last successful fetch cached -- aborting an offline user for
-  # being "behind" a remote they cannot reach.
-  fetched <- tryCatch(
-    {
-      git2r::fetch(repo, name = remote_name, credentials = cred)
-      TRUE
-    },
-    error = function(e) {
-      # Network errors should not block offline work
-      cli::cli_alert_warning("Could not fetch from remote: {conditionMessage(e)}")
-      FALSE
-    }
-  )
-
-  # Cached upstream refs may be arbitrarily stale, so they are not compared
-  if (!fetched) return(invisible(TRUE))
-
-  # Check if upstream branch exists
-  upstream_ref <- tryCatch(
-    git2r::branch_get_upstream(git2r::repository_head(repo)),
-    error = function(e) NULL
-  )
-
-  if (is.null(upstream_ref)) return(invisible(TRUE))
-
-  # Compare SHAs
-  local_sha <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
-  upstream_sha <- as.character(git2r::branch_target(upstream_ref))
-
-  if (identical(local_sha, upstream_sha)) return(invisible(TRUE))
-
-  # Are we behind? Check if upstream commit is an ancestor of local HEAD
-  # If local is strictly behind (upstream has commits we don't have)
-  branch_name <- .datom_git_branch(path)
-
-  # Count how far behind we are via log
-  behind <- tryCatch({
-    ahead_behind <- git2r::ahead_behind(
-      git2r::revparse_single(repo, "HEAD"),
-      git2r::revparse_single(repo, upstream_ref$name)
-    )
-    ahead_behind[[2]]  # behind count
-  }, error = function(e) NA_integer_)
-
-  if (is.na(behind) || behind > 0L) {
-    behind_msg <- if (is.na(behind)) "an unknown number of" else behind
-    cli::cli_abort(c(
-      "Local git branch {.val {branch_name}} is behind remote by {behind_msg} commit{?s}.",
-      "i" = "Run {.fn datom_pull} or {.code git pull} to update before syncing."
-    ))
-  }
-
-  invisible(TRUE)
 }
 
 

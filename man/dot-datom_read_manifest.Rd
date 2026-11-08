@@ -6,7 +6,7 @@
 \usage{
 .datom_read_manifest(
   conn,
-  scope = c("storage", "clone"),
+  scope = c("storage", "clone", "head"),
   operation = c("read", "write")
 )
 }
@@ -14,9 +14,12 @@
 \item{conn}{A \code{datom_conn} object.}
 
 \item{scope}{\code{"storage"} for the copy in data storage
-(\code{.metadata/manifest.json}), \code{"clone"} for the git-tracked copy
-(\code{.datom/manifest.json}). Both exist; they can differ, and which one a
-caller wants is a real choice rather than a default.}
+(\code{.metadata/manifest.json}), \code{"clone"} for the git-tracked copy as the
+working tree holds it (\code{.datom/manifest.json}), \code{"head"} for that copy as
+committed in HEAD. They can differ, and which one a caller wants is a real
+choice rather than a default: the scan compares input files with what was
+last committed, so a write that stopped before its commit leaves the table
+\code{changed} rather than \code{unchanged} (\code{\link[=datom_sync_manifest]{datom_sync_manifest()}}).}
 
 \item{operation}{What the caller is about to do with the document --
 \code{"read"} (default) or \code{"write"}. Passed through to
@@ -29,7 +32,9 @@ A list with:
 \itemize{
 \item \code{ok} -- \code{TRUE} when the manifest was read and parsed.
 \item \code{absent} -- \code{TRUE} only when the document is \emph{known} not to exist. That
-is decided for \code{scope = "clone"}, where testing a local path is free.
+is decided for \code{scope = "clone"} and \code{scope = "head"}, where looking is
+free (for \code{"head"}, HEAD holds no manifest, or the path is not a git
+repo).
 For \code{scope = "storage"} it is always \code{FALSE}, meaning "not known to be
 absent": separating a missing object from an unreachable store would
 cost an extra request on every read and no caller distinguishes them.

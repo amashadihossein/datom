@@ -414,8 +414,10 @@
 #' the sequence again afterwards. See `.datom_sync_metadata()`.
 #'
 #' @param conn A `datom_conn` object.
-#' @param artifact Name of the single artifact this write touches, or `NULL` to
-#'   check every artifact present in the clone.
+#' @param artifact Names of the artifacts this write touches (one for a table or
+#'   set write; every table in the preview for [datom_sync()], whose one heal may
+#'   publish any of them), or `NULL` to check every artifact present in the
+#'   clone.
 #' @return Invisibly `NULL`. Aborts on any refusal.
 #' @keywords internal
 .datom_check_write_entry <- function(conn, artifact = NULL) {

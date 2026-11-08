@@ -2,7 +2,7 @@
 % Please edit documentation in R/heal.R
 \name{.datom_check_merge}
 \alias{.datom_check_merge}
-\title{Stop While a Merge Is in Progress}
+\title{The Merge Check: Stop, or Finish, While a Merge Is in Progress}
 \usage{
 .datom_check_merge(path, finish_merge = FALSE)
 }

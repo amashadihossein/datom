@@ -56,9 +56,10 @@ closed task 4b the same day. Task 5 (a conflict only in the manifest) done on 20
 entry below lists six differences from the plan, the first being which version a rebuilt row
 names); its checkpoint review the same day (below) approved it with nothing to fix, and task 5
 closed. The review's point for task 7 was settled by the owner the same day (task 7's version rule).
-Next is task 6 (scan and sync), to start in a new session on the owner's go-ahead. It opens with an
-open point to settle with the owner before any code (task 6's first bullet: what a sync does after
-one table's write fails partway, found 2026-11-06 by probing the plan).**
+Task 6 (scan and sync) started 2026-11-07: its open point was settled by the owner first (a sync
+stops after a table's write that failed partway once it had changed the clone; requirements R4.6),
+and task 6 was done the same day (its entry below lists eight differences from the plan). Its
+checkpoint is open. Next is task 7 (the repair), on the owner's go-ahead.**
 
 **Task 5's checkpoint review, 2026-11-06**, by another agent, of `6d622e9`: approved, nothing to
 fix. The reviewer re-ran the full suite (+112 checks, matching the commit) and probed three guards
@@ -360,11 +361,18 @@ conflicts only in `.datom/manifest.json` is finished by the pull or the merge ch
 makes two clones write without a pull in between). The newest guard-probe harness to copy is
 `research/task5_guard_probes.R`.
 
-**Starting task 6 cold** (written 2026-11-06): read this section's first paragraph and the review
-just below it, then task 6 in full (its first bullet is an open point to settle with the owner,
-one point, before any code), design section 7 and section 10 item 7, and requirements R4, R3.4 and
-R3.7. Rerun `research/sync_batch_probe.R` to see the open point's three cases on the current code.
-Baseline: 5859 expectations, 0 failed, 0 skipped, at `6d622e9`.
+**Starting task 6 cold** (written 2026-11-06; task 6 done 2026-11-07): read this section's first
+paragraph and the review just below it, then task 6 in full (its first bullet is an open point to
+settle with the owner, one point, before any code), design section 7 and section 10 item 7, and
+requirements R4, R3.4 and R3.7. Rerun `research/sync_batch_probe.R` to see the open point's three
+cases on the current code. Baseline: 5859 expectations, 0 failed, 0 skipped, at `6d622e9`.
+
+**After task 6** (2026-11-07): baseline 5967 expectations, 0 failed, 0 skipped. Sync tests on a
+real project live in `test-sync-heal.R`, whose `local_break_sync_at(table, step)` breaks one
+table's write inside a sync; `local_heal_counter()` and `local_stored_manifest_reads()` are in
+`helper-interrupt.R`. Unit tests of `datom_sync()` on a plain folder stub its calls into the clone
+with `local_sync_on_folder()` (`test-sync.R`), and a scan test that needs a manifest commits it
+(`commit_clone_manifest()`), since the scan reads the last commit.
 
 **Shared test helpers** (created in task 2, extended later): `tests/testthat/helper-interrupt.R`
 with a project fixture (folder git remote and local store, as in the probes), a second-clone fixture,
@@ -977,9 +985,47 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   - Acceptance: P6 (as extended on 2026-10-31); `research/two_writers_probe.R` shows the second write
     finishing.
 
-- [ ] **6. Scan and sync** (R4, R3.7; DD3; design section 7)
-  - **Open point, to settle with the owner before any code** (found 2026-11-06 by probing this plan,
-    `research/sync_batch_probe.R`; design section 10 item 7). This task's sync heals once for the
+- [x] **6. Scan and sync** (R4, R3.7; DD3; design section 7)
+  - **Done 2026-11-07.** Suite 5859 -> 5967 expectations. Removed: the ten tests of
+    `.datom_check_git_current()` in `test-utils-git.R` (13 expectations; the function is deleted).
+    Added: 121 in the new `tests/testthat/test-sync-heal.R`. Six scan tests in `test-sync.R` now
+    commit their fixture manifest (`commit_clone_manifest()`), since the scan reads the last
+    commit; their count is unchanged. Every guard listed below probed red against `test-sync.R`
+    and `test-sync-heal.R`, with a control that reddened nothing (`research/task6_guard_probes.R`;
+    every test each probe reddens is in the commit message). `research/sync_and_manifest_probe.R`
+    and `research/stale_preview_probe.R` rerun (`research/README.md`). Names:
+    `.datom_pushed_artifacts()`, `.datom_clone_head()`, `.datom_write_left_changes()` (all in
+    `R/heal.R`), `.datom_inform_sync_stopped()` (`R/sync.R`; class `datom_sync_stopped`).
+    Differences from the list below, each flagged at the checkpoint:
+    1. **What `.datom_pushed_artifacts()` measures**: the artifacts whose datom files differ between
+       HEAD and the commit it shares with its upstream (the net change of the unpushed commits), so a
+       teammate's commit the clone has fetched but not merged is not counted as its own (a test).
+       **With no upstream branch it names nothing** (the open question this task had to settle):
+       the scan then shows such a table `unchanged`, and the sync still finishes it, since heal's
+       publish pushes first with no upstream. Task 8's R3.6 message uses it too.
+    2. **The format check on every preview table runs before the sync's one heal**
+       (`.datom_check_write_entry(conn, own)`), as `datom_write()`'s door does for its one table:
+       heal may publish any table in the preview, and without it a document from a newer datom,
+       pulled earlier by `datom_pull()`, could be published unchecked. A test, and a probe.
+    3. An `unchanged` row whose table heal published comes back `"success"`, not `"skipped"` (the
+       plan named only `unpushed` rows). An `unpushed` row heal had nothing to publish for says it
+       was already up to date.
+    4. With `continue_on_error = FALSE`, after a write that changed the clone, the stop says to run
+       the scan and the sync again instead of "Set `continue_on_error = TRUE`", which would not skip
+       it. A test.
+    5. The stop message comes only when tables were skipped: a write that fails on the last table
+       leaves its own error message, which names its way out.
+    6. The scan's summary line names `unpushed` only when there are some, so the common line is
+       unchanged.
+    7. `local_heal_counter()` moved to `helper-interrupt.R`, beside a new
+       `local_stored_manifest_reads()`; the R3.4 test in `test-heal-publish.R` uses it.
+    8. The help pages of `.datom_check_merge()` and `.datom_heal()` are regenerated here: they were
+       out of date since task 5.
+    Left for task 10: `dev/datom_specification.md` ("Stale state detection" and the collaboration
+    list) and two lines of `dev/engineering-notes.md` still name the deleted function.
+  - **Settled 2026-11-07 by the owner: stop the sync** (the first option below; design section 7,
+    requirements R4.6 added, which the owner's answer approved). Found 2026-11-06 by probing this plan,
+    `research/sync_batch_probe.R`; design section 10 item 7. This task's sync heals once for the
     batch and then writes each table with `datom_write(.healed = TRUE)`, so no later table's write
     runs heal. When one table's write fails partway and a later one succeeds:
     - table `t2` broken at its push or its metadata upload: `t3`'s publish uploads a manifest naming

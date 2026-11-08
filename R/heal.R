@@ -1513,3 +1513,98 @@
   if (isTRUE(moved)) .datom_check_write_entry(conn, NULL)
   invisible(moved)
 }
+
+
+# --- Unfinished work, seen from the clone alone -----------------------------------
+
+#' The Artifacts Whose Files the Commits Not Yet Pushed Change
+#'
+#' What the scan's `unpushed` status is read from (requirements R4.2), and what
+#' the push commands' message will name (R3.6): the artifacts whose datom files
+#' differ between HEAD and the last commit it shares with its upstream branch.
+#' Taken from that common commit rather than from the upstream tip, so commits
+#' the remote holds and the clone lacks (a teammate's, already fetched) are not
+#' counted as this clone's. The net change, not each commit's: a file changed and
+#' then changed back by unpushed commits is not counted, since the remote already
+#' has what HEAD holds.
+#'
+#' **Local refs only**: no fetch, so it costs no network and answers from what the
+#' clone last saw of the remote.
+#'
+#' **With no upstream branch it names nothing.** Without one datom cannot tell
+#' what the remote holds, and on the project's branch that state arises only when
+#' init failed to set one (it warns). The scan then shows such a table
+#' `unchanged`, and [datom_sync()] still finishes it: heal's publish pushes first
+#' when there is no upstream ([.datom_heal_publish()]).
+#'
+#' @param path Repository path.
+#' @return Artifact names, possibly empty.
+#' @keywords internal
+.datom_pushed_artifacts <- function(path) {
+  repo <- git2r::repository(path)
+  upstream <- tryCatch(
+    git2r::branch_get_upstream(git2r::repository_head(repo)),
+    error = function(e) NULL
+  )
+  if (is.null(upstream)) return(character())
+
+  head_sha <- .datom_git_head_sha(repo)
+  tip <- git2r::branch_target(upstream)
+  # Level with the remote, or behind it: nothing of this clone's is unpushed.
+  if (.datom_git_contains(repo, tip, head_sha)) return(character())
+
+  head_commit <- git2r::lookup(repo, head_sha)
+  base <- git2r::merge_base(head_commit, git2r::lookup(repo, tip))
+  if (is.null(base)) return(character())
+
+  changes <- git2r::diff(git2r::tree(base), git2r::tree(head_commit))
+  files <- unique(unlist(lapply(changes$files, function(f) {
+    c(f$old_file, f$new_file)
+  })))
+  owned <- files[basename(files) %in% .datom_artifact_own_files]
+
+  intersect(
+    unique(dirname(owned)),
+    .datom_clone_artifact_names(list(path = path))
+  )
+}
+
+
+#' The Commit a Clone's HEAD Points At
+#'
+#' Taken by [datom_sync()] before each table's write, for
+#' [.datom_write_left_changes()] to compare with afterwards.
+#'
+#' @param path Repository path.
+#' @return The SHA, or `NA_character_` in a repo with no commits.
+#' @keywords internal
+.datom_clone_head <- function(path) {
+  .datom_git_head_sha(git2r::repository(path))
+}
+
+
+#' Did a Failed Write Leave Anything in the Clone
+#'
+#' [datom_sync()] asks this after one table's write fails, on the error path only
+#' (requirements R4.6). The sync heals once for the whole batch, so no later
+#' table's write checks for another table's unfinished work: a later commit would
+#' take the failed table's uncommitted manifest row, and a later manifest upload
+#' would name a version whose `metadata.json` is not in storage. So the sync stops
+#' when the failed write had begun changing the clone, and carries on only when
+#' it had not.
+#'
+#' Two signs, either enough: datom's own files differ from the last commit (the
+#' write stopped before its commit, or during it), or HEAD is no longer the
+#' commit it was before the write (it committed, and stopped at the push or in
+#' storage). Before the write both were clean: heal had just reset, or stopped
+#' on, any uncommitted datom file, and each earlier table's write either finished
+#' or stopped the sync.
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @param head_before What [.datom_clone_head()] returned before the write.
+#' @return `TRUE` or `FALSE`.
+#' @keywords internal
+.datom_write_left_changes <- function(conn, head_before) {
+  if (!identical(.datom_clone_head(conn$path), head_before)) return(TRUE)
+  length(.datom_unfinished_files(conn)) > 0L
+}

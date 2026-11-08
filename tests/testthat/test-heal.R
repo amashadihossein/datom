@@ -645,25 +645,7 @@ test_that("a project.yaml that does not parse stops the write", {
 
 # === where heal runs ===============================================================
 
-# Counts calls to heal's two halves, the reset and the publish; the counter
-# returns c(reset = , publish = ).
-local_heal_counter <- function(env = parent.frame()) {
-  calls <- c(reset = 0L, publish = 0L)
-  real_reset <- get(".datom_heal", envir = asNamespace("datom"))
-  real_publish <- get(".datom_heal_publish", envir = asNamespace("datom"))
-  local_mocked_bindings(
-    .datom_heal = function(...) {
-      calls[["reset"]] <<- calls[["reset"]] + 1L
-      real_reset(...)
-    },
-    .datom_heal_publish = function(...) {
-      calls[["publish"]] <<- calls[["publish"]] + 1L
-      real_publish(...)
-    },
-    .env = env
-  )
-  function() calls
-}
+# `local_heal_counter()` is in helper-interrupt.R.
 
 test_that("a mistyped argument is refused before heal runs", {
   fx <- local_interrupt_project()
