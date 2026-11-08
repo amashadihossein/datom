@@ -4,10 +4,13 @@
 \alias{.datom_unfinished_files}
 \title{datom's Own Files That Differ From the Last Commit}
 \usage{
-.datom_unfinished_files(conn)
+.datom_unfinished_files(conn, st = NULL)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object with a local path.}
+
+\item{st}{The clone's \code{git2r::status()} with staged, unstaged and untracked
+files, when the caller already has it; \code{NULL} to read it here.}
 }
 \value{
 Repo-relative paths with forward slashes, possibly empty.

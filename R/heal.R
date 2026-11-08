@@ -581,11 +581,15 @@
 #' those three names only.
 #'
 #' @param conn A `datom_conn` object with a local path.
+#' @param st The clone's `git2r::status()` with staged, unstaged and untracked
+#'   files, when the caller already has it; `NULL` to read it here.
 #' @return Repo-relative paths with forward slashes, possibly empty.
 #' @keywords internal
-.datom_unfinished_files <- function(conn) {
-  repo <- git2r::repository(conn$path)
-  st <- git2r::status(repo, staged = TRUE, unstaged = TRUE, untracked = TRUE)
+.datom_unfinished_files <- function(conn, st = NULL) {
+  st <- st %||% git2r::status(
+    git2r::repository(conn$path),
+    staged = TRUE, unstaged = TRUE, untracked = TRUE
+  )
 
   changed <- unname(unlist(c(st$staged, st$unstaged), use.names = FALSE))
   untracked <- unname(unlist(st$untracked, use.names = FALSE))
@@ -1652,4 +1656,115 @@
 .datom_write_left_changes <- function(conn, head_before) {
   if (!identical(.datom_clone_head(conn$path), head_before)) return(TRUE)
   length(.datom_unfinished_files(conn)) > 0L
+}
+
+
+# --- The git and config commands ------------------------------------------------
+
+#' Stop a Commit That Would Take datom's Own Uncommitted Files
+#'
+#' [datom_repo_commit()] never commits a datom write that never committed
+#' (requirements R3.5, D9). Its files, left by a write that stopped before its
+#' commit, would otherwise become a version nobody published, with half its
+#' steps done. The command acts on an artifact it is not writing, so it stops
+#' rather than reset them (D14 principle 8): the artifact's own write, re-run,
+#' finishes it, and `datom_validate(fix = TRUE)` discards the changes.
+#'
+#' **What the commit would take** is worked out the way git stages, before
+#' anything is staged:
+#' - with `paths = NULL`, everything;
+#' - a path that is the file, or a folder above it (`"dm"`, `"dm/"`, `"."`);
+#' - **a file already staged**, whatever `paths` says: a commit takes the whole
+#'   index, so a datom file staged earlier (by the user's `git add`, or by a
+#'   write stopped between staging and committing) goes into a commit of
+#'   `paths = "build.R"` too.
+#'
+#' A leading `./` is dropped before matching. `git2r::add()` stages nothing for
+#' `"./dm"`, so this stops a commit git would have left `dm` out of: a stop with
+#' a way out, rather than a miss. A commit whose paths take none of these files
+#' goes ahead, and datom's files stay as they are.
+#'
+#' One `git status`, shared with [.datom_unfinished_files()].
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @param paths The command's `paths`: `NULL`, or repo-relative paths.
+#' @return Invisibly `NULL` when the commit takes none of datom's uncommitted
+#'   files; otherwise does not return.
+#' @keywords internal
+.datom_stop_commit_of_unfinished <- function(conn, paths = NULL) {
+  st <- git2r::status(
+    git2r::repository(conn$path),
+    staged = TRUE, unstaged = TRUE, untracked = TRUE
+  )
+  unfinished <- .datom_unfinished_files(conn, st)
+  if (length(unfinished) == 0L) return(invisible(NULL))
+
+  staged <- unname(unlist(st$staged, use.names = FALSE))
+  taken <- unfinished[unfinished %in% staged |
+                        .datom_paths_take(paths, unfinished)]
+  if (length(taken) == 0L) return(invisible(NULL))
+
+  owners <- .datom_unfinished_owners(conn, taken)
+  .datom_stop_unfinished_files(
+    owners$touched, owners$by_artifact, owners$rows, owners$unknown_rows
+  )
+}
+
+
+#' Which Files a Commit's Paths Would Stage
+#'
+#' @param paths `NULL` (everything), or repo-relative paths: a file, or a
+#'   folder whose files it stages.
+#' @param files Repo-relative paths with forward slashes.
+#' @return A logical vector along `files`.
+#' @keywords internal
+.datom_paths_take <- function(paths, files) {
+  if (is.null(paths)) return(rep(TRUE, length(files)))
+
+  p <- gsub("\\\\", "/", paths)
+  p <- sub("^(\\./)+", "", p)
+  p <- sub("/+$", "", p)
+  everything <- any(p %in% c("", "."))
+
+  purrr::map_lgl(files, function(f) {
+    everything || any(f == p | startsWith(f, paste0(p, "/")))
+  })
+}
+
+
+#' Say That a Push Carried Versions Readers Cannot See Yet
+#'
+#' The git and config commands ([datom_repo_push()], [datom_repo_commit()],
+#' [datom_repo_attach_governance()], [datom_repo_set_data_store()]) push and do
+#' not publish (requirements R3.6, D10). When the commits they push hold a datom
+#' version, this names each such artifact and the way to publish it. Every
+#' version in commits being pushed is unpublished by definition, since a write
+#' publishes only after its push, so this needs no storage read: the caller
+#' takes the names from [.datom_pushed_artifacts()] **before** the push, while
+#' the commits are still the clone's alone.
+#'
+#' A message rather than a warning: the push did what was asked. The state it
+#' leaves is not hidden either way, since a write of any other artifact then
+#' stops, naming the same fix.
+#'
+#' @param names The artifacts whose datom files the pushed commits change.
+#' @return Invisibly `NULL`.
+#' @keywords internal
+.datom_note_pushed_unpublished <- function(names) {
+  if (length(names) == 0L) return(invisible(NULL))
+  n <- length(names)
+
+  cli::cli_inform(
+    c(
+      "!" = "Pushed a new version of {.val {names}} that readers cannot see \\
+             yet: it is on the git remote but not in storage, and this command \\
+             does not publish.",
+      "i" = "{cli::qty(n)}Run {.code datom_validate(fix = TRUE)}, or write \\
+             {?that artifact/each of them} again, to publish {?it/them}. Until \\
+             then, a write of any other table or set stops."
+    ),
+    class = "datom_pushed_unpublished",
+    pushed = names
+  )
+  invisible(NULL)
 }

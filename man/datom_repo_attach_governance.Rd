@@ -45,6 +45,10 @@ and readers with gov access resolve location from the gov repo).
 
 Routing this write through datom upholds the two-repos invariant: the
 governance layer never mutates the data repo directly.
+
+Its push does not publish: when the commits it pushes hold a datom version
+(a write whose own push failed), it names the table or set, which readers
+cannot see until \code{datom_validate(fix = TRUE)}, or a write of it, publishes it.
 }
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a

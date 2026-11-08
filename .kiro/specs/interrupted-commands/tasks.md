@@ -66,8 +66,10 @@ closed. Task 7 (the repair) done the same day (its entry below lists seven diffe
 plan, the first being that `datom_validate(fix = TRUE)` now runs the repair whether or not a
 check found something). Its checkpoint review the same day (below) agreed with that difference
 and found one gap and one ordering fault, fixed the same day with three smaller points in
-`ba57f3a`, and the owner closed task 7 the same day. Task 8 (the git and config commands) is next,
-in a new session: "Starting task 8 cold" below.**
+`ba57f3a`, and the owner closed task 7 the same day. Task 8 (the git and config commands) done the
+same day, after its open point was settled by the owner (the stop also looks at datom files already
+staged); its entry below lists five differences from the plan. **Next: the purity audit on a more
+capable model (tasks 2-8, flagged at planning), then task 8's checkpoint review.**
 
 **Task 7's checkpoint review, 2026-11-07**, by another agent, of `9284ca9`, read against the code.
 Points 1 and 2 reproduced here on throwaway projects before fixing; evaluated with the owner:
@@ -1298,7 +1300,53 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     each artifact, the manifest-mismatch comparison (the recorded version, not a recomputed one).
   - Acceptance: R5.1-R5.5, P4 (for the mirror-everything route and the repair), P7, P11.
 
-- [ ] **8. The git and config commands** (R3.5, R3.6; D9, D10)
+- [x] **8. The git and config commands** (R3.5, R3.6; D9, D10)
+  - **Done 2026-11-07.** Suite 6134 -> 6214 expectations, 0 failed, 0 skipped. Its open point was
+    settled by the owner first (option A): the stop looks at what the commit would actually take,
+    which is everything with `paths = NULL`, a path that is a datom file or a folder holding one
+    (`"dm"`, `"dm/"`, `"."`), **and any datom file already staged**, since a commit takes the whole
+    index. One `git status`, shared with `.datom_unfinished_files()` (which gains an optional `st`
+    argument for it). What differs from the plan, or was not in it:
+    1. The stop is `.datom_stop_commit_of_unfinished()` in `R/heal.R`, with `.datom_paths_take()`
+       deciding which files `paths` stages; it reuses `.datom_stop_unfinished_files()`, so the
+       message and class (`datom_unfinished_work`) are a write's: re-run that write, or
+       `datom_validate(fix = TRUE)`. A leading `./` is dropped before matching, so `"./dm"` stops
+       although `git2r::add()` stages nothing for it (a stop with a way out, not a miss).
+    2. R3.6's message is `.datom_note_pushed_unpublished()` in `R/heal.R`: a message (not a
+       warning) of class `datom_pushed_unpublished`, carrying the names as `pushed`. Each of the four
+       commands takes the names from `.datom_pushed_artifacts()` **before** its push, while the
+       commits are the clone's alone; after it, the upstream is level and nothing would be named.
+    3. Help text: `?datom_repo_commit`'s paragraph saying it sweeps in datom's files (the behaviour
+       D9 reverses) is replaced, and the four commands each say their push does not publish. Task 10
+       still owns the full R9.5 pass on these pages.
+    4. The existing test that pinned the sweep-in ("datom_repo_commit(paths = NULL) sweeps in
+       datom's own uncommitted files, and the repair reaches what it can (AC17)",
+       `test-foreign-content.R`) is rewritten to the stop: the commit stops, the human's edit stays,
+       and after `datom_validate(fix = TRUE)` the same commit takes the human's edit only.
+    5. Not covered, left as it is (S8): `datom_repo_attach_governance()` and
+       `datom_repo_set_data_store()` commit one named file through `.datom_git_commit()`, which also
+       takes whatever is already staged, so a datom file the user staged by hand goes into their
+       commit. D9 names only `datom_repo_commit()`; raised at the checkpoint.
+  - Tests in the new `test-repo-unfinished.R` (real projects): the stop with `paths = NULL`, with
+    six path forms, and with a staged datom file, each changing nothing in the clone, the remote or
+    storage; a commit of the user's own path going ahead and leaving the write's files as they
+    were; `datom_validate(fix = TRUE)` then letting `paths = NULL` through; `push = FALSE` during a
+    merge in progress; R3.6 with `datom_repo_push()` (names `dm`, storage unchanged, a write of
+    another table stops, and a write of `dm` or `datom_validate(fix = TRUE)` publishes), with
+    `datom_repo_commit()` (and silence when no datom version is pushed), with
+    `datom_repo_attach_governance()` and `datom_repo_set_data_store()`; the break table's row.
+  - Guard probes (`research/task8_guard_probes.R`, against `test-repo-unfinished.R`, plus
+    `test-foreign-content.R` where marked). Control: green (82 expectations). Each guard alone:
+    | Probe | Reddened |
+    |---|---|
+    | the merge check removed from `datom_repo_commit()` | the merge-in-progress test |
+    | the stop removed (with `test-foreign-content.R`) | the `paths = NULL` test, the path-forms test, the staged test, and the rewritten AC17 test |
+    | `paths = NULL` no longer taken as everything (with `test-foreign-content.R`) | the `paths = NULL` test and the rewritten AC17 test |
+    | a folder no longer covers its files | the path-forms test (12 expectations) |
+    | `"."` no longer covers everything | the path-forms test (4 expectations) |
+    | already-staged files ignored | the staged test |
+    | `datom_repo_push()` taking the names after its push | its R3.6 test |
+    | the message removed from `datom_repo_commit()` / `datom_repo_attach_governance()` / `datom_repo_set_data_store()` | that command's R3.6 test, one each |
   - `R/repo.R`: `datom_repo_commit()` calls the merge check, then, before staging, stops when the
     commit would include datom's own uncommitted files (`paths = NULL`, or an explicit path naming
     one), naming the artifact and `datom_validate(fix = TRUE)`; it resets nothing (R3.9, R3.5, D9 as
