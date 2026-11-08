@@ -28,9 +28,10 @@ data file's upload. A table whose write fails after it has begun changing
 the clone (written its files, or committed, for example on a dropped
 connection at the push) stops the sync there: the tables after it come
 back \code{"skipped"}, because their writes would carry its unfinished version
-into git or storage. Run the scan and the sync again to finish it and sync
-the rest. If \code{FALSE}, stops on first error. Not accepted on a product
-repo, where one failure stops the call and nothing has been written.}
+into git or storage. Run the same call again, with the same preview, to
+finish it and sync the rest. If \code{FALSE}, stops on first error. Not
+accepted on a product repo, where one failure stops the call and nothing
+has been written.}
 
 \item{sources}{On a product repo only, and required there: one \code{datom_conn},
 or a list of them, for the projects named by the rows being applied -- the
@@ -81,6 +82,13 @@ If another table has unfinished work, or a preview row it does not write has
 changes to datom's files that were never committed, it stops before
 changing anything and names \code{\link[=datom_validate]{datom_validate()}}\code{(fix = TRUE)}. A failed
 fetch stops it too.
+
+\strong{Two people syncing at once.} When one table's push brings in a teammate's
+commit whose files are not in storage yet, that table's write publishes the
+table but not the project's manifest, and warns. The sync then stops: the
+tables after it come back \code{"skipped"}, whatever \code{continue_on_error} says.
+Run \code{\link[=datom_validate]{datom_validate()}}\code{(fix = TRUE)}, then the same call again, with the
+same preview.
 
 On a product repo (\code{mode: product}) it applies a preview of the repo's set
 instead -- see "On a product repo" below.

@@ -1484,6 +1484,8 @@
       "i" = "Run {.code datom_validate(fix = TRUE)} to publish it. Until then, \\
              writes of other artifacts stop and name that fix."
     ),
+    # Carried for datom_sync(), which stops after such a write and names them.
+    disagree = disagree,
     class = "datom_manifest_held_back"
   )
   invisible(NULL)

@@ -246,3 +246,31 @@ local_stored_manifest_reads <- function(env = parent.frame()) {
   )
   function() reads
 }
+
+
+#' Land another clone's push inside this command, right after its next commit.
+#'
+#' Once, right after the next commit datom makes, runs `teammate()`: how a test
+#' lands another clone's push after this command's opening pull and before its
+#' own push. Mocked bindings apply to every call, the teammate's own commits
+#' included, hence the once-only flag.
+#'
+#' @param teammate A function of no arguments, run once.
+#' @param env Frame the mock lasts for.
+#' @return Invisibly `NULL`.
+local_teammate_after_commit <- function(teammate, env = parent.frame()) {
+  real_commit <- get(".datom_git_commit", envir = asNamespace("datom"))
+  fired <- FALSE
+  testthat::local_mocked_bindings(
+    .datom_git_commit = function(...) {
+      sha <- real_commit(...)
+      if (!fired) {
+        fired <<- TRUE
+        teammate()
+      }
+      sha
+    },
+    .env = env
+  )
+  invisible(NULL)
+}

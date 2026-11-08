@@ -67,7 +67,9 @@ named the wrong version after custom metadata was set back to earlier values, so
 have reported a consistent store that its fix could not clear.
 **Amended 2026-11-07** by the owner, settling task 6's open point: R4.6 added (a table's write that
 fails partway after changing the clone stops the sync; `continue_on_error = TRUE` carries on only
-past failures that leave the clone untouched).
+past failures that leave the clone untouched). **Amended again the same day**, from task 6's
+checkpoint review (of `c24b17f`): a held-back manifest stops the sync too, and the way out a stop
+names is the same `datom_sync()` call, with the same preview (R4.6).
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -478,10 +480,21 @@ writes nothing and is unchanged.
    (datom files left uncommitted, or a commit made), `datom_sync()` writes no later table: a later
    table's commit or manifest upload would otherwise carry the failed table's unfinished row into
    git or storage. The rows not attempted come back `"skipped"`, with the reason in `error`, and a
-   message names the table and says to run the scan and the sync again, which finishes it (R2) and
-   syncs the rest. A failure that leaves the clone untouched (a file that does not import, a refused
-   data frame, the data file upload) still lets the sync carry on. `?datom_sync` says so under
+   message names the table and says to run the same `datom_sync()` call again, with the same
+   preview, which finishes it (R2) and syncs the rest; a fresh scan would bring back rows the user
+   dropped from the preview (amended the same day, owner, checkpoint review of `c24b17f`). A
+   failure that leaves the clone untouched (a file that does not import, a refused data frame, the
+   data file upload) still lets the sync carry on. `?datom_sync` says so under
    `continue_on_error`.
+   **A held-back manifest stops the sync too** (added the same day, owner, checkpoint review of
+   `c24b17f`). When a table's push brings in a teammate's commit whose files are not in storage
+   yet, that table's write publishes its own documents and skips the manifest upload with a
+   warning (R3.10). The sync then writes no later table, under either setting of
+   `continue_on_error`: a later write, whose own push brings in nothing, checks nothing and would
+   upload the clone's whole manifest, naming the teammate's version before its files are in
+   storage (R3.10's case). The rows not attempted come back `"skipped"`, and a message names the
+   table and the teammate's artifacts, and says to run `datom_validate(fix = TRUE)`, then the same
+   `datom_sync()` call again.
 
 ### R5. The repair: `datom_validate(fix = TRUE)`
 

@@ -83,25 +83,7 @@ mc_finished_notes <- function(expr) {
   list(value = value, notes = notes)
 }
 
-# Once, right after the next commit datom makes, run `teammate()`: how a test
-# lands another clone's push after this write's opening pull and before its own
-# push. Mocked bindings apply to every call, the teammate's own commits
-# included, hence the once-only flag.
-local_teammate_after_commit <- function(teammate, env = parent.frame()) {
-  real_commit <- get(".datom_git_commit", envir = asNamespace("datom"))
-  fired <- FALSE
-  local_mocked_bindings(
-    .datom_git_commit = function(...) {
-      sha <- real_commit(...)
-      if (!fired) {
-        fired <<- TRUE
-        teammate()
-      }
-      sha
-    },
-    .env = env
-  )
-}
+# `local_teammate_after_commit()` is in helper-interrupt.R.
 
 # A clone `b` whose write of `name` committed and broke at its push, while the
 # project's own clone (the teammate) went on to write `ae`, so the remote holds

@@ -59,7 +59,17 @@ closed. The review's point for task 7 was settled by the owner the same day (tas
 Task 6 (scan and sync) started 2026-11-07: its open point was settled by the owner first (a sync
 stops after a table's write that failed partway once it had changed the clone; requirements R4.6),
 and task 6 was done the same day (its entry below lists eight differences from the plan). Its
-checkpoint is open. Next is task 7 (the repair), on the owner's go-ahead.**
+checkpoint review the same day (below) found one gap, fixed the same day: a held-back manifest
+stops the sync too. The fix awaits the reviewer's check; then task 6 closes, and task 7 (the
+repair) follows on the owner's go-ahead.**
+
+**Task 6's checkpoint review, 2026-11-07**, by another agent, of `c24b17f`, read against the code.
+Both findings reproduced here on a throwaway project before fixing, and evaluated with the owner:
+
+| Finding | Outcome |
+|---|---|
+| 1. A held-back manifest does not stop the sync (S7). In a sync of `t1` then `t2`, a teammate's write of `ae` has committed and pushed but not yet uploaded its documents; `t1`'s push brings `ae`'s commit in, and `t1`'s write skips the manifest upload with a warning. The sync carried on, and `t2`'s write, whose own push brought nothing in, uploaded the whole manifest naming `ae`'s version while its documents were on GitHub only; a later sync noticed nothing, since the manifests then agreed. The warning's "writes of other artifacts stop" was false inside a sync | **Taken (option A)**: the sync stops after such a write, under either setting of `continue_on_error`; the rows not attempted come back `"skipped"`, and the message names `t1` and `ae` and says to run `datom_validate(fix = TRUE)`, then the same call again (R4.6 amended, design section 7). Option B, each later write re-checking storage before its manifest upload, set aside: it changes the write path and leaves more tables half-published. A test follows the way out to the end; two guards probed |
+| 2. The stop's way out, `datom_sync(conn, datom_sync_manifest(conn))`, builds a fresh preview, bringing back rows the user dropped on purpose | **Taken, reshaped**: the review proposed "re-scan, drop the same rows again, then sync". Checked here: the same `datom_sync()` call with the same preview finishes every table after a break at the commit, the push and the manifest upload. Both stop messages now say to run the same call again, with the same preview, and the break-table tests follow that way out |
 
 **Task 5's checkpoint review, 2026-11-06**, by another agent, of `6d622e9`: approved, nothing to
 fix. The reviewer re-ran the full suite (+112 checks, matching the commit) and probed three guards
@@ -367,10 +377,12 @@ settle with the owner, one point, before any code), design section 7 and section
 requirements R4, R3.4 and R3.7. Rerun `research/sync_batch_probe.R` to see the open point's three
 cases on the current code. Baseline: 5859 expectations, 0 failed, 0 skipped, at `6d622e9`.
 
-**After task 6** (2026-11-07): baseline 5967 expectations, 0 failed, 0 skipped. Sync tests on a
+**After task 6** (2026-11-07): baseline 5990 expectations, 0 failed, 0 skipped (5967 at task 6's
+commit, then 23 added by its checkpoint review's fix). Sync tests on a
 real project live in `test-sync-heal.R`, whose `local_break_sync_at(table, step)` breaks one
 table's write inside a sync; `local_heal_counter()` and `local_stored_manifest_reads()` are in
-`helper-interrupt.R`. Unit tests of `datom_sync()` on a plain folder stub its calls into the clone
+`helper-interrupt.R`. `local_teammate_after_commit()` moved there too, after the checkpoint review. Unit tests of
+`datom_sync()` on a plain folder stub its calls into the clone
 with `local_sync_on_folder()` (`test-sync.R`), and a scan test that needs a manifest commits it
 (`commit_clone_manifest()`), since the scan reads the last commit.
 
@@ -387,7 +399,7 @@ what a reader sees (the new version reads; the stored manifest names it).
 | `datom_write()`, data-frame route | 2 (steps 1-5), 4b (step 6) | data file upload; clone files; commit; push; metadata upload (the whole step, and between the history upload and `metadata.json`); manifest upload |
 | `datom_write_set()` | 3 (steps 1-5), 4b (step 6) | the same six |
 | `datom_write(conn, name =)`, the metadata-only route | 4b | its push; its metadata upload |
-| `datom_sync()` | 6 | the second of three tables, at its file import, data file upload, commit, push and manifest upload; then re-scan and re-sync, and every table reads |
+| `datom_sync()` | 6 | the second of three tables, at its file import, data file upload, commit, push and manifest upload; then the stop's way out (the same call, same preview) after a commit, push or manifest break, or a re-scan and re-sync after an import or upload break, and every table reads |
 | `datom_validate(fix = TRUE)` and the mirror-everything route | 7 | the push; between the first and second artifact's mirror; the final manifest upload |
 | `datom_repo_commit()` | 8 | its push (the re-run commits nothing and pushes) |
 | `datom_init_repo()` | 9 | its commit and its push (rolled back, so the re-run starts afresh); the manifest upload (the re-run finishes, R6) |
@@ -1011,8 +1023,8 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
        plan named only `unpushed` rows). An `unpushed` row heal had nothing to publish for says it
        was already up to date.
     4. With `continue_on_error = FALSE`, after a write that changed the clone, the stop says to run
-       the scan and the sync again instead of "Set `continue_on_error = TRUE`", which would not skip
-       it. A test.
+       the same call again (the scan and the sync until the checkpoint review) instead of "Set
+       `continue_on_error = TRUE`", which would not skip it. A test.
     5. The stop message comes only when tables were skipped: a write that fails on the last table
        leaves its own error message, which names its way out.
     6. The scan's summary line names `unpushed` only when there are some, so the common line is
@@ -1023,6 +1035,14 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
        out of date since task 5.
     Left for task 10: `dev/datom_specification.md` ("Stale state detection" and the collaboration
     list) and two lines of `dev/engineering-notes.md` still name the deleted function.
+  - **Checkpoint review fixes, 2026-11-07** (review of `c24b17f`, "Where things stand"): a held-back
+    manifest stops the sync (a calling handler for `datom_manifest_held_back` around each table's
+    write, which lets the warning through; the warning carries the artifacts it names as
+    `disagree`); both stop messages name the same call, with the same preview, as the way out.
+    `local_teammate_after_commit()` moved to `helper-interrupt.R` (a second file needs it). One new
+    test follows the held-back stop's way out to the end; the break-table tests follow the stop's
+    way out. Guards probed: the handler and the stop it sets, each reddening only the new test, with
+    a control that reddened nothing (`research/task6_guard_probes.R`).
   - **Settled 2026-11-07 by the owner: stop the sync** (the first option below; design section 7,
     requirements R4.6 added, which the owner's answer approved). Found 2026-11-06 by probing this plan,
     `research/sync_batch_probe.R`; design section 10 item 7. This task's sync heals once for the

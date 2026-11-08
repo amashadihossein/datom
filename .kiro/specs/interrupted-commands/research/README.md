@@ -189,4 +189,6 @@ Added 2026-11-07 in task 6:
   before the sync's one heal; heal once per sync; heal's reset limited to the rows the sync writes;
   an `unpushed` row reported `success`). Same usage as task 5's; the whole sweep runs
   `test-sync.R` and `test-sync-heal.R` once per probe and takes about 25 minutes. Results are in
-  task 6's commit message.
+  task 6's commit message. Two probes added from task 6's checkpoint review (the handler that
+  notices a held-back manifest, and the stop it sets), run alone by naming them; results in the
+  fix's commit message.

@@ -359,16 +359,20 @@ test_that("a stale preview: a teammate synced the same file first, and the row s
 
 # === a write that fails partway (the break table's datom_sync() row; R4.6) =========
 
-# The second of three tables broken at `step`; returns the first sync's result
-# and its stop notes, then re-scans and re-syncs and checks every table reads.
+# The second of three tables broken at `step`. Checks the first sync's result
+# and its stop note, and what a re-scan shows for t2; then runs the way out --
+# after a stop, the same call with the same preview, as the note says; after a
+# failure that left the clone untouched, a re-scan and re-sync -- and checks
+# every table reads.
 sh_break_second_of_three <- function(step, rescan_t2, stops) {
   fx <- sh_project(env = parent.frame())
   tables <- c("t1", "t2", "t3")
   sh_synced_then_changed(fx, tables)
+  preview <- sh_scan(fx$conn)
 
   first <- local({
     local_break_sync_at("t2", step)
-    sh_sync_noting_stops(fx$conn)
+    sh_sync_noting_stops(fx$conn, preview)
   })
 
   expect_match(first$value$error[first$value$name == "t2"],
@@ -380,7 +384,8 @@ sh_break_second_of_three <- function(step, rescan_t2, stops) {
     expect_length(first$notes, 1L)
     expect_match(first$notes, "after the write of \"t2\" failed partway", fixed = TRUE)
     expect_match(first$notes, "Not attempted: \"t3\"", fixed = TRUE)
-    expect_match(first$notes, "datom_sync(conn, datom_sync_manifest(conn))", fixed = TRUE)
+    expect_match(first$notes, "Run the same `datom_sync()` call again, with the same preview",
+                 fixed = TRUE)
   } else {
     expect_identical(sh_result(first$value),
                      c(t1 = "success", t2 = "error", t3 = "success"))
@@ -390,7 +395,7 @@ sh_break_second_of_three <- function(step, rescan_t2, stops) {
   rescan <- sh_scan(fx$conn)
   expect_identical(sh_status(rescan)[["t2"]], rescan_t2)
 
-  again <- sh_sync(fx$conn, rescan)
+  again <- sh_sync(fx$conn, if (stops) preview else rescan)
 
   expect_false(any(again$result == "error"))
   for (t in tables) {
@@ -421,7 +426,68 @@ test_that("sync: the second of three tables fails at its manifest upload; the sy
   sh_break_second_of_three("manifest", rescan_t2 = "unchanged", stops = TRUE)
 })
 
-test_that("with continue_on_error = FALSE, a write that changed the clone says to run the scan and the sync again", {
+test_that("a table whose write held back the manifest stops the sync, and the way out finishes every table (R4.6)", {
+  # Two people at once (S7). t1's push brings in a teammate's commit of `ae`
+  # whose files are not in storage yet, so t1's write publishes t1 and holds
+  # back the manifest. Without the stop, t2's write -- whose own push brings in
+  # nothing, so it checks nothing -- would upload the manifest naming `ae`.
+  fx <- sh_project()
+  sh_synced_then_changed(fx, c("t1", "t2"))
+  b <- local_second_clone(fx)
+  preview <- sh_scan(fx$conn)
+  stored_manifest <- function() .datom_storage_read_json(fx$conn, ".metadata/manifest.json")
+  stored_before <- stored_manifest()
+  local_teammate_after_commit(function() {
+    local({
+      local_break_at("metadata")
+      expect_error(
+        suppressMessages(datom_write(b$conn, data = data.frame(id = 1:4), name = "ae")),
+        class = "datom_test_break"
+      )
+    })
+  })
+
+  held <- list()
+  run <- withCallingHandlers(
+    sh_sync_noting_stops(fx$conn, preview),
+    datom_manifest_held_back = function(w) {
+      held[[length(held) + 1L]] <<- w
+      invokeRestart("muffleWarning")
+    }
+  )
+
+  expect_length(held, 1L)
+  expect_identical(held[[1]]$disagree, "ae")
+  expect_identical(sh_result(run$value), c(t1 = "success", t2 = "skipped"))
+  expect_match(run$value$error[run$value$name == "t2"], "held back the manifest", fixed = TRUE)
+  expect_identical(stored_manifest(), stored_before)
+  expect_identical(sh_rows_read(fx, "t1"), 5L)
+  expect_identical(sh_rows_read(fx, "t2"), 3L)
+  expect_length(run$notes, 1L)
+  expect_match(run$notes, "after the write of \"t1\" held back the manifest", fixed = TRUE)
+  expect_match(run$notes, "a version of \"ae\" that storage does not hold yet", fixed = TRUE)
+  expect_match(run$notes, "Not attempted: \"t2\"", fixed = TRUE)
+  expect_match(run$notes, "Run `datom_validate(fix = TRUE)`", fixed = TRUE)
+
+  # The same call alone stops on the teammate's table, naming the same fix.
+  err <- expect_error(sh_sync(fx$conn, preview), class = "datom_unfinished_work")
+  expect_match(sh_msg(err), "\"ae\"", fixed = TRUE)
+  expect_match(sh_msg(err), "datom_validate(fix = TRUE)", fixed = TRUE)
+
+  # The way out the stop names: the fix, then the same call again.
+  suppressMessages(suppressWarnings(datom_validate(fx$conn, fix = TRUE)))
+  again <- sh_sync(fx$conn, preview)
+
+  expect_identical(sh_result(again), c(t1 = "success", t2 = "success"))
+  expect_identical(sh_rows_read(fx, "t1"), 5L)
+  expect_identical(sh_rows_read(fx, "t2"), 5L)
+  expect_identical(sh_rows_read(fx, "ae"), 4L)
+  for (t in c("t1", "t2", "ae")) {
+    expect_identical(sh_stored_version(fx, t), sh_clone_version(fx, t))
+  }
+})
+
+test_that("with continue_on_error = FALSE, a write that changed the clone says to run the same sync again", {
   fx <- sh_project()
   sh_synced_then_changed(fx, c("t1", "t2"))
 
@@ -429,7 +495,8 @@ test_that("with continue_on_error = FALSE, a write that changed the clone says t
     local_break_sync_at("t1", "push")
     expect_error(sh_sync(fx$conn, continue_on_error = FALSE), "t1")
   })
-  expect_match(sh_msg(err), "datom_sync(conn, datom_sync_manifest(conn))", fixed = TRUE)
+  expect_match(sh_msg(err), "Run the same `datom_sync()` call again, with the same preview",
+               fixed = TRUE)
   expect_no_match(sh_msg(err), "continue_on_error = TRUE", fixed = TRUE)
 
   # A failure that left the clone untouched still suggests carrying on.

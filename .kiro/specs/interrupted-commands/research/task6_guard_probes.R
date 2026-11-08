@@ -104,7 +104,18 @@ main <- function() {
     # An unpushed row, finished by heal, comes back success (R4.3).
     unpushed_success = list(filter = both, edit = function() sub1(sy,
       "  manifest$result[finished] <- \"success\"",
-      "  invisible(finished)"))
+      "  invisible(finished)")),
+
+    # Added from the checkpoint review of c24b17f: a held-back manifest stops
+    # the sync. The handler that notices it ...
+    held_back_handler = list(filter = both, edit = function() sub1(sy,
+      "          held_back <<- as.character(w$disagree %||% character())",
+      "          invisible(w)")),
+
+    # ... and the stop it sets.
+    held_back_stop = list(filter = both, edit = function() sub1(sy,
+      "    if (!is.null(held_back) && is.null(stopped_at)) stopped_at <- tbl_name",
+      "    if (FALSE) stopped_at <- tbl_name"))
   )
 
   # Probe names on the command line run only those (the control is always run

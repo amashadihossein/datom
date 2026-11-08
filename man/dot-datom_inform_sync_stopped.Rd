@@ -2,23 +2,35 @@
 % Please edit documentation in R/sync.R
 \name{.datom_inform_sync_stopped}
 \alias{.datom_inform_sync_stopped}
-\title{Say That a Sync Stopped After a Write That Failed Partway}
+\title{Say That a Sync Stopped Partway}
 \usage{
-.datom_inform_sync_stopped(stopped_at, not_run)
+.datom_inform_sync_stopped(stopped_at, not_run, held_back = NULL)
 }
 \arguments{
-\item{stopped_at}{The table whose write failed.}
+\item{stopped_at}{The table whose write failed or held back the manifest.}
 
 \item{not_run}{The tables after it, not attempted.}
+
+\item{held_back}{\code{NULL} when the write failed; when it held back the
+manifest, the artifacts the warning named.}
 }
 \value{
 Invisibly \code{NULL}.
 }
 \description{
-Requirements R4.6. The way out was traced for each place a write can stop
-after changing the clone: before its commit, the scan shows the table
-\code{changed} and heal puts its files back before the sync writes it again; at the
-push, the scan shows it \code{unpushed}, and heal pushes and publishes it; after
-the push, the scan shows it \code{unchanged}, and heal publishes it.
+Requirements R4.6, for its two reasons. The way out is the same
+\code{\link[=datom_sync]{datom_sync()}} call again, with the same preview, so rows the user dropped
+from the preview stay dropped; it was traced for each:
+\itemize{
+\item \strong{a write that failed after changing the clone}: before its commit, heal
+puts the table's files back and the sync writes it again; at or after its
+push, heal pushes and publishes the committed version, and the table's
+write then finds nothing to save;
+\item \strong{a write that held back the manifest} (its push brought in a teammate's
+version storage lacks): run \code{\link[=datom_validate]{datom_validate()}}\code{(fix = TRUE)} first, which
+publishes what the clone holds, so the same call then finds the held-back
+table up to date and writes the rest. Without it, the same call stops on
+the teammate's table, outside the preview, naming that fix.
+}
 }
 \keyword{internal}

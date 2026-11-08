@@ -834,6 +834,13 @@ datom_sync_manifest <- function(conn,
 #' changing anything and names [datom_validate()]`(fix = TRUE)`. A failed
 #' fetch stops it too.
 #'
+#' **Two people syncing at once.** When one table's push brings in a teammate's
+#' commit whose files are not in storage yet, that table's write publishes the
+#' table but not the project's manifest, and warns. The sync then stops: the
+#' tables after it come back `"skipped"`, whatever `continue_on_error` says.
+#' Run [datom_validate()]`(fix = TRUE)`, then the same call again, with the
+#' same preview.
+#'
 #' On a product repo (`mode: product`) it applies a preview of the repo's set
 #' instead -- see "On a product repo" below.
 #'
@@ -849,9 +856,10 @@ datom_sync_manifest <- function(conn,
 #'   the clone (written its files, or committed, for example on a dropped
 #'   connection at the push) stops the sync there: the tables after it come
 #'   back `"skipped"`, because their writes would carry its unfinished version
-#'   into git or storage. Run the scan and the sync again to finish it and sync
-#'   the rest. If `FALSE`, stops on first error. Not accepted on a product
-#'   repo, where one failure stops the call and nothing has been written.
+#'   into git or storage. Run the same call again, with the same preview, to
+#'   finish it and sync the rest. If `FALSE`, stops on first error. Not
+#'   accepted on a product repo, where one failure stops the call and nothing
+#'   has been written.
 #' @param sources On a product repo only, and required there: one `datom_conn`,
 #'   or a list of them, for the projects named by the rows being applied -- the
 #'   same connections the preview was built with. Refused on an ordinary repo.
@@ -1059,6 +1067,7 @@ datom_sync <- function(conn,
   # --- process each actionable table ---
   todo_idx <- which(actionable)
   stopped_at <- NULL
+  held_back <- NULL
 
   for (i in todo_idx) {
     tbl_name <- manifest$name[i]
@@ -1085,17 +1094,25 @@ datom_sync <- function(conn,
       ))
 
       # Write via datom_write (handles manifest update internally). Heal and the
-      # pull ran once above, for the whole batch.
-      write_result <- datom_write(
-        conn,
-        data = data,
-        name = tbl_name,
-        message = paste0("Sync ", tbl_name, " (", manifest$status[i], ")"),
-        .source_lineage = self_lineage,
-        .table_type = "imported",
-        .original_file_sha = tbl_original_file_sha,
-        .original_format = tbl_format,
-        .healed = TRUE
+      # pull ran once above, for the whole batch. A write whose push brought in
+      # a teammate's version storage lacks holds back the manifest and warns;
+      # the warning goes through to the caller, and the sync stops after it
+      # (R4.6), since no later write checks the stored manifest again.
+      write_result <- withCallingHandlers(
+        datom_write(
+          conn,
+          data = data,
+          name = tbl_name,
+          message = paste0("Sync ", tbl_name, " (", manifest$status[i], ")"),
+          .source_lineage = self_lineage,
+          .table_type = "imported",
+          .original_file_sha = tbl_original_file_sha,
+          .original_format = tbl_format,
+          .healed = TRUE
+        ),
+        datom_manifest_held_back = function(w) {
+          held_back <<- as.character(w$disagree %||% character())
+        }
       )
 
       manifest$result[i] <- "success"
@@ -1117,7 +1134,7 @@ datom_sync <- function(conn,
 
       if (!continue_on_error) {
         hint <- if (left_changes) {
-          "Run {.code datom_sync(conn, datom_sync_manifest(conn))} again to \\
+          "Run the same {.fn datom_sync} call again, with the same preview, to \\
            finish {.val {tbl_name}} and sync the rest."
         } else {
           "Set {.code continue_on_error = TRUE} to skip failures."
@@ -1133,20 +1150,28 @@ datom_sync <- function(conn,
       if (left_changes) stopped_at <<- tbl_name
     })
 
-    # The failed write had begun changing the clone, so no later table may be
-    # written (R4.6): its commit would take this table's uncommitted manifest
-    # row, and its manifest upload would name a version storage lacks.
+    # No later table may be written (R4.6) when this one's write:
+    # - failed after it had begun changing the clone: a later commit would take
+    #   its uncommitted manifest row, and a later manifest upload would name a
+    #   version storage lacks;
+    # - held back the manifest: a later write, whose own push brings in
+    #   nothing, would upload the whole manifest unchecked, naming the
+    #   teammate's version before its files are in storage.
+    # A held-back manifest is not an error, so this holds under either setting
+    # of `continue_on_error`.
+    if (!is.null(held_back) && is.null(stopped_at)) stopped_at <- tbl_name
     if (!is.null(stopped_at)) break
   }
 
   not_run <- todo_idx[is.na(manifest$result[todo_idx])]
   if (!is.null(stopped_at) && length(not_run) > 0L) {
+    why <- if (is.null(held_back)) "failed partway" else "held back the manifest"
     manifest$result[not_run] <- "skipped"
     manifest$error[not_run] <- cli::ansi_strip(cli::format_inline(
       "Not attempted: the sync stopped after the write of {.val {stopped_at}} \\
-       failed partway."
+       {why}."
     ))
-    .datom_inform_sync_stopped(stopped_at, manifest$name[not_run])
+    .datom_inform_sync_stopped(stopped_at, manifest$name[not_run], held_back)
   }
 
   # --- summary ---
@@ -1162,28 +1187,57 @@ datom_sync <- function(conn,
 }
 
 
-#' Say That a Sync Stopped After a Write That Failed Partway
+#' Say That a Sync Stopped Partway
 #'
-#' Requirements R4.6. The way out was traced for each place a write can stop
-#' after changing the clone: before its commit, the scan shows the table
-#' `changed` and heal puts its files back before the sync writes it again; at the
-#' push, the scan shows it `unpushed`, and heal pushes and publishes it; after
-#' the push, the scan shows it `unchanged`, and heal publishes it.
+#' Requirements R4.6, for its two reasons. The way out is the same
+#' [datom_sync()] call again, with the same preview, so rows the user dropped
+#' from the preview stay dropped; it was traced for each:
+#' - **a write that failed after changing the clone**: before its commit, heal
+#'   puts the table's files back and the sync writes it again; at or after its
+#'   push, heal pushes and publishes the committed version, and the table's
+#'   write then finds nothing to save;
+#' - **a write that held back the manifest** (its push brought in a teammate's
+#'   version storage lacks): run [datom_validate()]`(fix = TRUE)` first, which
+#'   publishes what the clone holds, so the same call then finds the held-back
+#'   table up to date and writes the rest. Without it, the same call stops on
+#'   the teammate's table, outside the preview, naming that fix.
 #'
-#' @param stopped_at The table whose write failed.
+#' @param stopped_at The table whose write failed or held back the manifest.
 #' @param not_run The tables after it, not attempted.
+#' @param held_back `NULL` when the write failed; when it held back the
+#'   manifest, the artifacts the warning named.
 #' @return Invisibly `NULL`.
 #' @keywords internal
-.datom_inform_sync_stopped <- function(stopped_at, not_run) {
+.datom_inform_sync_stopped <- function(stopped_at, not_run, held_back = NULL) {
+  if (is.null(held_back)) {
+    cli::cli_inform(
+      c(
+        "x" = "Stopped the sync after the write of {.val {stopped_at}} failed \\
+               partway: it had already changed this clone, and a later table's \\
+               write would have carried its unfinished version into git or \\
+               storage.",
+        "i" = "Not attempted: {.val {not_run}}.",
+        "i" = "Run the same {.fn datom_sync} call again, with the same \\
+               preview: it finishes {.val {stopped_at}} and syncs the rest."
+      ),
+      class = "datom_sync_stopped"
+    )
+    return(invisible(NULL))
+  }
+
+  n <- length(held_back)
   cli::cli_inform(
     c(
-      "x" = "Stopped the sync after the write of {.val {stopped_at}} failed \\
-             partway: it had already changed this clone, and a later table's \\
-             write would have carried its unfinished version into git or \\
-             storage.",
+      "x" = "Stopped the sync after the write of {.val {stopped_at}} held back \\
+             the manifest: its push brought in commits naming \\
+             {cli::qty(n)}{?a version/versions} of {.val {held_back}} that \\
+             storage does not hold yet, and a later table's write would have \\
+             published the manifest anyway.",
       "i" = "Not attempted: {.val {not_run}}.",
-      "i" = "Run {.code datom_sync(conn, datom_sync_manifest(conn))} again: it \\
-             finishes {.val {stopped_at}} and syncs the rest."
+      "i" = "Run {.code datom_validate(fix = TRUE)} to publish \\
+             {cli::qty(n)}{?it/them} and the manifest, then the same \\
+             {.fn datom_sync} call again, with the same preview, to sync the \\
+             rest."
     ),
     class = "datom_sync_stopped"
   )
