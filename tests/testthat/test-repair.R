@@ -337,11 +337,7 @@ test_that("the repair broken at its push finishes on a re-run, by either route",
     storage_before <- snapshot_storage(fx)
     local({
       local_break_at("push")
-      if (identical(route, "datom_write(conn)")) {
-        expect_error(rp_mirror(fx), class = "datom_test_break", label = route)
-      } else {
-        expect_false(rp_fix(fx)$fixed, label = route)
-      }
+      expect_error(rp_routes[[route]](fx), class = "datom_test_break", label = route)
     })
     expect_identical(snapshot_storage(fx), storage_before, label = route)
 
@@ -382,7 +378,7 @@ test_that("the repair broken at its final manifest upload finishes on a re-run",
   fx <- rp_crossed()
   local({
     local_break_at("manifest")
-    expect_false(rp_fix(fx)$fixed)
+    expect_error(rp_fix(fx), class = "datom_test_break")
   })
 
   expect_true(rp_fix(fx)$fixed)
@@ -392,35 +388,67 @@ test_that("the repair broken at its final manifest upload finishes on a re-run",
   expect_true(rp_validate(fx)$valid)
 })
 
-test_that("a set payload the repair cannot restore leaves the manifest unpublished and the set's documents alone", {
+test_that("a set payload the repair cannot put back stops it before anything is published, heal's publish included", {
+  # The set's v2 is committed and pushed but not published, so heal's publish
+  # would publish it; its payload is gone from storage (S8: storage edited by
+  # hand, or a released datom). Putting the payload back must come first, and
+  # its failure must publish nothing (review of 9284ca9).
   fx <- rp_product_project()
+  members <- list(datom_member(fx$conn, "dm",
+                               datom_history(fx$conn, "dm", short_hash = FALSE)$version[[1L]]))
+  local({
+    local_break_at("metadata")
+    expect_error(
+      suppressMessages(datom_write_set(fx$conn, members, tags = list(description = "v2"))),
+      class = "datom_test_break"
+    )
+  })
+  v2 <- rp_clone_version(fx, "adam")
   key <- rp_set_payload_key(fx)
   fs::file_delete(.datom_local_path(fx$conn, key))
-  set_meta_before <- .datom_storage_read_json(fx$conn, .datom_artifact_meta_key("adam", "metadata"))
-  local({
-    local_break_at("upload")
-    # Recorded, not compared: on this otherwise consistent store a manifest
-    # upload would send the same content, so storage alone cannot show it.
+  manifest_before <- .datom_storage_read_json(fx$conn, ".metadata/manifest.json")
+  record_keys <- function(env = parent.frame(), upload = TRUE) {
     keys <- character()
     real_write <- get(".datom_storage_write_json", envir = asNamespace("datom"))
-    local_mocked_bindings(.datom_storage_write_json = function(conn, key, data) {
-      keys <<- c(keys, key)
-      real_write(conn, key, data)
-    })
-    run <- rp_notes(datom_validate(fx$conn, fix = TRUE))
-    expect_false(run$value$fixed)
-    expect_match(run$report, "\"adam\": failed", fixed = TRUE)
-    expect_match(run$report, "Did not publish the manifest", fixed = TRUE)
-    expect_false(".metadata/manifest.json" %in% keys)
-    expect_false(any(startsWith(keys, "adam/")))
-  })
+    real_upload <- get(".datom_storage_upload_absent", envir = asNamespace("datom"))
+    local_mocked_bindings(
+      .datom_storage_write_json = function(conn, key, data) {
+        keys <<- c(keys, key)
+        real_write(conn, key, data)
+      },
+      .datom_storage_upload_absent = function(conn, local_path, key, sha256 = NULL) {
+        keys <<- c(keys, key)
+        if (!upload) stop(datom_test_break("upload"))
+        real_upload(conn, local_path, key, sha256 = sha256)
+      },
+      .env = env
+    )
+    function() keys
+  }
 
+  local({
+    keys <- record_keys(upload = FALSE)
+    err <- expect_error(
+      suppressWarnings(suppressMessages(datom_validate(fx$conn, fix = TRUE))),
+      class = "datom_payload_restore_failed"
+    )
+    msg <- gsub("\\s+", " ", cli::ansi_strip(conditionMessage(err)))
+    expect_match(msg, "set \"adam\"", fixed = TRUE)
+    expect_match(msg, "simulated break at upload", fixed = TRUE)
+    expect_match(msg, "Re-run `datom_validate(fix = TRUE)`", fixed = TRUE)
+    expect_identical(keys(), key)
+  })
+  expect_identical(.datom_storage_read_json(fx$conn, ".metadata/manifest.json"),
+                   manifest_before)
+
+  keys <- record_keys()
   expect_true(rp_fix(fx)$fixed)
-  expect_true(.datom_storage_exists(fx$conn, key))
-  expect_identical(
-    .datom_storage_read_json(fx$conn, .datom_artifact_meta_key("adam", "metadata")),
-    set_meta_before
-  )
+
+  adam_docs <- which(startsWith(keys(), "adam/.metadata/"))
+  expect_identical(keys()[[1]], key)
+  expect_true(length(adam_docs) > 0L && all(adam_docs > 1L))
+  expect_identical(rp_stored_version(fx, "adam"), v2)
+  expect_no_error(suppressMessages(datom_get_set(fx$reader, "adam")))
 })
 
 
@@ -503,6 +531,30 @@ test_that("a committed metadata.json that does not hash to its recorded version 
   expect_identical(rp_stored_version(fx, "dm"), v1$metadata_sha)
   expect_false("manifest_mismatch_s3" %in% rp_statuses(rp_validate(fx), "dm"))
   expect_true(rp_validate(fx)$valid)
+})
+
+
+# === which folders datom_validate() checks (P8) ===================================
+
+test_that("datom_validate() says nothing about a user's own app/metadata.json, before or after fix = TRUE", {
+  # The same artifacts the repair acts on: otherwise validate reports a folder
+  # its own fix rightly skips, and the report never clears (review of 9284ca9).
+  fx <- local_interrupt_project()
+  rp_write(fx$conn, "dm")
+  fs::dir_create(file.path(fx$repo, c("app", "app2")))
+  writeLines('{"name": "my app", "settings": {"x": 1}}',
+             file.path(fx$repo, "app", "metadata.json"))
+  git_commit_files(fx$repo, "app/metadata.json", "Add the app's config")
+  writeLines('{"y": 1}', file.path(fx$repo, "app2", "metadata.json"))
+
+  before <- rp_validate(fx)
+  rp_fix(fx)
+  after <- rp_validate(fx)
+
+  for (result in list(before, after)) {
+    expect_true(result$valid)
+    expect_identical(result$tables$table, "dm")
+  }
 })
 
 

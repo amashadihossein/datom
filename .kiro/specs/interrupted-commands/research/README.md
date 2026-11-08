@@ -201,7 +201,9 @@ Added 2026-11-07 in task 7:
   `manifest_mismatch_s3` comparison; the document's own version and the placeability check). Same
   usage as task 6's; it runs `test-repair.R` once per probe (one probe adds
   `test-manifest-conflict.R`), and the whole sweep takes about ten minutes. Results are in task 7's
-  commit message.
+  commit message. Four probes added from task 7's checkpoint review (the restore before heal's
+  publish, the restore's stop, `datom_validate()`'s discovery, a stop coming through
+  `datom_validate()`), and two re-pointed; results in the fix's commit message.
 - Rerun after task 7 (2026-11-07): `clone_snapshot_probe.R`, updated to record the keys the repair
   (`.datom_sync_data_metadata()`) writes now that the per-artifact copy is deleted: the current
   version's snapshot, the history, `metadata.json`, then the manifest. `snapshot_sources_probe.R`,

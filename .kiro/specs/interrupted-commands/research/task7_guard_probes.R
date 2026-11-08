@@ -73,13 +73,35 @@ main <- function() {
       "  # Interactive confirmation, before heal: answering \"no\" must change nothing.\n",
       "  .datom_heal_publish(conn, all = TRUE)\n")),
 
-    # A set's payload first (data file first): restore after the publish instead.
+    # A set's payload first (data file first): restore after every publish
+    # instead.
     payload_first = list(filter = repair, edit = function() {
-      sub1(sy, "        .datom_restore_set_payload(conn, nm)\n        NULL",
-           "        NULL")
-      sub1(sy, "  failed <- c(restore_failed, publish$failed)",
-           "  purrr::walk(names_now, function(nm) .datom_restore_set_payload(conn, nm))\n  failed <- c(restore_failed, publish$failed)")
+      sub1(sy, "  .datom_repair_restore_payloads(conn, names_now)\n", "")
+      sub1(sy, "  failed <- publish$failed",
+           "  .datom_repair_restore_payloads(conn, names_now)\n  failed <- publish$failed")
     }),
+
+    # Added from the review of 9284ca9: the restore before heal's publish ...
+    restore_before_heal = list(filter = repair, edit = function() {
+      sub1(sy, "  .datom_repair_restore_payloads(conn, names_now)\n", "")
+      sub1(sy, "  pushed <- isTRUE(heal_publish$pushed) || .datom_repair_push(conn)",
+           "  pushed <- isTRUE(heal_publish$pushed) || .datom_repair_push(conn)\n  .datom_repair_restore_payloads(conn, names_now)")
+    }),
+
+    # ... a restore that fails stops the repair ...
+    restore_stops = list(filter = repair, edit = function() sub1(sy,
+      "      error = function(e) .datom_stop_payload_restore_failed(nm, e)",
+      "      error = function(e) character()")),
+
+    # ... validate checks the same artifacts the repair acts on ...
+    validate_discovery = list(filter = repair, edit = function() sub1(va,
+      "  table_names <- .datom_clone_artifact_names(conn)",
+      "  table_names <- fs::path_file(fs::dir_ls(conn$path, type = \"directory\"))\n  table_names <- table_names[fs::file_exists(fs::path(conn$path, table_names, \"metadata.json\"))]")),
+
+    # ... and a stop in the repair comes through datom_validate() unchanged.
+    stop_through = list(filter = "^(repair|validate)$", edit = function() sub1(va,
+      "    repair <- .datom_sync_data_metadata(conn, .confirm = FALSE)",
+      "    repair <- tryCatch(.datom_sync_data_metadata(conn, .confirm = FALSE),\n      error = function(e) list(tables = list(list(action = \"error\"))))")),
 
     # metadata.json last within each artifact.
     metadata_last = list(filter = repair, edit = function() sub1(rw,
@@ -88,13 +110,8 @@ main <- function() {
 
     # The manifest only if every artifact's documents went up (P7).
     manifest_after_failure = list(filter = repair, edit = function() sub1(hl,
-      "  manifest <- if (length(failed) == 0L && isTRUE(manifest)) {",
-      "  manifest <- if (isTRUE(manifest)) {")),
-
-    # ... and not after a set's payload could not be restored.
-    manifest_after_restore = list(filter = repair, edit = function() sub1(sy,
-      "    manifest = length(restore_failed) == 0L",
-      "    manifest = TRUE")),
+      "  manifest <- if (length(failed) == 0L) {",
+      "  manifest <- if (TRUE) {")),
 
     # manifest_mismatch_s3: the comparison itself (R5.5).
     mismatch_compare = list(filter = repair, edit = function() sub1(va,

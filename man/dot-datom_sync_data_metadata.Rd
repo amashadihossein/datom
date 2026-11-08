@@ -28,19 +28,22 @@ Brings storage in line with git for \strong{every artifact of either kind}
 }
 \details{
 \enumerate{
-\item heal, on every artifact (\code{all = TRUE}): datom's files an interrupted
-write left uncommitted are put back to the last commit, never published
-(each such artifact gets a warning: that write is not run again); the
-clone is pulled; a committed version storage lacks is pushed and
+\item heal's reset and the pull, on every artifact (\code{all = TRUE}): datom's
+files an interrupted write left uncommitted are put back to the last
+commit, never published (each such artifact gets a warning: that write is
+not run again); the clone is pulled;
+\item a set's payload missing from storage is restored from the clone
+(\code{\link[=.datom_restore_set_payload]{.datom_restore_set_payload()}}), before anything publishes the set's
+documents: a set's data file first. One that cannot be restored stops the
+repair before anything is published;
+\item heal's publish: a committed version storage lacks is pushed and
 published. Where a write stops on another artifact's work, the repair
 acts: calling it is the consent. A stored version this clone has never
 seen is replaced by the clone's, and a stored row for an artifact the
 clone lacks is dropped, each with a warning (\code{\link[=.datom_heal_publish]{.datom_heal_publish()}});
-\item any commit the git remote still lacks is pushed, without pulling again:
-heal pushes only to finish a differing manifest row, and storage must
-never name a document the remote does not have;
-\item a set's payload missing from storage is restored from the clone
-(\code{\link[=.datom_restore_set_payload]{.datom_restore_set_payload()}}): a set's data file before its documents;
+then any commit the git remote still lacks is pushed, without pulling
+again: heal pushes only to finish a differing manifest row, and storage
+must never name a document the remote does not have;
 \item every artifact is published through the one publish path,
 \code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}: the snapshot, the history, \code{metadata.json}
 last, then the manifest, and the manifest only if every artifact

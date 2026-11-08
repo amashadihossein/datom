@@ -9,8 +9,7 @@
   names,
   commit_sha = NULL,
   recheck_manifest = FALSE,
-  on_failure = c("raise", "return"),
-  manifest = TRUE
+  on_failure = c("raise", "return")
 )
 }
 \arguments{
@@ -27,11 +26,6 @@ which names the first commit that produced each version.}
 \item{on_failure}{\code{"raise"} (a write's own publish) re-signals the first
 failure as it was raised; \code{"return"} hands the failures back, for heal's
 stop and the repair's report.}
-
-\item{manifest}{\code{FALSE} when the caller already knows an artifact outside
-\code{names} failed (the repair, after a set's payload could not be restored):
-the manifest is then not published, for the same reason as after a failure
-here.}
 }
 \value{
 Invisibly, a list with \code{published} (versions, named by artifact),

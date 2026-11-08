@@ -1122,18 +1122,13 @@
 #' @param on_failure `"raise"` (a write's own publish) re-signals the first
 #'   failure as it was raised; `"return"` hands the failures back, for heal's
 #'   stop and the repair's report.
-#' @param manifest `FALSE` when the caller already knows an artifact outside
-#'   `names` failed (the repair, after a set's payload could not be restored):
-#'   the manifest is then not published, for the same reason as after a failure
-#'   here.
 #' @return Invisibly, a list with `published` (versions, named by artifact),
 #'   `failed` (conditions, named by artifact) and `manifest` (`"published"`,
 #'   `"held_back"`, `"not_reached"` or `"none"` when the clone has no manifest).
 #' @keywords internal
 .datom_publish_artifacts <- function(conn, names, commit_sha = NULL,
                                      recheck_manifest = FALSE,
-                                     on_failure = c("raise", "return"),
-                                     manifest = TRUE) {
+                                     on_failure = c("raise", "return")) {
   on_failure <- match.arg(on_failure)
   if (!is.null(commit_sha) && length(names) != 1L) {
     cli::cli_abort(
@@ -1152,7 +1147,7 @@
   failed <- purrr::compact(purrr::map(outcomes, "error"))
   published <- unlist(purrr::compact(purrr::map(outcomes, "version")))
 
-  manifest <- if (length(failed) == 0L && isTRUE(manifest)) {
+  manifest <- if (length(failed) == 0L) {
     .datom_publish_manifest(conn, names, recheck = recheck_manifest)
   } else {
     "not_reached"

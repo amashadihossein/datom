@@ -115,21 +115,29 @@ datom_repository_check <- function(path) {
 #'   * datom's files that an interrupted write left uncommitted are put back to
 #'     the last commit, never published, with a warning naming each artifact
 #'     (run that write again to save it);
-#'   * the clone is pulled, and any commit the git remote lacks is pushed;
+#'   * the clone is pulled;
 #'   * a **set's** payload storage has lost is restored from the clone -- git
 #'     holds `{name}/set.json`, so those bytes are recoverable. A restore
 #'     happens only when the stored object is absent and only when the clone's
 #'     bytes hash to the `document_sha` already recorded; a stored payload is
 #'     never overwritten and its recorded hash is never recomputed;
+#'   * any commit the git remote lacks is pushed;
 #'   * every artifact's documents are published from the clone (its version
 #'     snapshot, history, then `metadata.json`), then the manifest, and the
 #'     manifest only if every artifact was published.
 #'
 #'   A stored version this clone has never seen is replaced by the clone's,
 #'   and an artifact the stored manifest names but the clone lacks loses its
-#'   row; each gets a warning. The repair reports, per artifact, what it reset,
-#'   pushed and published. A merge conflict or a failed fetch stops it before
-#'   storage changes.
+#'   row; each gets a warning. So a repair run while a teammate is writing can
+#'   replace the version they published seconds earlier, until their table's
+#'   next write. The repair reports, per artifact, what it reset, pushed and
+#'   published.
+#'
+#'   A merge in progress, a failed fetch, a refused push or a set payload
+#'   storage will not take stops the repair with an error before anything is
+#'   published, each message naming its way out. A failure while publishing one
+#'   artifact does not stop it: the others are published, the manifest is not,
+#'   and `fixed` is `FALSE`.
 #'
 #'   A missing **table** payload (`data_missing_s3`) cannot be repaired: the
 #'   parquet bytes are never in the clone. Those tables are named in a warning
@@ -248,27 +256,28 @@ datom_validate <- function(conn, fix = FALSE) {
       "Repairing: finishing unfinished writes and publishing every artifact \\
        from this clone..."
     )
-    tryCatch({
-      repair <- .datom_sync_data_metadata(conn, .confirm = FALSE)
-      failed <- purrr::keep(repair$tables, ~ identical(.x$action, "error"))
-      fixed <- length(failed) == 0L
-      if (fixed) {
-        cli::cli_alert_success(
-          "Repair finished. Re-run {.fn datom_validate} to verify."
-        )
-      }
-      if (length(unfixable) > 0L) {
-        cli::cli_alert_warning(
-          "Data still missing from storage for {length(unfixable)} table{?s}: {.val {unfixable}}."
-        )
-        cli::cli_bullets(c(
-          "i" = "The repair does not fix this -- the parquet bytes are not in the git clone.",
-          "i" = "Re-run {.fn datom_write} with the source data to upload them."
-        ))
-      }
-    }, error = function(e) {
-      cli::cli_alert_danger("Repair stopped: {conditionMessage(e)}")
-    })
+    # A stop inside the repair (a merge in progress, a failed fetch, a refused
+    # push, a payload storage will not take) comes through unchanged, as it
+    # does from `datom_write(conn)`: each names its own way out, and a script
+    # should halt on it. A failure while publishing one artifact is not a stop:
+    # the repair's report names it, and `fixed` is FALSE.
+    repair <- .datom_sync_data_metadata(conn, .confirm = FALSE)
+    failed <- purrr::keep(repair$tables, ~ identical(.x$action, "error"))
+    fixed <- length(failed) == 0L
+    if (fixed) {
+      cli::cli_alert_success(
+        "Repair finished. Re-run {.fn datom_validate} to verify."
+      )
+    }
+    if (length(unfixable) > 0L) {
+      cli::cli_alert_warning(
+        "Data still missing from storage for {length(unfixable)} table{?s}: {.val {unfixable}}."
+      )
+      cli::cli_bullets(c(
+        "i" = "The repair does not fix this -- the parquet bytes are not in the git clone.",
+        "i" = "Re-run {.fn datom_write} with the source data to upload them."
+      ))
+    }
   }
 
   invisible(list(
@@ -463,19 +472,11 @@ datom_validate <- function(conn, fix = FALSE) {
 #' Validate per-table metadata consistency
 #' @noRd
 .datom_validate_tables <- function(conn) {
-  repo_path <- conn$path
-
-  # Discover tables (directories with metadata.json)
-  all_dirs <- fs::dir_ls(repo_path, type = "directory")
-  all_dirs <- all_dirs[!grepl("^\\.", fs::path_file(all_dirs))]
-  all_dirs <- all_dirs[!fs::path_file(all_dirs) %in%
-    c("input_files", "renv", "man", "R", "tests", "vignettes", "src")]
-
-  table_dirs <- all_dirs[purrr::map_lgl(all_dirs, function(d) {
-    fs::file_exists(fs::path(d, "metadata.json"))
-  })]
-
-  table_names <- fs::path_file(table_dirs)
+  # The same artifacts the repair and heal act on: a folder the manifest names,
+  # or whose metadata.json declares a datom `hash_algo`. A user's own
+  # `app/metadata.json` is not one, so it is neither reported nor sent to a fix
+  # that would skip it.
+  table_names <- .datom_clone_artifact_names(conn)
 
   if (length(table_names) == 0L) {
     # Every column a populated result carries, `kind` included: a zero-row frame

@@ -1205,10 +1205,11 @@ datom_read <- function(conn,
 #' @param data Data frame to write. If NULL with name, does metadata-only sync.
 #' @param name Table name. If NULL with NULL data, runs the repair of
 #'   `datom_validate(fix = TRUE)` after asking: it puts back datom's files an
-#'   interrupted write left uncommitted, pulls, may push commits the git remote
-#'   lacks, and publishes every artifact of either kind from the clone (its
-#'   current version snapshot, history and metadata, a **set**'s missing
-#'   payload too), then the manifest. See [datom_validate()] for the details.
+#'   interrupted write left uncommitted, pulls, puts back a **set**'s missing
+#'   payload, may push commits the git remote lacks, and publishes every
+#'   artifact of either kind from the clone (its current version snapshot,
+#'   history and metadata), then the manifest. See [datom_validate()] for the
+#'   details.
 #' @param metadata Optional named list of custom metadata. A missing value
 #'   (`NA`), `NaN` or `Inf` anywhere in it is refused, because it cannot be
 #'   read back as written: leave the field out instead.

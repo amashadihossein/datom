@@ -110,19 +110,22 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 #' Brings storage in line with git for **every artifact of either kind**
 #' ([.datom_clone_artifact_names()]), in this order (requirements R5):
 #'
-#' 1. heal, on every artifact (`all = TRUE`): datom's files an interrupted
-#'    write left uncommitted are put back to the last commit, never published
-#'    (each such artifact gets a warning: that write is not run again); the
-#'    clone is pulled; a committed version storage lacks is pushed and
+#' 1. heal's reset and the pull, on every artifact (`all = TRUE`): datom's
+#'    files an interrupted write left uncommitted are put back to the last
+#'    commit, never published (each such artifact gets a warning: that write is
+#'    not run again); the clone is pulled;
+#' 2. a set's payload missing from storage is restored from the clone
+#'    ([.datom_restore_set_payload()]), before anything publishes the set's
+#'    documents: a set's data file first. One that cannot be restored stops the
+#'    repair before anything is published;
+#' 3. heal's publish: a committed version storage lacks is pushed and
 #'    published. Where a write stops on another artifact's work, the repair
 #'    acts: calling it is the consent. A stored version this clone has never
 #'    seen is replaced by the clone's, and a stored row for an artifact the
 #'    clone lacks is dropped, each with a warning ([.datom_heal_publish()]);
-#' 2. any commit the git remote still lacks is pushed, without pulling again:
-#'    heal pushes only to finish a differing manifest row, and storage must
-#'    never name a document the remote does not have;
-#' 3. a set's payload missing from storage is restored from the clone
-#'    ([.datom_restore_set_payload()]): a set's data file before its documents;
+#'    then any commit the git remote still lacks is pushed, without pulling
+#'    again: heal pushes only to finish a differing manifest row, and storage
+#'    must never name a document the remote does not have;
 #' 4. every artifact is published through the one publish path,
 #'    [.datom_publish_artifacts()]: the snapshot, the history, `metadata.json`
 #'    last, then the manifest, and the manifest only if every artifact
@@ -167,14 +170,14 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 
   if (conn$role != "developer") {
     cli::cli_abort(c(
-      "Metadata sync requires {.val developer} role.",
+      "The repair requires {.val developer} role.",
       "i" = "Current role: {.val {conn$role}}."
     ))
   }
 
   if (is.null(conn$path)) {
     cli::cli_abort(c(
-      "Metadata sync requires a local git repo path.",
+      "The repair requires a local git repo path.",
       "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
@@ -225,34 +228,27 @@ datom_pull <- function(conn, finish_merge = FALSE) {
     }
   }
 
-  # Heal, on every artifact: the only place this route runs it.
+  # Heal, on every artifact: the only place this route runs it. Its reset and
+  # the pull first ...
   healed <- .datom_heal(conn, all = TRUE)
   .datom_pull_before_write(conn, reset = healed$reset)
+
+  # Again after them: the reset removes a first write that never committed, and
+  # the pull can bring in a teammate's new artifact.
+  names_now <- .datom_clone_artifact_names(conn)
+
+  # ... then a set's data file, before anything publishes its documents,
+  # heal's publish included. A payload is named by nothing until its documents
+  # are published, so putting it back first is safe; one that cannot be put
+  # back stops the repair before anything is published.
+  .datom_repair_restore_payloads(conn, names_now)
+
   unpushed <- .datom_pushed_artifacts(repo_path)
   heal_publish <- .datom_heal_publish(conn, all = TRUE)
   pushed <- isTRUE(heal_publish$pushed) || .datom_repair_push(conn)
 
-  # Again after heal: its reset removes a first write that never committed, and
-  # the pull can bring in a teammate's new artifact.
-  names_now <- .datom_clone_artifact_names(conn)
-
-  # A set's data file before its documents.
-  restore_failed <- purrr::compact(stats::setNames(
-    purrr::map(names_now, function(nm) {
-      tryCatch({
-        .datom_restore_set_payload(conn, nm)
-        NULL
-      }, error = function(e) e)
-    }),
-    names_now
-  ))
-
-  publish <- .datom_publish_artifacts(
-    conn, setdiff(names_now, names(restore_failed)),
-    on_failure = "return",
-    manifest = length(restore_failed) == 0L
-  )
-  failed <- c(restore_failed, publish$failed)
+  publish <- .datom_publish_artifacts(conn, names_now, on_failure = "return")
+  failed <- publish$failed
 
   table_results <- .datom_repair_results(
     names_now, healed$reset, publish$published, failed,
@@ -269,6 +265,52 @@ datom_pull <- function(conn, finish_merge = FALSE) {
     manifest = publish$manifest,
     tables = table_results
   ))
+}
+
+
+#' Put Back Every Set Payload Storage Has Lost, or Stop
+#'
+#' The repair's step before anything is published: a set's data file before
+#' its documents. A payload that cannot be put back (storage unreachable, or
+#' refusing the upload) stops the repair before anything is published, naming
+#' the set and the error: publishing the set's documents would name a payload
+#' storage lacks, and the other artifacts would most likely fail on the same
+#' outage.
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @param names The artifacts in the clone.
+#' @return Invisibly, the storage keys uploaded.
+#' @keywords internal
+.datom_repair_restore_payloads <- function(conn, names) {
+  keys <- purrr::map(names, function(nm) {
+    tryCatch(
+      .datom_restore_set_payload(conn, nm),
+      error = function(e) .datom_stop_payload_restore_failed(nm, e)
+    )
+  })
+  invisible(unlist(keys) %||% character())
+}
+
+
+#' Stop When the Repair Cannot Put Back a Set's Payload
+#'
+#' @param name The set.
+#' @param e The upload's condition.
+#' @return Does not return.
+#' @keywords internal
+.datom_stop_payload_restore_failed <- function(name, e) {
+  why <- .datom_one_line(e)
+  cli::cli_abort(
+    c(
+      "Could not put back the stored payload of set {.val {name}}, so the \\
+       repair stopped before publishing anything.",
+      "x" = "{why}",
+      "i" = "Re-run {.code datom_validate(fix = TRUE)} once storage is \\
+             reachable."
+    ),
+    class = "datom_payload_restore_failed",
+    parent = e
+  )
 }
 
 

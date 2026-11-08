@@ -15,12 +15,13 @@ found anything (the repair also finishes what they cannot see). In order:
 \item datom's files that an interrupted write left uncommitted are put back to
 the last commit, never published, with a warning naming each artifact
 (run that write again to save it);
-\item the clone is pulled, and any commit the git remote lacks is pushed;
+\item the clone is pulled;
 \item a \strong{set's} payload storage has lost is restored from the clone -- git
 holds \code{{name}/set.json}, so those bytes are recoverable. A restore
 happens only when the stored object is absent and only when the clone's
 bytes hash to the \code{document_sha} already recorded; a stored payload is
 never overwritten and its recorded hash is never recomputed;
+\item any commit the git remote lacks is pushed;
 \item every artifact's documents are published from the clone (its version
 snapshot, history, then \code{metadata.json}), then the manifest, and the
 manifest only if every artifact was published.
@@ -28,9 +29,16 @@ manifest only if every artifact was published.
 
 A stored version this clone has never seen is replaced by the clone's,
 and an artifact the stored manifest names but the clone lacks loses its
-row; each gets a warning. The repair reports, per artifact, what it reset,
-pushed and published. A merge conflict or a failed fetch stops it before
-storage changes.
+row; each gets a warning. So a repair run while a teammate is writing can
+replace the version they published seconds earlier, until their table's
+next write. The repair reports, per artifact, what it reset, pushed and
+published.
+
+A merge in progress, a failed fetch, a refused push or a set payload
+storage will not take stops the repair with an error before anything is
+published, each message naming its way out. A failure while publishing one
+artifact does not stop it: the others are published, the manifest is not,
+and \code{fixed} is \code{FALSE}.
 
 A missing \strong{table} payload (\code{data_missing_s3}) cannot be repaired: the
 parquet bytes are never in the clone. Those tables are named in a warning

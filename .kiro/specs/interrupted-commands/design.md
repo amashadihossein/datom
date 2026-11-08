@@ -199,14 +199,13 @@ write commands.
 | `R/sync.R` | `datom_pull()` | changed | Gains `finish_merge = FALSE`: when `TRUE`, the merge check finishes a merge that is not of the remote branch the way it finishes one that is (R3.9, section 4 step 0); with nothing in progress it does nothing |
 | `R/sync.R` | `datom_sync_manifest()` | changed | Compares against HEAD's manifest; `unpushed` status, from the clone alone (section 7) |
 | `R/sync.R` | `datom_sync()` | changed | The format check on every preview table, then heals once instead of `.datom_check_git_current()`, with every table in its preview as `artifact` and the rows it writes (`new`, `changed`) as `rewrite`; unfinished work on a table outside the preview, and uncommitted files of a preview row it does not write, stop it; `unpushed` rows, and `unchanged` rows heal published, are reported `success`; stops after a table's write that failed partway once it had changed the clone, or that held back the manifest (section 7) |
-| `R/sync.R` | `.datom_sync_data_metadata()` | changed | Heals every artifact (`all = TRUE`), after its prompt; pushes any commit the remote still lacks (`.datom_repair_push()`, R5.2); restores each set's payload where storage lacks it; then publishes every artifact through `.datom_publish_artifacts()`, manifest last and only if every artifact (and every payload restore) succeeded; reports per artifact (`.datom_repair_results()`, `.datom_report_repair()`, R5.3) (section 6; task 7) |
+| `R/sync.R` | `.datom_sync_data_metadata()` | changed | After its prompt: heal's reset and the pull on every artifact (`all = TRUE`); each set's payload put back where storage lacks it, a failure stopping the repair before anything is published (`.datom_repair_restore_payloads()`); heal's publish; any commit the remote still lacks pushed (`.datom_repair_push()`, R5.2); then every artifact published through `.datom_publish_artifacts()`, manifest last and only if every artifact succeeded; reports per artifact (`.datom_repair_results()`, `.datom_report_repair()`, R5.3) (section 6; task 7) |
 | `R/sync.R` | `.datom_read_manifest()` | changed | A third scope, `"head"`, reading HEAD's copy through `.datom_git_head_file()` with the same schema check and upgrade |
 | `R/sync.R` | `.datom_restore_set_payload()` | changed | Uploads through `.datom_storage_upload_absent()` |
 | `R/sync.R` | `.datom_sync_one_artifact()` | deleted | Its snapshot loop copied from a clone `{name}/.metadata/` folder no datom command writes, so it never published a snapshot; the repair uses `.datom_publish_artifacts()` and calls `.datom_restore_set_payload()` directly (section 6) |
-| `R/validate.R` | `datom_validate()` | changed | With `fix = TRUE` it runs the repair whether or not its checks found anything (task 7: the repair finishes what they cannot see, and every write's stop names it); `fixed` is `TRUE` only when every artifact was published; the new status `manifest_mismatch_s3`, read from storage only, with a message naming the fix (R5.5, section 6) |
+| `R/validate.R` | `datom_validate()` | changed | With `fix = TRUE` it runs the repair whether or not its checks found anything (task 7: the repair finishes what they cannot see, and every write's stop names it), and a stop inside the repair comes through unchanged (review of `9284ca9`); `fixed` is `TRUE` only when every artifact was published; it checks the artifacts `.datom_clone_artifact_names()` finds, as the repair does; the new status `manifest_mismatch_s3`, read from storage only, with a message naming the fix (R5.5, section 6) |
 | `R/validate.R` | `.datom_validate_one_table()` | changed | Reads the stored `metadata.json` and history, and reports `manifest_mismatch_s3` when the version they describe differs from the stored manifest's row, or the row is missing (`.datom_validate_manifest_mismatch()`; the stored manifest is read once per call, `.datom_validate_stored_rows()`). The version comes from `.datom_documents_version()`: the document's own version when every field is one this build can place and the history names it, else the recorded one (section 6; owner, 2026-11-06, replacing the history lookup alone) |
 | `R/heal.R` | `.datom_documents_version(meta, history)` | renamed (task 7) | Task 5's `.datom_clone_files_version()`, renamed because it now reads stored documents too, and given the placeability check; shared by the manifest rebuild and `manifest_mismatch_s3` |
-| `R/heal.R` | `.datom_publish_artifacts()` | changed (task 7) | Gains `manifest = TRUE`; the repair passes `FALSE` after a set's payload could not be restored, so the manifest is not published |
 | `R/repo.R` | `datom_repo_commit()` | changed | The merge check, then, before staging, a stop naming `datom_validate(fix = TRUE)` when the commit would include datom's own uncommitted files (R3.5, R3.9; no reset since the spot-check before task 4a); the R3.6 message when it pushes |
 | `R/repo.R` | `datom_repo_push()`, `datom_repo_attach_governance()`, `datom_repo_set_data_store()` | changed | The R3.6 message around their push |
 | `R/conn.R` | `datom_init_repo()` | changed | Finishes a half-initialised folder (section 8) |
@@ -746,8 +745,9 @@ reader reads both new ones.
 `.datom_sync_data_metadata(conn, .confirm)` becomes:
 
 ```
-merge check, heal's reset, the pull, heal's publish (section 4), on every artifact (all = TRUE)
-for each artifact:  restore a set's payload if storage lacks it    (data file first)
+merge check, heal's reset, the pull (section 4), on every artifact (all = TRUE)
+for each artifact:  restore a set's payload if storage lacks it    (data file first; a failure stops)
+heal's publish (section 4), then push what the remote still lacks
 for each artifact:  .datom_publish_artifacts(): snapshot, history, metadata.json last
 once, at the end:   the manifest                                   (only if every artifact published)
 ```
@@ -774,8 +774,27 @@ committed but not pushed or published while storage agrees with itself, or a los
 every write's stop that names `datom_validate(fix = TRUE)` would have led to a repair that did
 nothing. `fixed` is `TRUE` only when every artifact was published.
 
-**After a set's payload cannot be restored**, that set's documents are not published and the
-manifest is not either (`.datom_publish_artifacts(manifest = FALSE)`), as after any other failure.
+**A set's payload is put back right after heal's reset and the pull, before heal's publish**
+(review of `9284ca9`, owner, 2026-11-07). Heal's publish would otherwise publish a set's documents
+and the manifest, for a version committed but not published, before its payload was back (S8: a
+payload removed from storage, or left missing by a released datom). Safe first, because a payload is
+named by nothing until its documents are published (D1). **A payload that cannot be put back stops
+the repair before anything is published** (`datom_payload_restore_failed`), naming the set and the
+error: its documents would name a payload storage lacks, and the other artifacts would most likely
+fail on the same outage. The review proposed carrying on and keeping that set out of heal's publish;
+the owner chose the stop, which needs nothing new in heal.
+
+**A stop inside the repair comes through `datom_validate(fix = TRUE)` unchanged** (same review,
+owner): a merge in progress, a failed fetch, a refused push, a payload storage will not take. It
+used to be caught into one "Fix failed" alert, while `datom_write(conn)` let it through; both routes
+now behave the same (R5.4). A failure while publishing one artifact is not a stop: the report names
+it and `fixed` is `FALSE`.
+
+**`datom_validate()` checks the artifacts the repair acts on** (same review): it finds them with
+`.datom_clone_artifact_names()`, the helper task 4a tightened for heal, the repair and the format
+check. Until then it counted any top-level folder holding a `metadata.json`, so a user's own
+`app/metadata.json` was reported `metadata_missing_s3,data_missing_s3`, with advice to re-run
+`datom_write()`, and the fix, which rightly skips it, could never clear it.
 
 **A new status, `manifest_mismatch_s3`** (R5.5; rewritten 2026-10-30 in the simplification pass,
 owner, from `metadata_stale_s3`, which compared storage against the clone's last commit and so needed

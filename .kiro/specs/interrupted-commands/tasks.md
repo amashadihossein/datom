@@ -64,7 +64,21 @@ manifest stops the sync too. The reviewer's check of `aa4a680` raised one option
 same day (below). The reviewer's check of that fix (`1718023`) found nothing more, and task 6
 closed. Task 7 (the repair) done the same day (its entry below lists seven differences from the
 plan, the first being that `datom_validate(fix = TRUE)` now runs the repair whether or not a
-check found something); it awaits its checkpoint.**
+check found something). Its checkpoint review the same day (below) agreed with that difference
+and found one gap and one ordering fault, fixed the same day with three smaller points; the fixes
+await the reviewer's check.**
+
+**Task 7's checkpoint review, 2026-11-07**, by another agent, of `9284ca9`, read against the code.
+Points 1 and 2 reproduced here on throwaway projects before fixing; evaluated with the owner:
+
+| Point | Outcome |
+|---|---|
+| Difference 1 (`fix = TRUE` always runs the repair) | **Kept** (owner): it is what makes the fix every stop names a way out that works |
+| 1. `datom_validate()` counted any folder holding a `metadata.json` as an artifact, the path task 4a missed (S8/P8). A user's own `app/metadata.json` was reported, and the fix, which rightly skips it, could never clear it | **Taken**: discovery through `.datom_clone_artifact_names()`; a test on the P8 fixture, before and after `fix = TRUE`. Checked here: the review said `kind_unsupported`; the folders were reported `metadata_missing_s3,data_missing_s3`, with advice to re-run `datom_write()` |
+| 2. Heal's publish ran before the payload restore, so a set committed but not published with its payload gone from storage (S8) had its documents and the manifest published first, and a failed restore left the manifest naming a missing payload | **Taken, reshaped (option B)**: the restore runs right after the pull, before heal's publish, and a failure stops the repair before anything is published. The review proposed carrying on and keeping that set and the manifest out of heal's publish; the stop needs nothing new in heal and removes the `manifest =` argument task 7 had added |
+| 3a. A stop inside the repair was caught into one "Repair stopped" alert by `datom_validate(fix = TRUE)` | **Taken (option A)**: it comes through unchanged, as from `datom_write(conn)` (R5.4); a per-artifact publish failure is still reported, with `fixed = FALSE` |
+| 3b. "Metadata sync requires ..." | **Taken**: "The repair requires ...". Checked here: `datom_validate()` refuses a reader before reaching it, so only a direct call shows it |
+| 3c. The help could say a repair run during a teammate's write can replace their publish (DD4) | **Taken**: one sentence in `fix`'s help |
 
 **Review of `aa4a680`, 2026-11-07**, by the same reviewer: one optional nit, taken by the owner.
 When storage's manifest could not be read at step 6's recheck, the write recorded the storage
@@ -414,7 +428,8 @@ they must still pass once the repair changes. The guard-probe harness to copy is
 `research/task6_guard_probes.R` (name probes on the command line to run only those). Baseline:
 6006 expectations, 0 failed, 0 skipped, at `1718023`.
 
-**After task 7** (2026-11-07): baseline 6127 expectations, 0 failed, 0 skipped. The repair's tests
+**After task 7** (2026-11-07): baseline 6134 expectations, 0 failed, 0 skipped (6127 at task 7's
+commit, then 7 added by its checkpoint review's fixes). The repair's tests
 on a real project live in `test-repair.R`; `rp_mirror()` there answers `datom_write(conn)`'s prompt
 by mocking the `interactive` and `readline` bindings `R/sync.R` holds for that purpose. Mock-folder
 tests of the repair stub heal, the pull and the push with `local_repair_on_folder()` (`test-sync.R`).
@@ -1164,9 +1179,8 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     2. **`fixed` is `TRUE` only when every artifact was published**; it was `TRUE` whenever the
        sync ran without an error, even with per-artifact failures.
     3. **A set's payload that cannot be restored** (a storage failure) leaves that set's documents
-       unpublished and the manifest too, as any other artifact's failure does:
-       `.datom_publish_artifacts()` gains `manifest = TRUE`, which the repair sets to `FALSE` then.
-       A test and a probe.
+       unpublished and the manifest too. (Reshaped by the checkpoint review below: the restore now
+       runs before heal's publish, and a failure stops the repair.)
     4. The repair's result per artifact: `action` is `"published"` (was `"synced"`) or `"error"`,
        with `version`, `reset`, `pushed` and `error`; an artifact whose never-committed first write
        was reset is listed with `action = "reset"`. The return gains `manifest`.
@@ -1181,6 +1195,17 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     Left for task 10: `dev/datom_specification.md` still says three functions upload the stored
     history (one does since this task), and the help of `datom_write(conn)` is only adjusted in
     its `name` argument.
+  - **Checkpoint review fixes, 2026-11-07** (review of `9284ca9`, "Where things stand"):
+    `datom_validate()` finds artifacts with `.datom_clone_artifact_names()`; a set's payload is put
+    back before heal's publish, and a failure stops the repair before anything is published
+    (`.datom_repair_restore_payloads()`, `datom_payload_restore_failed`; the `manifest =` argument
+    added to `.datom_publish_artifacts()` above is gone again); a stop inside the repair comes
+    through `datom_validate(fix = TRUE)` unchanged; the role and path messages name the repair; the
+    help of `fix` says a repair during a teammate's write can replace their publish. Mock tests in
+    `test-validate.R` and one in `test-utils-path.R` give their folders a datom `hash_algo`, as a
+    real write does. Guards probed: validate's discovery, the restore before heal's publish, the
+    restore's stop, the stop through validate, and two probes re-pointed (a payload first, the
+    manifest after a failure).
   - `R/sync.R`: `.datom_sync_data_metadata()` heals every artifact (`all = TRUE`; so it pushes and
     resets or publishes other artifacts' unfinished work, which writes leave to it), right after its confirmation
     prompt, which says it may push. This is the only place the mirror-everything route and the
