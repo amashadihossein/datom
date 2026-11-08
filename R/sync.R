@@ -1111,7 +1111,10 @@ datom_sync <- function(conn,
           .healed = TRUE
         ),
         datom_manifest_held_back = function(w) {
-          held_back <<- as.character(w$disagree %||% character())
+          held_back <<- list(
+            disagree = as.character(w$disagree %||% character()),
+            unreadable = w$unreadable
+          )
         }
       )
 
@@ -1204,8 +1207,10 @@ datom_sync <- function(conn,
 #'
 #' @param stopped_at The table whose write failed or held back the manifest.
 #' @param not_run The tables after it, not attempted.
-#' @param held_back `NULL` when the write failed; when it held back the
-#'   manifest, the artifacts the warning named.
+#' @param held_back `NULL` when the write failed. When it held back the
+#'   manifest, what the warning carried: `disagree` (the artifacts it named)
+#'   and `unreadable` (the read error on one line, when storage's manifest could
+#'   not be read to check them, else `NULL`).
 #' @return Invisibly `NULL`.
 #' @keywords internal
 .datom_inform_sync_stopped <- function(stopped_at, not_run, held_back = NULL) {
@@ -1225,12 +1230,33 @@ datom_sync <- function(conn,
     return(invisible(NULL))
   }
 
-  n <- length(held_back)
+  why <- held_back$unreadable
+  if (!is.null(why)) {
+    cli::cli_inform(
+      c(
+        "x" = "Stopped the sync after the write of {.val {stopped_at}} held \\
+               back the manifest: its push brought in commits, storage's \\
+               manifest could not be read to check them, and a later table's \\
+               write would have published the manifest anyway.",
+        "x" = "{why}",
+        "i" = "Not attempted: {.val {not_run}}.",
+        "i" = "Once storage is reachable, run \\
+               {.code datom_validate(fix = TRUE)} to publish the manifest, then \\
+               the same {.fn datom_sync} call again, with the same preview, to \\
+               sync the rest."
+      ),
+      class = "datom_sync_stopped"
+    )
+    return(invisible(NULL))
+  }
+
+  disagree <- held_back$disagree
+  n <- length(disagree)
   cli::cli_inform(
     c(
       "x" = "Stopped the sync after the write of {.val {stopped_at}} held back \\
              the manifest: its push brought in commits naming \\
-             {cli::qty(n)}{?a version/versions} of {.val {held_back}} that \\
+             {cli::qty(n)}{?a version/versions} of {.val {disagree}} that \\
              storage does not hold yet, and a later table's write would have \\
              published the manifest anyway.",
       "i" = "Not attempted: {.val {not_run}}.",

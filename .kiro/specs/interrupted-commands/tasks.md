@@ -59,9 +59,21 @@ closed. The review's point for task 7 was settled by the owner the same day (tas
 Task 6 (scan and sync) started 2026-11-07: its open point was settled by the owner first (a sync
 stops after a table's write that failed partway once it had changed the clone; requirements R4.6),
 and task 6 was done the same day (its entry below lists eight differences from the plan). Its
-checkpoint review the same day (below) found one gap, fixed the same day: a held-back manifest
-stops the sync too. The fix awaits the reviewer's check; then task 6 closes, and task 7 (the
+checkpoint review the same day (below) found one gap, fixed the same day in `aa4a680`: a held-back
+manifest stops the sync too. The reviewer's check of `aa4a680` raised one optional nit, taken the
+same day (below). That fix awaits the reviewer's check; then task 6 closes, and task 7 (the
 repair) follows on the owner's go-ahead.**
+
+**Review of `aa4a680`, 2026-11-07**, by the same reviewer: one optional nit, taken by the owner.
+When storage's manifest could not be read at step 6's recheck, the write recorded the storage
+file's name in place of an artifact, so both the write's warning (since task 4b) and the sync's
+stop said the push brought in "a version of '.metadata/manifest.json' that storage does not hold
+yet". Checked here: true, and rare (storage was read at the command's start and took the write's
+documents in step 5, seconds before). Both messages now say storage's manifest could not be read,
+with the read error, and keep the way out (once storage is reachable, `datom_validate(fix = TRUE)`,
+then the same call). The warning carries the error as `unreadable`. A test makes the recheck's read
+fail and follows the way out; the two held-back probes, rerun on the new handler, redden both
+held-back tests.
 
 **Task 6's checkpoint review, 2026-11-07**, by another agent, of `c24b17f`, read against the code.
 Both findings reproduced here on a throwaway project before fixing, and evaluated with the owner:
@@ -377,8 +389,8 @@ settle with the owner, one point, before any code), design section 7 and section
 requirements R4, R3.4 and R3.7. Rerun `research/sync_batch_probe.R` to see the open point's three
 cases on the current code. Baseline: 5859 expectations, 0 failed, 0 skipped, at `6d622e9`.
 
-**After task 6** (2026-11-07): baseline 5990 expectations, 0 failed, 0 skipped (5967 at task 6's
-commit, then 23 added by its checkpoint review's fix). Sync tests on a
+**After task 6** (2026-11-07): baseline 6006 expectations, 0 failed, 0 skipped (5967 at task 6's
+commit, then 23 and 16 added by its checkpoint review's two fixes). Sync tests on a
 real project live in `test-sync-heal.R`, whose `local_break_sync_at(table, step)` breaks one
 table's write inside a sync; `local_heal_counter()` and `local_stored_manifest_reads()` are in
 `helper-interrupt.R`. `local_teammate_after_commit()` moved there too, after the checkpoint review. Unit tests of

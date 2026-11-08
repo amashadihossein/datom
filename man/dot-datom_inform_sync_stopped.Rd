@@ -11,8 +11,10 @@
 
 \item{not_run}{The tables after it, not attempted.}
 
-\item{held_back}{\code{NULL} when the write failed; when it held back the
-manifest, the artifacts the warning named.}
+\item{held_back}{\code{NULL} when the write failed. When it held back the
+manifest, what the warning carried: \code{disagree} (the artifacts it named)
+and \code{unreadable} (the read error on one line, when storage's manifest could
+not be read to check them, else \code{NULL}).}
 }
 \value{
 Invisibly \code{NULL}.

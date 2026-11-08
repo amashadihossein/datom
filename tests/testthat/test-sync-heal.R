@@ -487,6 +487,67 @@ test_that("a table whose write held back the manifest stops the sync, and the wa
   }
 })
 
+test_that("a manifest held back because storage's manifest could not be read says so, and the way out finishes every table", {
+  # Step 6's recheck runs only when the write's push brought commits in: here a
+  # teammate's commit of a file of their own, landed between t1's commit and
+  # its push. Storage's manifest then cannot be read (an outage in those
+  # seconds), so nothing can be compared, and the messages must say that rather
+  # than name a version storage lacks.
+  fx <- sh_project()
+  sh_synced_then_changed(fx, c("t1", "t2"))
+  b <- local_second_clone(fx)
+  preview <- sh_scan(fx$conn)
+  local_teammate_after_commit(function() {
+    writeLines("notes", file.path(b$repo, "NOTES.md"))
+    git_commit_files(b$repo, "NOTES.md", "A teammate's notes")
+  })
+  # The sync's own reads of the stored manifest: its opening check, then t1's
+  # recheck, which is the one that fails.
+  reads <- 0L
+  real_stored <- get(".datom_stored_manifest", envir = asNamespace("datom"))
+  local_mocked_bindings(.datom_stored_manifest = function(conn) {
+    reads <<- reads + 1L
+    if (reads == 2L) {
+      return(list(status = "unreadable", rows = list(),
+                  error = simpleError("simulated: storage unreachable")))
+    }
+    real_stored(conn)
+  })
+
+  held <- list()
+  run <- withCallingHandlers(
+    sh_sync_noting_stops(fx$conn, preview),
+    datom_manifest_held_back = function(w) {
+      held[[length(held) + 1L]] <<- w
+      invokeRestart("muffleWarning")
+    }
+  )
+
+  expect_identical(reads, 2L)
+  expect_length(held, 1L)
+  warning_text <- sh_msg(held[[1]])
+  expect_match(warning_text, "storage's manifest could not be read", fixed = TRUE)
+  expect_match(warning_text, "simulated: storage unreachable", fixed = TRUE)
+  expect_no_match(warning_text, "does not hold yet", fixed = TRUE)
+  expect_identical(sh_result(run$value), c(t1 = "success", t2 = "skipped"))
+  expect_length(run$notes, 1L)
+  expect_match(run$notes, "storage's manifest could not be read", fixed = TRUE)
+  expect_match(run$notes, "simulated: storage unreachable", fixed = TRUE)
+  expect_no_match(run$notes, "does not hold yet", fixed = TRUE)
+  expect_match(run$notes, "Once storage is reachable, run `datom_validate(fix = TRUE)`",
+               fixed = TRUE)
+
+  # The way out the stop names: the fix, then the same call again.
+  suppressMessages(suppressWarnings(datom_validate(fx$conn, fix = TRUE)))
+  again <- sh_sync(fx$conn, preview)
+
+  expect_identical(sh_result(again), c(t1 = "success", t2 = "success"))
+  for (t in c("t1", "t2")) {
+    expect_identical(sh_rows_read(fx, t), 5L)
+    expect_identical(sh_stored_version(fx, t), sh_clone_version(fx, t))
+  }
+})
+
 test_that("with continue_on_error = FALSE, a write that changed the clone says to run the same sync again", {
   fx <- sh_project()
   sh_synced_then_changed(fx, c("t1", "t2"))

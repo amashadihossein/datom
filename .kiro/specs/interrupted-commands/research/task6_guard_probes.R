@@ -109,8 +109,8 @@ main <- function() {
     # Added from the checkpoint review of c24b17f: a held-back manifest stops
     # the sync. The handler that notices it ...
     held_back_handler = list(filter = both, edit = function() sub1(sy,
-      "          held_back <<- as.character(w$disagree %||% character())",
-      "          invisible(w)")),
+      "          held_back <<- list(",
+      "          held_back_unused <- list(")),
 
     # ... and the stop it sets.
     held_back_stop = list(filter = both, edit = function() sub1(sy,

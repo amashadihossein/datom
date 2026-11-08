@@ -1186,14 +1186,18 @@
 
   if (isTRUE(recheck)) {
     stored <- .datom_stored_manifest(conn)
-    disagree <- if (identical(stored$status, "unreadable")) {
-      ".metadata/manifest.json"
-    } else {
-      setdiff(
-        .datom_unpublished_artifacts(read$manifest$artifacts %||% list(), stored),
-        own
-      )
+    # Storage was read at the start of the command and took this write's
+    # documents moments ago, so this is an outage (or a damaged file) in the
+    # seconds since. Nothing can be compared, so the manifest is held back, and
+    # the warning says so rather than naming a version storage lacks.
+    if (identical(stored$status, "unreadable")) {
+      .datom_warn_manifest_held_back(character(), own, unreadable = stored$error)
+      return("held_back")
     }
+    disagree <- setdiff(
+      .datom_unpublished_artifacts(read$manifest$artifacts %||% list(), stored),
+      own
+    )
     if (length(disagree) > 0L) {
       .datom_warn_manifest_held_back(disagree, own)
       return("held_back")
@@ -1466,26 +1470,52 @@
 
 #' Warn That a Write Held Back the Manifest
 #'
+#' Two causes, each named as it is: the commits the write's push brought in
+#' name versions storage does not hold yet, or storage's manifest could not be
+#' read to check them. The way out is the same.
+#'
 #' @param disagree The artifacts whose rows disagree with storage, other than
-#'   the write's own (or the stored manifest's key, when it could not be read).
+#'   the write's own; empty when the stored manifest could not be read.
 #' @param own The artifacts the write published.
+#' @param unreadable The condition the read of the stored manifest raised, or
+#'   `NULL` when it was read.
 #' @return Invisibly `NULL`.
 #' @keywords internal
-.datom_warn_manifest_held_back <- function(disagree, own) {
-  n <- length(disagree)
-  cli::cli_warn(
+.datom_warn_manifest_held_back <- function(disagree, own, unreadable = NULL) {
+  published <- c(
+    "i" = "{.val {own}} is published: a read gets the new version, while \\
+           {.fn datom_list} names the previous one until the manifest is \\
+           published."
+  )
+  why <- if (!is.null(unreadable)) .datom_one_line(unreadable)
+
+  bullets <- if (is.null(unreadable)) {
+    n <- length(disagree)
     c(
       "Did not publish the manifest: the commits this write's push brought in \\
        name {cli::qty(n)}{?a version/versions} of {.val {disagree}} that \\
        storage does not hold yet.",
-      "i" = "{.val {own}} is published: a read gets the new version, while \\
-             {.fn datom_list} names the previous one until the manifest is \\
-             published.",
+      published,
       "i" = "Run {.code datom_validate(fix = TRUE)} to publish it. Until then, \\
              writes of other artifacts stop and name that fix."
-    ),
+    )
+  } else {
+    c(
+      "Did not publish the manifest: this write's push brought in commits, and \\
+       storage's manifest could not be read to check them against it.",
+      "x" = "{why}",
+      published,
+      "i" = "Once storage is reachable, run {.code datom_validate(fix = TRUE)} \\
+             to publish it. Until then, writes of other artifacts stop and \\
+             name that fix."
+    )
+  }
+
+  cli::cli_warn(
+    bullets,
     # Carried for datom_sync(), which stops after such a write and names them.
     disagree = disagree,
+    unreadable = why,
     class = "datom_manifest_held_back"
   )
   invisible(NULL)

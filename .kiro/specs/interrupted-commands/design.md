@@ -881,7 +881,11 @@ sync notices the warning (a calling handler, which lets it through to the caller
 attempted come back `"skipped"`; the message names `t1` and `ae` and says to run
 `datom_validate(fix = TRUE)`, which publishes what the clone holds, then the same call again, which
 finds `t1` up to date and writes the rest (traced by a test). The same call without the fix stops
-on `ae`, outside the preview, naming that fix. Set aside: a heal per table, as before task 6 (every later table then
+on `ae`, outside the preview, naming that fix. When step 6's recheck cannot read storage's
+manifest at all (an outage in the seconds after step 5), the manifest is held back the same way,
+and both the write's warning and the sync's stop say the stored manifest could not be read, with
+the read error, rather than naming a version storage lacks (review of `aa4a680`); the way out adds
+"once storage is reachable". Set aside: a heal per table, as before task 6 (every later table then
 fails naming the broken one, at one fetch and one stored-manifest read per table, which R3.7 and
 R3.4 rule out); re-checking storage before each later table's manifest upload (misses the break
 before the commit).
