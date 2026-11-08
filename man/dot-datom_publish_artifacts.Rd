@@ -9,7 +9,8 @@
   names,
   commit_sha = NULL,
   recheck_manifest = FALSE,
-  on_failure = c("raise", "return")
+  on_failure = c("raise", "return"),
+  manifest = TRUE
 )
 }
 \arguments{
@@ -26,6 +27,11 @@ which names the first commit that produced each version.}
 \item{on_failure}{\code{"raise"} (a write's own publish) re-signals the first
 failure as it was raised; \code{"return"} hands the failures back, for heal's
 stop and the repair's report.}
+
+\item{manifest}{\code{FALSE} when the caller already knows an artifact outside
+\code{names} failed (the repair, after a set's payload could not be restored):
+the manifest is then not published, for the same reason as after a failure
+here.}
 }
 \value{
 Invisibly, a list with \code{published} (versions, named by artifact),
@@ -34,8 +40,8 @@ Invisibly, a list with \code{published} (versions, named by artifact),
 }
 \description{
 \strong{The one publish path.} A write's own publish (after its push), heal's
-publish and the metadata-only route all go through it, so the order readers
-depend on lives in one place. For each artifact, the documents as committed
+publish, the metadata-only route and the repair all go through it, so the
+order readers depend on lives in one place. For each artifact, the documents as committed
 in the clone go up through \code{\link[=.datom_push_metadata_s3]{.datom_push_metadata_s3()}}: the snapshot, the
 history, then \code{metadata.json} last. Then the manifest, last of all, and only
 if every artifact's documents went up: a manifest published after a failure

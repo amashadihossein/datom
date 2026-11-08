@@ -1,16 +1,17 @@
 # The version-to-commit link: `commit_sha` on the stored version history.
 #
-# TWO FUNCTIONS UPLOAD `version_history.json`, and each one is a chance to
-# erase the field, because the clone's copy can never carry it -- that file is
-# inside the commit it would name. There is one test per public route, and each
-# upload function's was confirmed to redden when ONLY its merge is removed:
+# ONE FUNCTION UPLOADS `version_history.json`, `.datom_push_metadata_s3()`,
+# and it is the chance to erase the field, because the clone's copy can never
+# carry it -- that file is inside the commit it would name. Every route reaches
+# it through the one publish path, `.datom_publish_artifacts()`, and there is
+# one test per public route:
 #
-#   the ordinary write     `.datom_push_metadata_s3()`   -> "the ordinary write ..."
-#   the repair             `.datom_sync_one_artifact()`  -> "datom_validate(fix = TRUE) ..."
-#   the metadata-only sync `.datom_push_metadata_s3()`   -> "the metadata-only route ..."
+#   the ordinary write     -> "the ordinary write ..."
+#   the repair             -> "datom_validate(fix = TRUE) ..."
+#   the metadata-only sync -> "the metadata-only route ..."
 #
-# (The metadata-only route had an upload of its own until it moved onto the one
-# publish path, `.datom_publish_artifacts()`, which the write shares.)
+# (The metadata-only route and the repair each had an upload of their own until
+# they moved onto the one publish path, the repair in #155.)
 #
 # A single "after a repair the field is still there" test satisfies none of the
 # three: the ordinary write is the route that loses the field FIRST, on the second
@@ -161,8 +162,8 @@ test_that("datom_validate(fix = TRUE) re-derives `commit_sha` instead of strippi
   expect_false(anyNA(expected))
 
   # Two separate losses, so the repair has to both re-upload and re-derive: the
-  # stored history is gone (which is what makes the repo invalid, so `fix` runs
-  # at all), and the clone's copy it will upload carries no commit ids.
+  # stored history is gone (which also makes the repo invalid), and the clone's
+  # copy it will upload carries no commit ids.
   fs::file_delete(.datom_local_path(fx$conn, vc_history_key("dm")))
 
   result <- suppressMessages(datom_validate(fx$conn, fix = TRUE))

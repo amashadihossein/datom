@@ -105,39 +105,59 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 }
 
 
-#' Sync Data-Side Metadata to Storage
+#' The Repair: Finish Every Artifact's Unfinished Work and Publish It All
 #'
-#' Mirrors the data repo's metadata to the data store so readers see current
-#' state: the manifest (`.metadata/manifest.json`) and each artifact's metadata
-#' (`{name}/.metadata/metadata.json`, `version_history.json`). **Every artifact
-#' of either kind**, not tables only -- discovery is `.datom_clone_artifact_names()`
-#' and has been kind-agnostic since sets existed.
+#' Brings storage in line with git for **every artifact of either kind**
+#' ([.datom_clone_artifact_names()]), in this order (requirements R5):
 #'
-#' **It is not metadata-only, and the name understates it.** For a **set**, a
-#' payload missing from storage is restored from the clone -- see
-#' `.datom_restore_set_payload()` in this file for the three conditions on that.
-#' So this function can put content into storage, not just documents about
-#' content.
+#' 1. heal, on every artifact (`all = TRUE`): datom's files an interrupted
+#'    write left uncommitted are put back to the last commit, never published
+#'    (each such artifact gets a warning: that write is not run again); the
+#'    clone is pulled; a committed version storage lacks is pushed and
+#'    published. Where a write stops on another artifact's work, the repair
+#'    acts: calling it is the consent. A stored version this clone has never
+#'    seen is replaced by the clone's, and a stored row for an artifact the
+#'    clone lacks is dropped, each with a warning ([.datom_heal_publish()]);
+#' 2. any commit the git remote still lacks is pushed, without pulling again:
+#'    heal pushes only to finish a differing manifest row, and storage must
+#'    never name a document the remote does not have;
+#' 3. a set's payload missing from storage is restored from the clone
+#'    ([.datom_restore_set_payload()]): a set's data file before its documents;
+#' 4. every artifact is published through the one publish path,
+#'    [.datom_publish_artifacts()]: the snapshot, the history, `metadata.json`
+#'    last, then the manifest, and the manifest only if every artifact
+#'    published, so a failure leaves the manifest naming versions whose
+#'    documents are in storage.
+#'
+#' Republishing every artifact, not only those whose manifest row differs, is
+#' what corrects two publishes that crossed (the stored manifest naming one
+#' version while the stored `metadata.json` holds another), and what puts back
+#' a current version's snapshot storage lost. The artifacts heal finds behind
+#' are published twice, once by heal and once here: both write the same
+#' committed documents, and heal stays the same on every route.
+#'
+#' **Two public routes reach this**, and both behave the same:
+#' `datom_write(conn)` with no `data` and no `name` (the mirror-everything
+#' route, which asks first), and `datom_validate(fix = TRUE)`. Heal runs here,
+#' after the prompt, and nowhere else on either route, so answering "no"
+#' changes nothing.
 #'
 #' Data-only: governance files (dispatch.json, ref.json, migration_history.json)
 #' are not touched here. Governance sync is owned by the governance layer
 #' (`gov_sync_dispatch()`).
 #'
-#' **Two public routes reach this**, and both get the restore: `datom_write(conn)`
-#' with no `data` and no `name` (the mirror-everything route), and
-#' `datom_validate(fix = TRUE)`. Describing the restore as repair-only would
-#' leave a reader surprised to see it fire under a write verb.
-#'
-#' Used after a failed upload, or by `datom_validate(fix = TRUE)`, to bring
-#' storage back in line with the local data clone. Requires a developer
-#' connection with a local repo path.
-#'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param .confirm If `TRUE` (default), requires interactive confirmation
 #'   before proceeding. Set to `FALSE` for non-interactive use.
 #'
-#' @return Invisibly, a list with `repo_files` (character vector of synced
-#'   keys) and `tables` (list of per-table sync results).
+#' @return Invisibly, a list with `repo_files` (`".metadata/manifest.json"`
+#'   when the manifest was published, else empty), `manifest` (what
+#'   [.datom_publish_artifacts()] reports for it) and `tables`: per artifact,
+#'   named by artifact, a list with `name`, `action` (`"published"` or
+#'   `"error"`), `version` (the version published, or `NULL`), `reset` and
+#'   `pushed` (logical) and `error` (the failure's text, or `NULL`). An
+#'   artifact whose never-committed first write was reset is listed with
+#'   `action = "reset"`: there is nothing of it to publish.
 #' @keywords internal
 .datom_sync_data_metadata <- function(conn, .confirm = TRUE) {
 
@@ -161,7 +181,7 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 
   # The write entry, here rather than only at datom_write()'s door, because this
   # function has a second caller that does not go through that door:
-  # `datom_validate(fix = TRUE)` calls it directly (`R/validate.R:183`). Left
+  # `datom_validate(fix = TRUE)` calls it directly (`R/validate.R`). Left
   # ungated there, a build the repo has declared too old could still publish this
   # repo's documents to storage -- through a command that reads as a repair.
   #
@@ -176,7 +196,7 @@ datom_pull <- function(conn, finish_merge = FALSE) {
   repo_path <- conn$path
   table_names <- .datom_clone_artifact_names(conn)
 
-  # Interactive confirmation
+  # Interactive confirmation, before heal: answering "no" must change nothing.
   if (isTRUE(.confirm)) {
     if (!interactive()) {
       cli::cli_abort(c(
@@ -189,145 +209,197 @@ datom_pull <- function(conn, finish_merge = FALSE) {
     # included sets since sets existed -- and for a set the operation can upload
     # a payload as well as documents, which a prompt saying "metadata" hides.
     cli::cli_alert_warning(
-      "This will update the manifest and the stored documents for \\
-       {length(table_names)} artifact{?s} in data storage, and restore any \\
-       set payload storage is missing."
+      "This will bring data storage in line with git for \\
+       {length(table_names)} artifact{?s}: put back datom's files that an \\
+       interrupted write left uncommitted, pull, push any commits the git \\
+       remote lacks, then publish every artifact's documents and the \\
+       manifest, restoring any set payload storage is missing."
     )
 
     answer <- readline("Proceed? [y/N] ")
     if (!tolower(answer) %in% c("y", "yes")) {
-      cli::cli_alert_info("Sync cancelled.")
-      return(invisible(list(repo_files = character(), tables = list())))
+      cli::cli_alert_info("Cancelled. Nothing was changed.")
+      return(invisible(list(
+        repo_files = character(), manifest = "not_reached", tables = list()
+      )))
     }
   }
 
-  # --- Sync manifest to data storage -----------------------------------------
-  repo_files_synced <- character()
-  manifest_local <- fs::path(repo_path, ".datom", "manifest.json")
-  if (fs::file_exists(manifest_local)) {
-    # Read through the shared reader rather than copying the file's bytes, for
-    # two reasons. A clone still in an older shape would otherwise be pushed to
-    # storage in that shape by a build that knows the current one; and this
-    # route is reachable from datom_validate(fix = TRUE), which does not pass
-    # through datom_write()'s door, so this read is what stops it mirroring a
-    # manifest it cannot understand.
-    #
-    # The converted document goes to storage and the clone's file is left
-    # alone: this route makes no commit, so rewriting the tracked file here
-    # would leave the repo dirty with a change nobody asked for. For a window
-    # the clone is older-shaped and storage is current-shaped; both are
-    # internally consistent and both read correctly.
-    #
-    # `operation = "write"` because that is what this is: the document is on its
-    # way to storage. The entry above would normally have refused a too-new
-    # manifest before this line, but this read must not be correct only because
-    # of that -- a message whose accuracy rests on an upstream refusal starts
-    # lying the day the refusal moves.
-    read <- .datom_read_manifest(conn, "clone", operation = "write")
+  # Heal, on every artifact: the only place this route runs it.
+  healed <- .datom_heal(conn, all = TRUE)
+  .datom_pull_before_write(conn, reset = healed$reset)
+  unpushed <- .datom_pushed_artifacts(repo_path)
+  heal_publish <- .datom_heal_publish(conn, all = TRUE)
+  pushed <- isTRUE(heal_publish$pushed) || .datom_repair_push(conn)
 
-    # A file that disappeared between the check above and the read is an
-    # absence, not a failure: the reader reports it with no condition attached,
-    # and stop(NULL) would abort with an empty message. Same split as the
-    # clone reader in .datom_status_input_files().
-    if (!read$ok && !read$absent) stop(read$error)
+  # Again after heal: its reset removes a first write that never committed, and
+  # the pull can bring in a teammate's new artifact.
+  names_now <- .datom_clone_artifact_names(conn)
 
-    if (read$ok) {
-      .datom_notify_manifest_upgraded(read$declared, "data storage")
-      .datom_storage_write_json(conn, ".metadata/manifest.json", read$manifest)
-      repo_files_synced <- c(repo_files_synced, ".metadata/manifest.json")
-    }
-  }
+  # A set's data file before its documents.
+  restore_failed <- purrr::compact(stats::setNames(
+    purrr::map(names_now, function(nm) {
+      tryCatch({
+        .datom_restore_set_payload(conn, nm)
+        NULL
+      }, error = function(e) e)
+    }),
+    names_now
+  ))
 
-  cli::cli_alert_success(
-    "Synced {length(repo_files_synced)} repo-level file{?s}."
+  publish <- .datom_publish_artifacts(
+    conn, setdiff(names_now, names(restore_failed)),
+    on_failure = "return",
+    manifest = length(restore_failed) == 0L
   )
+  failed <- c(restore_failed, publish$failed)
 
-  # --- Sync each artifact, either kind ---------------------------------------
-  table_results <- purrr::map(table_names, function(tbl) {
-    tryCatch({
-      .datom_sync_one_artifact(conn, tbl)
-    }, error = function(e) {
-      cli::cli_alert_danger("Failed to sync {.val {tbl}}: {conditionMessage(e)}")
-      # ansi_strip on the stored copy only -- the alert above keeps its colour.
-      list(name = tbl, action = "error", error = cli::ansi_strip(conditionMessage(e)))
-    })
-  })
-  names(table_results) <- table_names
-
-  n_ok <- sum(purrr::map_chr(table_results, ~ .x$action %||% "error") != "error")
-  n_err <- length(table_results) - n_ok
-
-  cli::cli_alert_info(
-    "Metadata sync complete: {n_ok} table{?s} synced, {n_err} error{?s}."
+  table_results <- .datom_repair_results(
+    names_now, healed$reset, publish$published, failed,
+    pushed = if (pushed) unpushed else character()
   )
+  .datom_report_repair(table_results, publish$manifest, failed)
 
   invisible(list(
-    repo_files = repo_files_synced,
+    repo_files = if (identical(publish$manifest, "published")) {
+      ".metadata/manifest.json"
+    } else {
+      character()
+    },
+    manifest = publish$manifest,
     tables = table_results
   ))
 }
 
 
-#' Sync One Artifact's Stored Documents, and a Set's Payload
+# Bindings for base functions the repair's prompt calls, so a test can answer
+# the prompt (`testthat::local_mocked_bindings()` cannot replace a function in
+# base). A call skips a binding that is not a function, so these change
+# nothing at run time.
+interactive <- NULL
+readline <- NULL
+
+
+#' The Repair's Push of Commits the Remote Lacks
 #'
-#' Was `.datom_sync_table_metadata()`, renamed when the set payload restore
-#' landed here: it handles either kind, and for a set it can upload the payload
-#' itself, so both halves of the old name were wrong. A reader looking for where
-#' a set reaches storage on this route would not have found the old name.
-#' @noRd
-.datom_sync_one_artifact <- function(conn, name) {
-  repo_path <- conn$path
-  table_dir <- fs::path(repo_path, name)
+#' Heal's publish pushes only to finish a manifest row that differs from
+#' storage's, so a commit whose row agrees (a document committed outside datom,
+#' or an artifact's commit whose publish already landed) can still be unpushed
+#' when the repair is about to republish every artifact. Pushed here first,
+#' without pulling again: the repair pulled moments ago, and a remote that moved
+#' since makes git refuse the push, which stops the repair before storage
+#' changes.
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @return `TRUE` when it pushed.
+#' @keywords internal
+.datom_repair_push <- function(conn) {
+  ahead <- .datom_git_ahead(conn$path)
+  # NA (no upstream branch) does not reach here unpushed: heal's publish pushes
+  # first in that case.
+  if (is.na(ahead) || ahead == 0L) return(FALSE)
+  .datom_git_push(conn$path, pat = conn$github_pat, pull_first = FALSE)
+  TRUE
+}
 
-  s3_keys <- character()
 
-  # metadata.json
-  metadata_path <- fs::path(table_dir, "metadata.json")
-  if (fs::file_exists(metadata_path)) {
-    data <- jsonlite::read_json(metadata_path)
-    s3_key <- .datom_artifact_meta_key(name, "metadata")
-    .datom_storage_write_json(conn, s3_key, data)
-    s3_keys <- c(s3_keys, s3_key)
+#' What the Repair Did, Per Artifact
+#'
+#' @param names The artifacts in the clone after heal.
+#' @param reset The artifacts heal's reset put back.
+#' @param published The versions published, named by artifact.
+#' @param failed The failures, named by artifact.
+#' @param pushed The artifacts whose commits the repair (or heal) pushed.
+#' @return A list of per-artifact records, named by artifact; see
+#'   [.datom_sync_data_metadata()].
+#' @keywords internal
+.datom_repair_results <- function(names, reset, published, failed, pushed) {
+  record <- function(nm) {
+    error <- failed[[nm]]
+    list(
+      name = nm,
+      action = if (!is.null(error)) "error" else "published",
+      version = if (nm %in% names(published)) unname(published[[nm]]),
+      reset = nm %in% reset,
+      pushed = nm %in% pushed,
+      # Without styling: a returned field gets printed as data.
+      error = if (!is.null(error)) .datom_one_line(error)
+    )
   }
+  # A first write that never committed: put back means removed.
+  gone <- setdiff(reset, names)
+  gone_records <- purrr::map(gone, function(nm) {
+    list(name = nm, action = "reset", version = NULL, reset = TRUE,
+         pushed = FALSE, error = NULL)
+  })
 
-  # version_history.json
-  #
-  # This route makes no commit, so it has no commit to hand on and every entry's
-  # `commit_sha` is worked out from git. Uploading the clone's copy untouched is
-  # what would strip the field: the clone can never carry it, because that file is
-  # inside the commit it would name. See `R/version-commit.R`.
-  history_path <- fs::path(table_dir, "version_history.json")
-  if (fs::file_exists(history_path)) {
-    data <- jsonlite::read_json(history_path)
-    data <- .datom_history_with_commit_shas(conn, name, data)
-    s3_key <- .datom_artifact_meta_key(name, "version_history")
-    .datom_storage_write_json(conn, s3_key, data)
-    s3_keys <- c(s3_keys, s3_key)
-  }
+  stats::setNames(
+    c(purrr::map(names, record), gone_records),
+    c(names, gone)
+  )
+}
 
-  # Versioned metadata snapshots ({metadata_sha}.json)
-  meta_dir <- fs::path(table_dir, ".metadata")
-  if (fs::dir_exists(meta_dir)) {
-    snapshot_files <- fs::dir_ls(meta_dir, glob = "*.json")
-    for (snap in snapshot_files) {
-      snap_name <- fs::path_file(snap)
-      data <- jsonlite::read_json(snap)
-      # Not the snapshot-key helper: `snap_name` is a discovered FILENAME
-      # (already `{sha}.json`), not a bare sha, so the helper's sha guard does
-      # not apply. Guarding here would also change behavior -- a stray .json in
-      # .metadata/ would start aborting instead of being uploaded.
-      s3_key <- paste0(name, "/.metadata/", snap_name)
-      .datom_storage_write_json(conn, s3_key, data)
-      s3_keys <- c(s3_keys, s3_key)
+
+#' Say What the Repair Did, Per Artifact
+#'
+#' One line per artifact (requirements R5.3), then what became of the
+#' manifest. A failure names its file and its error, and the way out.
+#'
+#' @param results What [.datom_repair_results()] returned.
+#' @param manifest What [.datom_publish_artifacts()] reported for the manifest.
+#' @param failed The failures, named by artifact.
+#' @return Invisibly `NULL`.
+#' @keywords internal
+.datom_report_repair <- function(results, manifest, failed) {
+  lines <- purrr::map_chr(results, function(r) {
+    done <- c(if (isTRUE(r$reset)) "reset", if (isTRUE(r$pushed)) "pushed")
+    if (identical(r$action, "reset")) {
+      return(cli::format_inline(
+        "{.val {r$name}}: reset; it had never been committed, so nothing is \\
+         left to publish"
+      ))
     }
-  }
+    if (identical(r$action, "error")) {
+      key <- failed[[r$name]]$datom_storage_key
+      where <- if (!is.null(key)) cli::format_inline(" at {.file {key}}") else ""
+      return(cli::format_inline(
+        "{.val {r$name}}: {paste(c(done, 'failed'), collapse = ', ')}{where}: \\
+         {r$error}"
+      ))
+    }
+    version <- substr(r$version %||% "", 1L, 8L)
+    cli::format_inline(
+      "{.val {r$name}}: {paste(c(done, 'published'), collapse = ', ')} \\
+       version {.val {version}}"
+    )
+  })
+  bullets <- purrr::set_names(
+    lines,
+    ifelse(purrr::map_chr(results, "action") == "error", "x", "*")
+  )
 
-  # A set's payload is the one stored object that also lives in the clone, so it
-  # is the one payload this route can put back. A table's parquet never is, which
-  # is why there is no table half to this.
-  s3_keys <- c(s3_keys, .datom_restore_set_payload(conn, name))
+  n <- length(results)
+  manifest_line <- switch(manifest,
+    published = c("v" = "Published the manifest."),
+    not_reached = c(
+      "!" = "Did not publish the manifest, because {cli::qty(length(failed))}\\
+             {?an artifact/some artifacts} failed: readers still see the \\
+             versions it names.",
+      "i" = "Re-run {.code datom_validate(fix = TRUE)} once storage is \\
+             reachable."
+    ),
+    character()
+  )
 
-  list(name = name, action = "synced", s3_keys = s3_keys)
+  cli::cli_inform(
+    c(
+      "Repair of {n} artifact{?s}:",
+      bullets,
+      manifest_line
+    ),
+    class = "datom_repair_report"
+  )
+  invisible(NULL)
 }
 
 

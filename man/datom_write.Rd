@@ -23,12 +23,12 @@ datom_write(
 
 \item{data}{Data frame to write. If NULL with name, does metadata-only sync.}
 
-\item{name}{Table name. If NULL with NULL data, mirrors the clone's
-storage-side documents for \strong{every} artifact of either kind: the manifest,
-and each artifact's metadata, version history and versioned snapshots. On
-that route a \strong{set} whose stored payload is missing also has it restored
-from the clone -- see \code{\link[=datom_validate]{datom_validate()}}, which shares the mechanism, for
-the conditions on that.}
+\item{name}{Table name. If NULL with NULL data, runs the repair of
+\code{datom_validate(fix = TRUE)} after asking: it puts back datom's files an
+interrupted write left uncommitted, pulls, may push commits the git remote
+lacks, and publishes every artifact of either kind from the clone (its
+current version snapshot, history and metadata, a \strong{set}'s missing
+payload too), then the manifest. See \code{\link[=datom_validate]{datom_validate()}} for the details.}
 
 \item{metadata}{Optional named list of custom metadata. A missing value
 (\code{NA}), \code{NaN} or \code{Inf} anywhere in it is refused, because it cannot be

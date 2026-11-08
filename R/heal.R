@@ -369,7 +369,7 @@
   if (is.null(meta)) return(NULL)
   history <- .datom_read_clone_json(path, paste0(name, "/version_history.json"))
 
-  version <- .datom_clone_files_version(meta, history)
+  version <- .datom_documents_version(meta, history)
   if (is.list(row) && identical(row$current_version, version)) return(NULL)
 
   # A set's count is the length of its payload, which the clone holds as
@@ -387,11 +387,15 @@
 }
 
 
-#' The Version an Artifact's Files in the Clone Describe
+#' The Version an Artifact's Documents Describe
 #'
 #' The document's own version (`.datom_compute_metadata_sha()` of its
-#' `metadata.json`) when its history names that version; otherwise the version
+#' `metadata.json`) when every top-level field of that document is one this
+#' build can place and its history names that version; otherwise the version
 #' the history records for the document ([.datom_recorded_current_version()]).
+#' Shared by the manifest rebuild after a merge, which reads the clone's
+#' documents, and by `datom_validate()`'s `manifest_mismatch_s3` check, which
+#' reads the stored ones.
 #'
 #' **Why the document's own version first.** The history alone cannot tell two
 #' versions of the same data apart when only their custom metadata differs. A
@@ -399,21 +403,30 @@
 #' the history already holds: it appends no entry and stamps a fresh
 #' `created_at`, so the history matches neither entry's timestamp and falls back
 #' to its newest one for that data, which is the wrong one. Hashing the document
-#' gives the id the write recorded. It is exact here, where it would not be in a
-#' reader's rebuild from storage, because the format check has just passed: this
-#' build can place every field of every document in the clone.
+#' gives the id the write recorded.
 #'
-#' **Why the history must name it.** A row names a version the history records,
-#' never a manufactured one, which is the rule every rebuild keeps. A document
-#' committed by hand hashes to an id no entry holds, and gets the recorded one.
+#' **Why every field must be one this build can place.** The hash takes only
+#' the identity fields this build knows. A document from a newer datom, with a
+#' field this build cannot place, can hash (ignoring that field) to an older
+#' entry written before the field existed; such a document gets the recorded
+#' version. In the clone the format check has just passed, so this never
+#' applies there; in storage nothing has checked the document.
+#'
+#' **Why the history must name it.** A version named here is one the history
+#' records, never a manufactured one, which is the rule every rebuild keeps. A
+#' document committed by hand hashes to an id no entry holds, and gets the
+#' recorded one.
 #'
 #' @param meta The artifact's parsed `metadata.json`.
 #' @param history Its parsed `version_history.json`, or `NULL`.
 #' @return A version string, or `NULL` when the history records nothing usable.
 #' @keywords internal
-.datom_clone_files_version <- function(meta, history) {
-  own <- .datom_compute_metadata_sha(meta)
-  if (own %in% .datom_history_versions(history %||% list())) return(own)
+.datom_documents_version <- function(meta, history) {
+  placeable <- all(names(meta) %in% .datom_metadata_known_fields())
+  if (placeable) {
+    own <- .datom_compute_metadata_sha(meta)
+    if (own %in% .datom_history_versions(history %||% list())) return(own)
+  }
   .datom_recorded_current_version(meta, history)
 }
 
@@ -1078,8 +1091,8 @@
 #' Publish Artifacts From the Clone, Manifest Last
 #'
 #' **The one publish path.** A write's own publish (after its push), heal's
-#' publish and the metadata-only route all go through it, so the order readers
-#' depend on lives in one place. For each artifact, the documents as committed
+#' publish, the metadata-only route and the repair all go through it, so the
+#' order readers depend on lives in one place. For each artifact, the documents as committed
 #' in the clone go up through [.datom_push_metadata_s3()]: the snapshot, the
 #' history, then `metadata.json` last. Then the manifest, last of all, and only
 #' if every artifact's documents went up: a manifest published after a failure
@@ -1109,13 +1122,18 @@
 #' @param on_failure `"raise"` (a write's own publish) re-signals the first
 #'   failure as it was raised; `"return"` hands the failures back, for heal's
 #'   stop and the repair's report.
+#' @param manifest `FALSE` when the caller already knows an artifact outside
+#'   `names` failed (the repair, after a set's payload could not be restored):
+#'   the manifest is then not published, for the same reason as after a failure
+#'   here.
 #' @return Invisibly, a list with `published` (versions, named by artifact),
 #'   `failed` (conditions, named by artifact) and `manifest` (`"published"`,
 #'   `"held_back"`, `"not_reached"` or `"none"` when the clone has no manifest).
 #' @keywords internal
 .datom_publish_artifacts <- function(conn, names, commit_sha = NULL,
                                      recheck_manifest = FALSE,
-                                     on_failure = c("raise", "return")) {
+                                     on_failure = c("raise", "return"),
+                                     manifest = TRUE) {
   on_failure <- match.arg(on_failure)
   if (!is.null(commit_sha) && length(names) != 1L) {
     cli::cli_abort(
@@ -1134,7 +1152,7 @@
   failed <- purrr::compact(purrr::map(outcomes, "error"))
   published <- unlist(purrr::compact(purrr::map(outcomes, "version")))
 
-  manifest <- if (length(failed) == 0L) {
+  manifest <- if (length(failed) == 0L && isTRUE(manifest)) {
     .datom_publish_manifest(conn, names, recheck = recheck_manifest)
   } else {
     "not_reached"

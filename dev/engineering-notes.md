@@ -941,10 +941,11 @@ Same task. `version_history.json` exists in two copies -- the clone's, which is 
 storage's -- and `commit_sha` can only ever live on the second, because the clone's copy is *inside*
 the commit that would name it. The shape of the defect that follows is general:
 
-- **The upload sends the whole file, so it overwrites rather than adds.** Two functions upload
-  that file (`.datom_push_metadata_s3()`, `.datom_sync_one_artifact()`; a third,
-  `.datom_sync_metadata()`, had its own upload until #155 moved it onto the one publish path),
-  each reading the clone's copy. Without a merge the field survives on the newest entry only, and
+- **The upload sends the whole file, so it overwrites rather than adds.** One function uploads
+  that file, `.datom_push_metadata_s3()`, reading the clone's copy; every route reaches it through
+  the one publish path, `.datom_publish_artifacts()`. (There were three until #155 moved the
+  metadata-only route, `.datom_sync_metadata()`, and the repair, whose `.datom_sync_one_artifact()`
+  is deleted, onto that path.) Without a merge the field survives on the newest entry only, and
   the loss happens on the **second ordinary write** of an artifact -- not in the repair verb, which
   is where the design notes had put the hazard. Derive the list of upload sites (`grep -n
   version_history R/*.R`) rather than trusting a count written down anywhere.

@@ -1203,12 +1203,12 @@ datom_read <- function(conn,
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param data Data frame to write. If NULL with name, does metadata-only sync.
-#' @param name Table name. If NULL with NULL data, mirrors the clone's
-#'   storage-side documents for **every** artifact of either kind: the manifest,
-#'   and each artifact's metadata, version history and versioned snapshots. On
-#'   that route a **set** whose stored payload is missing also has it restored
-#'   from the clone -- see [datom_validate()], which shares the mechanism, for
-#'   the conditions on that.
+#' @param name Table name. If NULL with NULL data, runs the repair of
+#'   `datom_validate(fix = TRUE)` after asking: it puts back datom's files an
+#'   interrupted write left uncommitted, pulls, may push commits the git remote
+#'   lacks, and publishes every artifact of either kind from the clone (its
+#'   current version snapshot, history and metadata, a **set**'s missing
+#'   payload too), then the manifest. See [datom_validate()] for the details.
 #' @param metadata Optional named list of custom metadata. A missing value
 #'   (`NA`), `NaN` or `Inf` anywhere in it is refused, because it cannot be
 #'   read back as written: leave the field out instead.

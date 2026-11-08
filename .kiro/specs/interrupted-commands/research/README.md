@@ -192,3 +192,23 @@ Added 2026-11-07 in task 6:
   task 6's commit message. Two probes added from task 6's checkpoint review (the handler that
   notices a held-back manifest, and the stop it sets), run alone by naming them; results in the
   fix's commit message.
+Added 2026-11-07 in task 7:
+
+- `task7_guard_probes.R`: the harness with task 7's probes (the repair's reset before publishing;
+  `fix = TRUE` running whether or not a check found something; the repair's own push; heal after
+  the prompt; a set's payload first; `metadata.json` last within an artifact; the manifest held back
+  after an artifact's failure and after a payload that could not be restored; the
+  `manifest_mismatch_s3` comparison; the document's own version and the placeability check). Same
+  usage as task 6's; it runs `test-repair.R` once per probe (one probe adds
+  `test-manifest-conflict.R`), and the whole sweep takes about ten minutes. Results are in task 7's
+  commit message.
+- Rerun after task 7 (2026-11-07): `clone_snapshot_probe.R`, updated to record the keys the repair
+  (`.datom_sync_data_metadata()`) writes now that the per-artifact copy is deleted: the current
+  version's snapshot, the history, `metadata.json`, then the manifest. `snapshot_sources_probe.R`,
+  updated to commit and push its hand edit first (an uncommitted one stops the metadata-only route
+  since task 4a): case A is as before (the stored `metadata.json` hashes to a version no history
+  names, its own snapshot is stored, readers are told the previous version, a read pinned to the
+  edited hash fails; documented, D7); case B, a write broken at its metadata upload then
+  `datom_validate(fix = TRUE)`, now has the new version's snapshot stored and a pinned read
+  working. `set_steps_probe.R`: every break fired, every re-run reads v2, and `datom_validate(fix =
+  TRUE)` leaves v2. `other_command_probe.R`: unchanged from task 4b.

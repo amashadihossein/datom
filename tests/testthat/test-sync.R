@@ -981,7 +981,7 @@ test_that(".datom_sync_data_metadata requires interactive confirmation by defaul
 })
 
 # Helper: build a developer conn for data-only metadata sync (no gov needed)
-.setup_sync_metadata_conn <- function(project_name = "myproj") {
+.setup_sync_metadata_conn <- function(project_name = "myproj", env = parent.frame()) {
   fs::dir_create(".datom")
   jsonlite::write_json(list(schema_version = 2L, artifacts = list()),
                        ".datom/manifest.json", auto_unbox = TRUE)
@@ -990,37 +990,25 @@ test_that(".datom_sync_data_metadata requires interactive confirmation by defaul
   conn$role <- "developer"
   conn$path <- getwd()
   conn$project_name <- project_name
+  local_repair_on_folder(env = env)
   conn
 }
 
-test_that(".datom_sync_data_metadata syncs per-table metadata to storage", {
-  withr::with_tempdir({
-    conn <- .setup_sync_metadata_conn()
-
-    # A datom `hash_algo`, as every table written today declares: a folder that
-    # only holds a metadata.json is not an artifact.
-    fs::dir_create("customers")
-    jsonlite::write_json(list(data_sha = "abc", hash_algo = "datom-cv1"),
-                         "customers/metadata.json", auto_unbox = TRUE)
-    jsonlite::write_json(list(versions = list()), "customers/version_history.json",
-                         auto_unbox = TRUE)
-
-    s3_keys_written <- character()
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        s3_keys_written <<- c(s3_keys_written, s3_key)
-        invisible(NULL)
-      }
-    )
-
-    result <- .datom_sync_data_metadata(conn, .confirm = FALSE)
-
-    expect_true("customers/.metadata/metadata.json" %in% s3_keys_written)
-    expect_true("customers/.metadata/version_history.json" %in% s3_keys_written)
-    expect_equal(result$tables$customers$action, "synced")
-  })
-})
+# The repair on a plain folder, which is not a git repo: its heal, pull and push
+# are stubbed, so these tests reach its publish. The repair on a real project,
+# heal and all, is tested in test-repair.R.
+local_repair_on_folder <- function(env = parent.frame()) {
+  local_mocked_bindings(
+    .datom_heal = function(...) invisible(list(reset = character())),
+    .datom_pull_before_write = function(...) invisible(FALSE),
+    .datom_pushed_artifacts = function(...) character(),
+    .datom_heal_publish = function(...) {
+      invisible(list(published = character(), pushed = FALSE))
+    },
+    .datom_git_ahead = function(...) 0L,
+    .env = env
+  )
+}
 
 test_that(".datom_sync_data_metadata syncs the manifest to data storage", {
   withr::with_tempdir({
@@ -1061,59 +1049,6 @@ test_that(".datom_sync_data_metadata ignores non-table directories", {
   })
 })
 
-test_that(".datom_sync_data_metadata handles per-table errors gracefully", {
-  withr::with_tempdir({
-    conn <- .setup_sync_metadata_conn()
-
-    fs::dir_create("good_tbl")
-    jsonlite::write_json(list(data_sha = "d1", hash_algo = "datom-cv1"), "good_tbl/metadata.json",
-                         auto_unbox = TRUE)
-    fs::dir_create("bad_tbl")
-    jsonlite::write_json(list(data_sha = "d2", hash_algo = "datom-cv1"), "bad_tbl/metadata.json",
-                         auto_unbox = TRUE)
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        if (grepl("bad_tbl", s3_key)) stop("storage upload failed")
-        invisible(NULL)
-      }
-    )
-
-    result <- .datom_sync_data_metadata(conn, .confirm = FALSE)
-
-    expect_equal(result$tables$good_tbl$action, "synced")
-    expect_equal(result$tables$bad_tbl$action, "error")
-    expect_match(result$tables$bad_tbl$error, "storage upload failed")
-  })
-})
-
-test_that(".datom_sync_data_metadata syncs metadata snapshots from .metadata dir", {
-  withr::with_tempdir({
-    conn <- .setup_sync_metadata_conn()
-
-    fs::dir_create("orders")
-    jsonlite::write_json(list(data_sha = "d1", hash_algo = "datom-cv1"), "orders/metadata.json",
-                         auto_unbox = TRUE)
-    fs::dir_create("orders/.metadata")
-    jsonlite::write_json(list(version = 1), "orders/.metadata/abc123.json",
-                         auto_unbox = TRUE)
-
-    s3_keys_written <- character()
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        s3_keys_written <<- c(s3_keys_written, s3_key)
-        invisible(NULL)
-      }
-    )
-
-    .datom_sync_data_metadata(conn, .confirm = FALSE)
-
-    expect_true("orders/.metadata/metadata.json" %in% s3_keys_written)
-    expect_true("orders/.metadata/abc123.json" %in% s3_keys_written)
-  })
-})
-
 test_that(".datom_sync_data_metadata returns correct summary structure", {
   withr::with_tempdir({
     conn <- .setup_sync_metadata_conn()
@@ -1132,75 +1067,6 @@ test_that(".datom_sync_data_metadata returns correct summary structure", {
   })
 })
 
-test_that(".datom_sync_data_metadata handles multiple tables", {
-  withr::with_tempdir({
-    conn <- .setup_sync_metadata_conn()
-
-    for (nm in c("alpha", "beta", "gamma")) {
-      fs::dir_create(nm)
-      jsonlite::write_json(list(data_sha = nm, hash_algo = "datom-cv1"),
-                           paste0(nm, "/metadata.json"), auto_unbox = TRUE)
-    }
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(...) invisible(NULL)
-    )
-
-    result <- .datom_sync_data_metadata(conn, .confirm = FALSE)
-
-    expect_equal(length(result$tables), 3)
-    expect_true(all(purrr::map_chr(result$tables, "action") == "synced"))
-  })
-})
-
-
-# --- .datom_sync_one_artifact() ----------------------------------------------
-
-test_that(".datom_sync_one_artifact uploads metadata and version_history", {
-  withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$path <- getwd()
-
-    fs::dir_create("tbl")
-    jsonlite::write_json(list(x = 1), "tbl/metadata.json", auto_unbox = TRUE)
-    jsonlite::write_json(list(v = 1), "tbl/version_history.json",
-                         auto_unbox = TRUE)
-
-    s3_keys_written <- character()
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        s3_keys_written <<- c(s3_keys_written, s3_key)
-        invisible(NULL)
-      }
-    )
-
-    result <- .datom_sync_one_artifact(conn, "tbl")
-
-    expect_equal(result$action, "synced")
-    expect_true("tbl/.metadata/metadata.json" %in% result$s3_keys)
-    expect_true("tbl/.metadata/version_history.json" %in% result$s3_keys)
-  })
-})
-
-test_that(".datom_sync_one_artifact handles table with no version_history", {
-  withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$path <- getwd()
-
-    fs::dir_create("tbl")
-    jsonlite::write_json(list(x = 1), "tbl/metadata.json", auto_unbox = TRUE)
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
-    )
-
-    result <- .datom_sync_one_artifact(conn, "tbl")
-
-    expect_equal(length(result$s3_keys), 1)
-    expect_equal(result$s3_keys, "tbl/.metadata/metadata.json")
-  })
-})
 
 
 # --- datom_pull() --------------------------------------------------------------
@@ -1835,8 +1701,9 @@ test_that("per-table metadata sync's stored error has no escape codes", {
     fs::dir_create(fs::path("dm"))
     writeLines('{"hash_algo": "datom-cv1"}', "dm/metadata.json")
 
+    local_repair_on_folder()
     local_mocked_bindings(
-      .datom_sync_one_artifact = function(conn, name) {
+      .datom_publish_documents = function(conn, name, commit_sha = NULL) {
         cli::cli_abort(c(
           "Upload failed.",
           "x" = "Key: {.val {name}}"
@@ -1938,6 +1805,7 @@ test_that(".datom_sync_data_metadata mirrors an old-shape clone in current shape
     before <- digest::digest(file = ".datom/manifest.json", algo = "sha256")
 
     mirrored <- NULL
+    local_repair_on_folder()
     local_mocked_bindings(
       .datom_storage_write_json = function(conn, s3_key, data) {
         if (identical(s3_key, ".metadata/manifest.json")) mirrored <<- data
@@ -2038,6 +1906,7 @@ test_that(".datom_sync_data_metadata says so when it mirrors a converted manifes
     conn$path <- getwd()
     fs::dir_create(".datom")
     fs::file_copy(fixture, ".datom/manifest.json")
+    local_repair_on_folder()
     local_mocked_bindings(
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
@@ -2063,6 +1932,7 @@ test_that(".datom_sync_data_metadata treats a manifest that vanished as absent, 
       list(schema_version = 2L, artifacts = list()),
       ".datom/manifest.json", auto_unbox = TRUE
     )
+    local_repair_on_folder()
     local_mocked_bindings(
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
       .datom_read_manifest = function(conn, scope = c("storage", "clone"),

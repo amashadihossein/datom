@@ -35,18 +35,23 @@ main <- function() {
   cat("each version's snapshot stored:",
       vapply(versions, function(v) .datom_storage_exists(conn, .datom_artifact_snapshot_key("dm", v)), logical(1)), "\n")
 
-  # The repair's per-artifact copy, on this clone: which keys does it write?
+  # The repair, on this clone: which keys does it write? (Until #155 task 7 this
+  # called the per-artifact copy, `.datom_sync_one_artifact()`, which never
+  # wrote a snapshot; the repair now publishes through the one publish path.)
   written <- character()
   real <- get(".datom_storage_write_json", asNamespace("datom"))
   out <- testthat::with_mocked_bindings(
-    get(".datom_sync_one_artifact", asNamespace("datom"))(conn, "dm"),
+    suppressMessages(.datom_sync_data_metadata(conn, .confirm = FALSE)),
     .datom_storage_write_json = function(conn, key, data) {
       written <<- c(written, key)
       real(conn, key, data)
     },
     .package = "datom"
   )
-  cat("--- keys the repair's per-artifact copy wrote for dm ---\n")
+  cat("--- keys the repair wrote ---\n")
   print(written)
+  current <- jsonlite::read_json(file.path(tmp, "repo", ".datom", "manifest.json"))$artifacts$dm$current_version
+  cat("the repair wrote the current version's snapshot:",
+      .datom_artifact_snapshot_key("dm", current) %in% written, "\n")
 }
 main()

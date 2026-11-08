@@ -42,6 +42,13 @@ main <- function() {
   m <- jsonlite::read_json(mpath)
   m$custom <- list(note = "edited by hand")
   jsonlite::write_json(m, mpath, auto_unbox = TRUE, pretty = TRUE)
+  # Committed and pushed, as 0.2.0's route left it: since #155 task 4a an
+  # uncommitted edit of datom's files stops the route (requirements D13).
+  repo <- git2r::repository(file.path(a$tmp, "repo"))
+  git2r::add(repo, "dm/metadata.json")
+  sig <- .datom_git_signature(repo)
+  git2r::commit(repo, "Edit dm's metadata by hand", author = sig, committer = sig)
+  .datom_git_push(file.path(a$tmp, "repo"), pull_first = FALSE)
   res <- suppressMessages(datom_write(a$conn, name = "dm"))
   cat("\nA: metadata-only route action:", res$action, "\n")
   report(a, "A: hand edit published by datom_write(conn, name = 'dm')")

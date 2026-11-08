@@ -61,8 +61,10 @@ stops after a table's write that failed partway once it had changed the clone; r
 and task 6 was done the same day (its entry below lists eight differences from the plan). Its
 checkpoint review the same day (below) found one gap, fixed the same day in `aa4a680`: a held-back
 manifest stops the sync too. The reviewer's check of `aa4a680` raised one optional nit, taken the
-same day (below). That fix awaits the reviewer's check; then task 6 closes, and task 7 (the
-repair) follows on the owner's go-ahead.**
+same day (below). The reviewer's check of that fix (`1718023`) found nothing more, and task 6
+closed. Task 7 (the repair) done the same day (its entry below lists seven differences from the
+plan, the first being that `datom_validate(fix = TRUE)` now runs the repair whether or not a
+check found something); it awaits its checkpoint.**
 
 **Review of `aa4a680`, 2026-11-07**, by the same reviewer: one optional nit, taken by the owner.
 When storage's manifest could not be read at step 6's recheck, the write recorded the storage
@@ -411,6 +413,12 @@ build can place, and is renamed if it no longer reads only the clone). Two tests
 they must still pass once the repair changes. The guard-probe harness to copy is
 `research/task6_guard_probes.R` (name probes on the command line to run only those). Baseline:
 6006 expectations, 0 failed, 0 skipped, at `1718023`.
+
+**After task 7** (2026-11-07): baseline 6127 expectations, 0 failed, 0 skipped. The repair's tests
+on a real project live in `test-repair.R`; `rp_mirror()` there answers `datom_write(conn)`'s prompt
+by mocking the `interactive` and `readline` bindings `R/sync.R` holds for that purpose. Mock-folder
+tests of the repair stub heal, the pull and the push with `local_repair_on_folder()` (`test-sync.R`).
+The newest guard-probe harness is `research/task7_guard_probes.R`.
 
 **Shared test helpers** (created in task 2, extended later): `tests/testthat/helper-interrupt.R`
 with a project fixture (folder git remote and local store, as in the probes), a second-clone fixture,
@@ -1129,7 +1137,50 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   - Acceptance: R4.1-R4.5 and R3.7's once-per-sync rule; `research/sync_and_manifest_probe.R` and
     `research/stale_preview_probe.R` show the table published and the honest message.
 
-- [ ] **7. The repair** (R5; design section 6)
+- [x] **7. The repair** (R5; design section 6)
+  - **Done 2026-11-07.** Suite 6006 -> 6127 expectations. Removed from `test-sync.R` (15
+    expectations), each covered by the new `tests/testthat/test-repair.R` (136) on a real project:
+    ".datom_sync_data_metadata syncs per-table metadata to storage", "... handles per-table errors
+    gracefully", "... syncs metadata snapshots from .metadata dir" (the folder no datom command
+    writes), "... handles multiple tables", and the two unit tests of the deleted
+    `.datom_sync_one_artifact()`. The other mock-folder tests of the repair in `test-sync.R` stub
+    heal, the pull and the push (`local_repair_on_folder()`); the stored-error test now breaks
+    `.datom_publish_documents()`. In `test-validate-sets.R` the "restore declines loudly" fixture
+    commits its edit of `set.json`, since an uncommitted one is now reset first. Every guard below
+    probed red against `test-repair.R`, with a control that reddened nothing
+    (`research/task7_guard_probes.R`; every test each probe reddens is in the commit message).
+    `research/clone_snapshot_probe.R` and `research/snapshot_sources_probe.R` updated and rerun,
+    `set_steps_probe.R` and `other_command_probe.R` rerun (`research/README.md`). Names settled:
+    `.datom_documents_version()` (task 5's `.datom_clone_files_version()`, renamed because it now
+    reads stored documents too); `.datom_repair_push()`, `.datom_repair_results()`,
+    `.datom_report_repair()` (`R/sync.R`); `.datom_validate_stored_rows()`,
+    `.datom_validate_manifest_mismatch()`, `.datom_validate_mismatched()` (`R/validate.R`).
+    Differences from the list below, each flagged at the checkpoint:
+    1. **`datom_validate(fix = TRUE)` runs the repair whether or not its checks found anything.**
+       Until now it ran only when a check failed, and no check sees datom's files left uncommitted,
+       a version committed but not pushed or published while storage agrees with itself, or a lost
+       current snapshot, so every write's stop naming the fix led to a repair that did nothing.
+       The planned snapshot test needed it too (a lost snapshot is not reported). A probe.
+    2. **`fixed` is `TRUE` only when every artifact was published**; it was `TRUE` whenever the
+       sync ran without an error, even with per-artifact failures.
+    3. **A set's payload that cannot be restored** (a storage failure) leaves that set's documents
+       unpublished and the manifest too, as any other artifact's failure does:
+       `.datom_publish_artifacts()` gains `manifest = TRUE`, which the repair sets to `FALSE` then.
+       A test and a probe.
+    4. The repair's result per artifact: `action` is `"published"` (was `"synced"`) or `"error"`,
+       with `version`, `reset`, `pushed` and `error`; an artifact whose never-committed first write
+       was reset is listed with `action = "reset"`. The return gains `manifest`.
+    5. A row missing from the stored manifest, beside stored documents (a first write broken before
+       its manifest upload), is reported as `manifest_mismatch_s3`. A stored manifest that is
+       absent, unreadable or too new skips the check rather than reporting every artifact.
+    6. `datom_validate()` prints one warning naming the mismatched artifacts and the fix, beside
+       the status in its frame.
+    7. To answer `datom_write(conn)`'s prompt in a test, `R/sync.R` binds `interactive` and
+       `readline` to `NULL` (testthat's idiom for mocking a base function; a call skips a binding
+       that is not a function).
+    Left for task 10: `dev/datom_specification.md` still says three functions upload the stored
+    history (one does since this task), and the help of `datom_write(conn)` is only adjusted in
+    its `name` argument.
   - `R/sync.R`: `.datom_sync_data_metadata()` heals every artifact (`all = TRUE`; so it pushes and
     resets or publishes other artifacts' unfinished work, which writes leave to it), right after its confirmation
     prompt, which says it may push. This is the only place the mirror-everything route and the

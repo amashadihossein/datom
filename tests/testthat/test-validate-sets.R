@@ -496,6 +496,10 @@ test_that("the restore declines loudly when the clone's payload does not match",
   fs::file_delete(payload)
   cat("\n", file = fs::path(fx$repo_dir, fx$set_name, "set.json"),
       append = TRUE)
+  # Committed, as a hand edit pulled from git would arrive: an uncommitted edit
+  # of datom's files is an unfinished write, which the repair puts back first.
+  git_commit_files(fx$repo_dir, paste0(fx$set_name, "/set.json"),
+                   "Edit the set's payload by hand")
 
   messages <- capture.output(datom_validate(fx$conn, fix = TRUE),
                              type = "message")

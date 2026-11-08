@@ -199,12 +199,14 @@ write commands.
 | `R/sync.R` | `datom_pull()` | changed | Gains `finish_merge = FALSE`: when `TRUE`, the merge check finishes a merge that is not of the remote branch the way it finishes one that is (R3.9, section 4 step 0); with nothing in progress it does nothing |
 | `R/sync.R` | `datom_sync_manifest()` | changed | Compares against HEAD's manifest; `unpushed` status, from the clone alone (section 7) |
 | `R/sync.R` | `datom_sync()` | changed | The format check on every preview table, then heals once instead of `.datom_check_git_current()`, with every table in its preview as `artifact` and the rows it writes (`new`, `changed`) as `rewrite`; unfinished work on a table outside the preview, and uncommitted files of a preview row it does not write, stop it; `unpushed` rows, and `unchanged` rows heal published, are reported `success`; stops after a table's write that failed partway once it had changed the clone, or that held back the manifest (section 7) |
-| `R/sync.R` | `.datom_sync_data_metadata()` | changed | Heals every artifact (`all = TRUE`; so it pushes first, R5.2), restores each set's payload where storage lacks it, then publishes every artifact through `.datom_publish_artifacts()`, manifest last (section 6) |
+| `R/sync.R` | `.datom_sync_data_metadata()` | changed | Heals every artifact (`all = TRUE`), after its prompt; pushes any commit the remote still lacks (`.datom_repair_push()`, R5.2); restores each set's payload where storage lacks it; then publishes every artifact through `.datom_publish_artifacts()`, manifest last and only if every artifact (and every payload restore) succeeded; reports per artifact (`.datom_repair_results()`, `.datom_report_repair()`, R5.3) (section 6; task 7) |
 | `R/sync.R` | `.datom_read_manifest()` | changed | A third scope, `"head"`, reading HEAD's copy through `.datom_git_head_file()` with the same schema check and upgrade |
 | `R/sync.R` | `.datom_restore_set_payload()` | changed | Uploads through `.datom_storage_upload_absent()` |
 | `R/sync.R` | `.datom_sync_one_artifact()` | deleted | Its snapshot loop copied from a clone `{name}/.metadata/` folder no datom command writes, so it never published a snapshot; the repair uses `.datom_publish_artifacts()` and calls `.datom_restore_set_payload()` directly (section 6) |
-| `R/validate.R` | `datom_validate()` | changed | The fix now pushes and reports per artifact (R5.3); the new status `manifest_mismatch_s3`, read from storage only (R5.5, section 6) |
-| `R/validate.R` | `.datom_validate_one_table()` | changed | Reads the stored `metadata.json` and history, and reports `manifest_mismatch_s3` when the version they describe differs from the stored manifest's row: the document's own version when every field is one this build can place and the history names it, else the recorded one (section 6; owner, 2026-11-06, replacing the history lookup alone) |
+| `R/validate.R` | `datom_validate()` | changed | With `fix = TRUE` it runs the repair whether or not its checks found anything (task 7: the repair finishes what they cannot see, and every write's stop names it); `fixed` is `TRUE` only when every artifact was published; the new status `manifest_mismatch_s3`, read from storage only, with a message naming the fix (R5.5, section 6) |
+| `R/validate.R` | `.datom_validate_one_table()` | changed | Reads the stored `metadata.json` and history, and reports `manifest_mismatch_s3` when the version they describe differs from the stored manifest's row, or the row is missing (`.datom_validate_manifest_mismatch()`; the stored manifest is read once per call, `.datom_validate_stored_rows()`). The version comes from `.datom_documents_version()`: the document's own version when every field is one this build can place and the history names it, else the recorded one (section 6; owner, 2026-11-06, replacing the history lookup alone) |
+| `R/heal.R` | `.datom_documents_version(meta, history)` | renamed (task 7) | Task 5's `.datom_clone_files_version()`, renamed because it now reads stored documents too, and given the placeability check; shared by the manifest rebuild and `manifest_mismatch_s3` |
+| `R/heal.R` | `.datom_publish_artifacts()` | changed (task 7) | Gains `manifest = TRUE`; the repair passes `FALSE` after a set's payload could not be restored, so the manifest is not published |
 | `R/repo.R` | `datom_repo_commit()` | changed | The merge check, then, before staging, a stop naming `datom_validate(fix = TRUE)` when the commit would include datom's own uncommitted files (R3.5, R3.9; no reset since the spot-check before task 4a); the R3.6 message when it pushes |
 | `R/repo.R` | `datom_repo_push()`, `datom_repo_attach_governance()`, `datom_repo_set_data_store()` | changed | The R3.6 message around their push |
 | `R/conn.R` | `datom_init_repo()` | changed | Finishes a half-initialised folder (section 8) |
@@ -705,7 +707,8 @@ no comparison with the merge base; built in task 5, 2026-11-06, with the changes
    `.datom_manifest_row()`, carrying unknown row fields forward from the row it replaces with
    `.datom_carry_unknown_fields()`. A set's member count is the length of the clone's `set.json`.
    **Which version the files record** (task 5, changed from the plan,
-   `.datom_clone_files_version()`): the document's own version, `.datom_compute_metadata_sha()` of
+   `.datom_clone_files_version()`, renamed `.datom_documents_version()` in task 7): the document's
+   own version, `.datom_compute_metadata_sha()` of
    its `metadata.json`, when its history names that version; otherwise the version the history
    records for it, `.datom_recorded_current_version()`, which was the plan. The history alone cannot
    tell two versions of the same data apart when only their custom metadata differs: a write that
@@ -765,6 +768,15 @@ route in this spec leaves one missing (section 12, follow-up issue).
 The confirmation prompt on the `datom_write(conn)` route says it may push. `datom_validate(fix =
 TRUE)` reports per artifact what was reset, pushed and published (R5.3).
 
+**`fix = TRUE` runs the repair whether or not the checks found anything** (task 7). Until then it
+ran only when a check failed, and none of the checks sees datom's files left uncommitted, a version
+committed but not pushed or published while storage agrees with itself, or a lost current snapshot:
+every write's stop that names `datom_validate(fix = TRUE)` would have led to a repair that did
+nothing. `fixed` is `TRUE` only when every artifact was published.
+
+**After a set's payload cannot be restored**, that set's documents are not published and the
+manifest is not either (`.datom_publish_artifacts(manifest = FALSE)`), as after any other failure.
+
 **A new status, `manifest_mismatch_s3`** (R5.5; rewritten 2026-10-30 in the simplification pass,
 owner, from `metadata_stale_s3`, which compared storage against the clone's last commit and so needed
 a fetch, a skip for a behind clone and a like-for-like rule). Without it, `datom_validate()` says "All
@@ -778,8 +790,12 @@ names the fix, `datom_validate(fix = TRUE)` or the table's next write.
   `metadata.json`, when **every top-level field of that document is one this build can place**
   (`.datom_metadata_known_fields()`) and the stored history names that version; otherwise the
   version the history records, `.datom_recorded_current_version()`. This is task 5's rule
-  (`.datom_clone_files_version()`, section 5 step 3) with the placeability check made explicit:
-  there the format check had just passed, here nothing has checked the stored document.
+  (section 5 step 3) with the placeability check made explicit: there the format check had just
+  passed, here nothing has checked the stored document. One helper serves both,
+  `.datom_documents_version()` (task 5's `.datom_clone_files_version()`, renamed in task 7 since
+  it no longer serves the clone only). A row missing from the stored manifest, beside stored
+  documents, is a mismatch too (a first write broken before its manifest upload); documents that
+  cannot be read, or a history that records nothing usable, are not reported here.
   - Why not the history alone, as first designed: it names the wrong version after custom metadata
     is set back to earlier values (`note = "x"`, then `"y"`, then `"x"`; the third write returns to
     the first version's id, appends no history entry and stamps a fresh `created_at`, so the lookup
