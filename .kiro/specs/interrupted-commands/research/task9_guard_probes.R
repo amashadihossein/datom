@@ -64,7 +64,18 @@ main <- function() {
     # The rollback before the push (kept as it was).
     p9_rollback = list(filter = init, edit = function() sub1(cn,
       "    if (!.init_success && !.git_pushed) {",
-      "    if (FALSE) {"))
+      "    if (FALSE) {")),
+    # Checkpoint review: the folder check before anything touches the remote
+    # (moved back to after the namespace check, where it was) ...
+    p9r_check_early = list(filter = init, edit = function() {
+      sub1(cn, "  path <- fs::path_abs(path)\n  .datom_check_init_folder_free(path)\n", "")
+      sub1(cn, "  # --- Create directory structure",
+           "  path <- fs::path_abs(path)\n  .datom_check_init_folder_free(path)\n\n  # --- Create directory structure")
+    }),
+    # ... and its repair line.
+    p9r_repair_line = list(filter = init, edit = function() sub1(cn,
+      "             {.code datom_validate(conn, fix = TRUE)} instead: it uploads the \\\\\n             manifest.\",",
+      "             something.\","))
   )
   # Probe names on the command line run only those (the control is always run
   # first); none runs them all.

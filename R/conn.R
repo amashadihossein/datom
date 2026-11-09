@@ -456,6 +456,15 @@ datom_init_repo <- function(path = ".",
     ))
   }
 
+  # --- A folder already initialised --------------------------------------------
+  # Before anything touches the remote or storage, so every re-run in such a
+  # folder meets this one refusal, whatever the remote: later, a folder remote
+  # refuses as "already has content" and `create_repo = TRUE` would first create
+  # a GitHub repo and leave it empty. The refusal cannot tell whether an earlier
+  # run stopped after its push, so it gives both ways out.
+  path <- fs::path_abs(path)
+  .datom_check_init_folder_free(path)
+
   # --- Resolve data_repo_url -------------------------------------------------
   remote_url <- store$data_repo_url
   is_folder_remote <- !is.null(remote_url) &&
@@ -579,16 +588,6 @@ datom_init_repo <- function(path = ".",
     if (!is.null(check_conn)) {
       .datom_check_namespace_free(check_conn, overridable = !is_product_init)
     }
-  }
-
-  # --- Path setup -------------------------------------------------------------
-  path <- fs::path_abs(path)
-
-  if (fs::file_exists(fs::path(path, ".datom", "project.yaml"))) {
-    cli::cli_abort(c(
-      "A datom repository already exists at {.path {path}}.",
-      "i" = "Delete {.path {fs::path(path, '.datom')}} to re-initialize."
-    ))
   }
 
   # --- Create directory structure ---------------------------------------------
@@ -777,8 +776,7 @@ datom_init_repo <- function(path = ".",
     .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
   }, error = function(e) {
     msg <- conditionMessage(e)
-    # Built first: a path interpolated inside {.code} would be quoted twice.
-    connect_cmd <- paste0("conn <- datom_get_conn(\"", path, "\", store)")
+    connect_cmd <- .datom_init_connect_cmd(path)
     cli::cli_abort(
       c(
         "Pushed the data repo to the git remote, but could not upload its \\
@@ -787,7 +785,8 @@ datom_init_repo <- function(path = ".",
         "i" = "The local clone at {.path {path}} is intact, and the git remote \\
                has its first commit.",
         "i" = "Once the cause is fixed (credentials, connectivity), connect \\
-               with {.code {connect_cmd}} and run \\
+               with {.code {connect_cmd}}, giving it the same store you passed \\
+               to {.fn datom_init_repo}, and run \\
                {.code datom_validate(conn, fix = TRUE)} to upload the manifest.",
         "i" = "Running {.fn datom_init_repo} again refuses: the folder is \\
                already initialised."
@@ -804,6 +803,51 @@ datom_init_repo <- function(path = ".",
   )
 
   invisible(TRUE)
+}
+
+
+#' Refuse to Initialise a Folder That Already Holds a datom Repository
+#'
+#' [datom_init_repo()] runs this before anything touches the remote or storage,
+#' so every re-run in such a folder meets this refusal, whatever the remote.
+#' It cannot tell whether an earlier run stopped after its push (the git remote
+#' has the repo, storage lacks the manifest) or finished, so it names both ways
+#' out: the repair, which finishes the first case, and starting over, which
+#' needs the git remote's repository deleted too.
+#'
+#' @param path The folder, as an absolute path.
+#' @return Invisibly `NULL` when the folder holds no `.datom/project.yaml`;
+#'   otherwise does not return.
+#' @keywords internal
+.datom_check_init_folder_free <- function(path) {
+  if (!fs::file_exists(fs::path(path, ".datom", "project.yaml"))) {
+    return(invisible(NULL))
+  }
+  connect_cmd <- .datom_init_connect_cmd(path)
+  cli::cli_abort(
+    c(
+      "A datom repository already exists at {.path {path}}.",
+      "i" = "If an earlier {.fn datom_init_repo} here stopped after its push, \\
+             connect with {.code {connect_cmd}}, giving it the same store you \\
+             passed to {.fn datom_init_repo}, and run \\
+             {.code datom_validate(conn, fix = TRUE)} instead: it uploads the \\
+             manifest.",
+      "i" = "To start over instead, delete this folder's {.file .datom} and \\
+             {.file .git} and the git remote's repository, then re-run."
+    ),
+    class = "datom_init_folder_taken"
+  )
+}
+
+
+#' The Connect Command a Stop of datom_init_repo() Names
+#'
+#' @param path The folder, as an absolute path.
+#' @return One string, `conn <- datom_get_conn("<path>", store)`. Built here
+#'   rather than inside `{.code}`, which would quote the path a second time.
+#' @keywords internal
+.datom_init_connect_cmd <- function(path) {
+  paste0("conn <- datom_get_conn(\"", path, "\", store)")
 }
 
 

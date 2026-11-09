@@ -33,6 +33,16 @@ ii_stored_manifest <- function(p) {
 
 ii_msg <- function(err) gsub("\\s+", " ", cli::ansi_strip(conditionMessage(err)))
 
+# The bare remote: its HEAD and every file under it.
+ii_remote_state <- function(p) {
+  repo <- git2r::repository(p$remote)
+  files <- fs::dir_ls(p$remote, recurse = TRUE, all = TRUE, type = "file")
+  list(
+    head = as.character(git2r::revparse_single(repo, "HEAD")$sha),
+    files = unname(tools::md5sum(sort(as.character(files))))
+  )
+}
+
 # A reader with no clone, which sees only what storage publishes.
 ii_reader_lists <- function(p) {
   reader <- suppressMessages(datom_get_conn(
@@ -108,16 +118,65 @@ test_that("datom_init_repo() whose storage connection fails after the push names
   expect_true(dir.exists(p$remote))
 })
 
-test_that("datom_init_repo() re-run after a break at its manifest upload refuses, changing nothing (R6.2)", {
+ii_expect_folder_taken <- function(err, p) {
+  msg <- ii_msg(err)
+  expect_match(msg, "A datom repository already exists", fixed = TRUE)
+  expect_match(msg, paste0("conn <- datom_get_conn(\"", fs::path_abs(p$repo), "\", store)"),
+               fixed = TRUE)
+  expect_match(msg, "the same store you passed", fixed = TRUE)
+  expect_match(msg, "datom_validate(conn, fix = TRUE)", fixed = TRUE)
+  expect_match(msg, "and the git remote's repository", fixed = TRUE)
+}
+
+test_that("datom_init_repo() re-run after a break at its manifest upload refuses with both ways out, changing nothing, whatever the remote (R6.2)", {
   p <- ii_place()
   local({
     local_break_at("manifest")
     expect_error(ii_init(p), class = "datom_init_manifest_failed")
   })
   before <- snapshot_clone(p$repo)
+  remote_before <- ii_remote_state(p)
 
-  expect_error(ii_init(p))
+  # A folder remote created by the call, as the first call made it.
+  err <- expect_error(ii_init(p), class = "datom_init_folder_taken")
+  ii_expect_folder_taken(err, p)
+
+  # The same folder remote, now passed as an existing one.
+  err <- expect_error(
+    suppressMessages(datom_init_repo(p$repo, "P", p$store)),
+    class = "datom_init_folder_taken"
+  )
+  ii_expect_folder_taken(err, p)
+
+  # A GitHub address supplied by the caller, and one the call would create.
+  # Neither reaches GitHub: the folder is refused first.
+  github <- datom_store(
+    data = datom_store_local(p$storage),
+    github_pat = "ghp_fake",
+    data_repo_url = "https://github.com/someone/p.git",
+    validate = FALSE
+  )
+  github_create <- datom_store(
+    data = datom_store_local(p$storage), github_pat = "ghp_fake", validate = FALSE
+  )
+  created <- FALSE
+  local_mocked_bindings(.datom_create_github_repo = function(...) {
+    created <<- TRUE
+    "https://github.com/someone/p.git"
+  })
+  err <- expect_error(
+    suppressMessages(datom_init_repo(p$repo, "P", github)),
+    class = "datom_init_folder_taken"
+  )
+  ii_expect_folder_taken(err, p)
+  err <- expect_error(
+    suppressMessages(datom_init_repo(p$repo, "P", github_create, create_repo = TRUE)),
+    class = "datom_init_folder_taken"
+  )
+  ii_expect_folder_taken(err, p)
+  expect_false(created)
 
   expect_identical(snapshot_clone(p$repo), before)
+  expect_identical(ii_remote_state(p), remote_before)
   expect_false(file.exists(ii_stored_manifest(p)))
 })

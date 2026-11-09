@@ -543,7 +543,14 @@ Rewritten 2026-11-08 (owner): D5 reversed; the re-run that finished the job is d
    message that says the git remote has the repo and storage lacks the manifest, and names a way out
    that works as written: connect with `datom_get_conn()` on that folder and the same store, then
    run `datom_validate(conn, fix = TRUE)`. It says that re-running `datom_init_repo()` refuses.
-2. A re-run in a folder that already holds `.datom/project.yaml` refuses exactly as today.
+2. A re-run in a folder that already holds `.datom/project.yaml` refuses before anything touches
+   the remote or storage, whatever the remote (amended 2026-11-08, owner, from task 9's checkpoint
+   review: until then a folder remote refused as "already has content", `create_repo = TRUE`
+   created a GitHub repo first and left it empty, and only a supplied GitHub address met the
+   folder check, whose advice, delete `.datom`, ended in a raw git error). The refusal cannot tell
+   whether an earlier run stopped after its push, so it names both ways out: the repair of R6.1,
+   and starting over, which needs the folder's `.datom` and `.git` and the git remote's repository
+   deleted.
 3. A break before the push is rolled back, as today, and the same call re-run succeeds.
 
 ### R7. Tests

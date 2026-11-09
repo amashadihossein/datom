@@ -1481,6 +1481,16 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     reader and a clean `datom_validate()`; a storage connection failing after the push names it too;
     a re-run after the break refuses and changes nothing. `test-conn.R`'s recovery test matches the
     new class.
+  - **Checkpoint review, 2026-11-08**, by another agent, of `9127993` (with a spot-check of
+    `cc7d6e1` and `9d53b1f`, which held): approved with one fix, evaluated with the owner. The
+    review: a re-run's refusal ("Delete .datom to re-initialize") names a way out that ends in a
+    raw git error. Checked here, and wider: which refusal a re-run meets depends on the remote (a
+    folder remote: "already has content"; `create_repo = TRUE`: GitHub's error, after creating an
+    empty repo; only a supplied GitHub address reached the folder check). **Taken, widened (owner,
+    option A):** the folder check runs before anything touches the remote, and names both ways
+    out (R6.2 amended, design section 8). The review's nit taken: both stops say to give
+    `datom_get_conn()` the same store passed to `datom_init_repo()`. The re-run test covers all four
+    remotes, and that no GitHub repo is created.
   - Acceptance: R6.1-R6.3 as rewritten.
 
 - [ ] **10. Documentation** (R8, R9)

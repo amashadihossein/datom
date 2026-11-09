@@ -955,7 +955,14 @@ uploading the manifest run inside one handler, which stops (class `datom_init_ma
 saying the git remote has the repo and storage lacks the manifest, and naming the way out:
 `conn <- datom_get_conn("<path>", store)`, then `datom_validate(conn, fix = TRUE)`, which uploads
 the manifest (probed: `research/init_rerun_probe.R`). It says that re-running `datom_init_repo()`
-refuses. No new routine and no new check: a re-run refuses as it always has.
+refuses. No new routine and no new check.
+
+**Amended the same day** (owner, from task 9's checkpoint review): the check for a folder already
+holding `.datom/project.yaml` (`.datom_check_init_folder_free()`, class `datom_init_folder_taken`)
+moves from after the remote's resolution to just after the argument checks, so every re-run meets
+it whatever the remote, and `create_repo = TRUE` no longer creates a GitHub repo before refusing.
+It names the repair and starting over (the git remote's repository deleted too). Both stops say to
+give `datom_get_conn()` the same store passed to `datom_init_repo()`.
 
 The plan that stood here until then, kept as the record:
 
