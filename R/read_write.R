@@ -1142,7 +1142,7 @@ datom_read <- function(conn,
 #' @param message Commit message.
 #' @return The commit SHA.
 #' @keywords internal
-.datom_commit_and_mirror <- function(conn, name, git_paths, message) {
+.datom_commit_and_publish <- function(conn, name, git_paths, message) {
   git_files <- c(
     fs::path_rel(git_paths, conn$path),
     ".datom/manifest.json"
@@ -1475,7 +1475,7 @@ datom_write <- function(conn,
   # 7. Commit + push, then publish metadata and manifest to storage -- in that
   #    order, shared with datom_write_set(). The data file is already stored
   #    (step 5).
-  commit_sha <- .datom_commit_and_mirror(
+  commit_sha <- .datom_commit_and_publish(
     conn, name,
     git_paths = write_result$git_paths,
     message = message %||% paste0("Update ", name)

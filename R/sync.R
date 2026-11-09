@@ -1381,10 +1381,11 @@ datom_sync <- function(conn,
 #' its edits, the repair would publish it, and the format check would refuse a
 #' write over the user's own fields.
 #'
-#' Three callers, and they must agree: heal's reset ([.datom_heal()]) puts back
-#' exactly these artifacts' files, the data-side metadata sync mirrors exactly
-#' these artifacts to storage, and the write-entry check inspects exactly the
-#' documents that route is about to write.
+#' Its callers must agree, so they all ask here: heal's reset ([.datom_heal()])
+#' puts back exactly these artifacts' files, the repair publishes exactly these,
+#' [datom_validate()] checks exactly these, the format check at a write's door
+#' and after a merge reads exactly these documents, and the push commands' note
+#' names only these.
 #'
 #' The directory filter is the pre-existing one: dotfiles out, plus the fixed
 #' list of non-artifact directories a joint repo carries (`R/`, `tests/`,

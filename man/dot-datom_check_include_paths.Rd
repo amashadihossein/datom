@@ -17,10 +17,10 @@ first write has no directory to discover.}
 }
 \value{
 Absolute paths in the clone, or \code{NULL}. \strong{Absolute}, because
-\code{\link[=.datom_commit_and_mirror]{.datom_commit_and_mirror()}} relativises what it is given against \code{conn$path},
-and \code{fs::path_rel()} on an already-relative path resolves it against the
-working directory instead -- which aborts with "files do not exist" pointing
-somewhere the caller never named.
+\code{\link[=.datom_commit_and_publish]{.datom_commit_and_publish()}} relativises what it is given against
+\code{conn$path}, and \code{fs::path_rel()} on an already-relative path resolves it
+against the working directory instead -- which aborts with "files do not
+exist" pointing somewhere the caller never named.
 }
 \description{
 \code{include_paths} is the \strong{only} way a commit datom makes on its own initiative

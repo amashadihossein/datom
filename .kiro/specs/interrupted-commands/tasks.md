@@ -72,8 +72,11 @@ staged); its entry below lists five differences from the plan. Its checkpoint re
 (below) approved it with one point, taken with a second found while checking it, both fixed in
 `6921561`. The reviewer's check of `6921561` approved it with one optional nit, taken the same day,
 and **the owner closed task 8 on 2026-11-07**. The purity audit flagged after task 8 ran on
-2026-11-08 (below); its fixes land one commit per point before task 9. **Next: the audit's points
-1-6, then task 9: "Starting task 9 cold" below.**
+2026-11-08 (below); its points 1-6 landed the same day, one commit each (`cc7d6e1`, `b7a254a`,
+`9d53b1f`, `7b64414`, `93cee2f` and point 6's), plus `c83cc04` regenerating `man/` for points 1-4,
+which their commits had missed. Suite 6244 -> 6263 expectations, 0 failed, 0 skipped. **Next: task
+9: "Starting task 9 cold" below** (its first open point, which fields of the folder's
+`project.yaml` must match for a re-run to finish, was raised with the owner and not yet answered).
 
 **Purity audit after task 8, 2026-11-08**, of `347a403..6921561` under `R/`, on Claude Opus 5.5,
 with the owner's request to watch for places where one rule could replace case-by-case handling.
@@ -82,7 +85,7 @@ with the owner; points 7-9 stay as they are, points 1-6 are taken, in this order
 
 | Point | Outcome |
 |---|---|
-| 1. The push before publishing sat in three places (heal's publish after its checks, the repair's `.datom_repair_push()`, the metadata-only route) | **Taken**: `.datom_publish_artifacts()` pushes first when the clone is ahead (or has no upstream), without pulling, for every caller. The rule: every document readers follow is on GitHub first (data files and set payloads go into storage before their commit, by D1). Kept as they were: heal's gate (it reaches the publish only past its checks), its early push with no upstream, the write's own push with its pull and the manifest recheck. The probes of tasks 4b and 7 are rerun, the moved ones retargeted in `research/audit_guard_probes.R`. Not done: removing the repair's second publish (heal's, then every artifact's), kept on 2026-10-30 so heal stays the same on every route; raised with the owner at this point's checkpoint |
+| 1. The push before publishing sat in three places (heal's publish after its checks, the repair's `.datom_repair_push()`, the metadata-only route) | **Taken** (the repair's second publish kept too, owner, 2026-11-08: it is an edge case, and removing it would move code, not remove it): `.datom_publish_artifacts()` pushes first when the clone is ahead (or has no upstream), without pulling, for every caller. The rule: every document readers follow is on GitHub first (data files and set payloads go into storage before their commit, by D1). Kept as they were: heal's gate (it reaches the publish only past its checks), its early push with no upstream, the write's own push with its pull and the manifest recheck. The probes of tasks 4b and 7 are rerun, the moved ones retargeted in `research/audit_guard_probes.R`. Not done: removing the repair's second publish (heal's, then every artifact's), kept on 2026-10-30 so heal stays the same on every route; raised with the owner at this point's checkpoint |
 | 2. Three stops for "another artifact has unfinished work" (heal's reset, heal's publish, the blocked pull), each worded differently | **Taken**: one message and one class |
 | 3. Four "what has happened" lines chosen through flags passed down the pull and the push | **Taken**: one line, "Nothing was published.", true at every stop before publishing (the review: on a clone with no upstream heal pushes before its checks, so "Nothing was pushed" was already false there). Heal's reset announces each reset itself, so the "put back" line loses nothing. **The data-file line is dropped** (owner, 2026-11-08): a data file stored before a stop is named by nothing and reused by a re-run; design sections 4 and 10 amended |
 | 4. Repeated pairs of calls in the git and config commands | **Taken**: one helper for the merge check and the stop before a commit, one for naming what a push carried |

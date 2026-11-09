@@ -909,7 +909,7 @@ git2r::content(blob)                            # the bytes the commit holds
 
 **`fs::path_rel()` with a relative first argument resolves it against the working directory**, so
 `fs::path_rel("dp/build.R", "/tmp/repo")` returns `"../../private/tmp/dp/build.R"`. Anything handed
-to `.datom_commit_and_mirror()` must be an **absolute** path, since that function relativises what
+to `.datom_commit_and_publish()` must be an **absolute** path, since that function relativises what
 it is given against `conn$path`. The failure is loud (`.datom_git_commit()` aborts "files do not
 exist"), so this costs minutes rather than correctness -- but repo-relative input has to be
 absolutised first.

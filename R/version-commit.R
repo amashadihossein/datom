@@ -1,21 +1,21 @@
 # The version-to-commit link: which commit first produced a given version.
 #
-# WHY THIS IS A FILE OF ITS OWN, and not three lines inside the uploader. Two
-# functions upload an artifact's `version_history.json` to storage (the publish
-# path's `.datom_push_metadata_s3()` and the repair's per-artifact copy),
-# reached from four public entry points, and the clone's copy of that file can
-# never carry `commit_sha` -- it is inside the commit it would name. So each of
-# those uploads is a chance to erase the field, and the ordinary write is the
-# one that does it first: it sends the clone's copy wholesale, so the second
-# write of an artifact would drop the first version's commit id with no repair
-# involved. One helper, called by both, because two copies of "keep
-# `commit_sha`" are two places to lose it.
+# WHY THIS IS A FILE OF ITS OWN, and not three lines inside the uploader. One
+# function uploads an artifact's `version_history.json` to storage
+# (`.datom_push_metadata_s3()`, on the one publish path), reached from every
+# route that publishes, and the clone's copy of that file can never carry
+# `commit_sha` -- it is inside the commit it would name. So that upload is a
+# chance to erase the field, and the ordinary write is the one that does it
+# first: it sends the clone's copy wholesale, so the second write of an
+# artifact would drop the first version's commit id with no repair involved.
+# The rule lives here, apart from the uploader, so a second uploader added
+# later calls it rather than copying it.
 #
 # THE ONE RULE: `commit_sha` is DERIVED, NEVER AUTHORED. No public verb accepts
 # it. The write path hands in the commit it just made because it already holds
 # it; every other gap is worked out from git. Keeping what storage already has is
 # not enough on its own -- an older datom that has never heard of the field
-# strips it through any of the routes that upload it, and nothing refuses that build,
+# strips it through any route that uploads it, and nothing refuses that build,
 # because version-history entries have no field vocabulary to trip (unlike
 # `metadata.json` and the manifest). That is tolerable only because the value can
 # be recomputed **from a complete clone** -- and only if something recomputes.
@@ -44,8 +44,8 @@
 #' Add `commit_sha` to a History on Its Way to Storage
 #'
 #' Returns `history` with a `commit_sha` on every entry whose producing commit is
-#' known, and unchanged entries where it is not. Called by each of the two
-#' functions that upload `version_history.json`.
+#' known, and unchanged entries where it is not. Called by the function that
+#' uploads `version_history.json`, [.datom_push_metadata_s3()].
 #'
 #' Two sources, in this order:
 #'

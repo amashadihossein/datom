@@ -280,10 +280,10 @@
 #'   first write has no directory to discover.
 #' @param include_paths The caller's character vector, or `NULL`.
 #' @return Absolute paths in the clone, or `NULL`. **Absolute**, because
-#'   [.datom_commit_and_mirror()] relativises what it is given against `conn$path`,
-#'   and `fs::path_rel()` on an already-relative path resolves it against the
-#'   working directory instead -- which aborts with "files do not exist" pointing
-#'   somewhere the caller never named.
+#'   [.datom_commit_and_publish()] relativises what it is given against
+#'   `conn$path`, and `fs::path_rel()` on an already-relative path resolves it
+#'   against the working directory instead -- which aborts with "files do not
+#'   exist" pointing somewhere the caller never named.
 #' @keywords internal
 .datom_check_include_paths <- function(conn, name, include_paths) {
   if (is.null(include_paths)) return(NULL)
@@ -1352,7 +1352,7 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # files. A second commit for them would leave two versions of "what produced
   # this set" and no way to say which one the set pins. `NULL` drops out of
   # `c()`, so a write with no extra paths is byte-for-byte the previous one.
-  commit_sha <- .datom_commit_and_mirror(
+  commit_sha <- .datom_commit_and_publish(
     conn, name,
     git_paths = c(write_result$git_paths, payload_path, include_paths),
     message = messages$commit
