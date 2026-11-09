@@ -109,7 +109,19 @@ main <- function() {
     # ... and in the fetch failure.
     p3_fetch_line = list(filter = "^heal$", edit = function() sub1(gt,
       "      \"i\" = \"Nothing was published.\",\n      \"i\" = \"Check your connection",
-      "      \"i\" = \"Check your connection"))
+      "      \"i\" = \"Check your connection")),
+    # Point 4: the merge check inside the checks before a commit ...
+    p4_merge_check = list(filter = "^repo-unfinished$", edit = function() sub1(hl,
+      "  .datom_check_merge(conn$path)\n\n  st <- git2r::status(",
+      "  st <- git2r::status(")),
+    # ... the push's note ...
+    p4_note = list(filter = "^repo-unfinished$", edit = function() sub1(hl,
+      "  .datom_git_push(conn$path, pat = conn$github_pat)\n  .datom_note_pushed_unpublished(pushed)\n",
+      "  .datom_git_push(conn$path, pat = conn$github_pat)\n")),
+    # ... and its names taken before the push.
+    p4_names_before_push = list(filter = "^repo-unfinished$", edit = function() sub1(hl,
+      "  pushed <- .datom_pushed_artifacts(conn$path)\n  .datom_git_push(conn$path, pat = conn$github_pat)\n",
+      "  .datom_git_push(conn$path, pat = conn$github_pat)\n  pushed <- .datom_pushed_artifacts(conn$path)\n"))
   )
   # Probe names on the command line run only those (the control is always run
   # first); none runs them all.

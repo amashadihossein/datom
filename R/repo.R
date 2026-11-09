@@ -93,15 +93,10 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
   }
 
   # Before anything reads or rewrites the file, so either stop changes nothing.
-  # The commit below runs before the push's pull, so the merge check there would
-  # come too late: a commit made mid-merge finishes the merge (requirements
-  # R3.9). Ahead of the read, too: with `project.yaml` itself conflicted, the
-  # read would fail on the conflict markers with a parser error instead of the
-  # merge message (task 8's checkpoint review). And a commit takes the whole
-  # index, so a datom file already staged (a write stopped between staging and
-  # committing) would go into it (R3.5, D9).
-  .datom_check_merge(conn$path)
-  .datom_stop_commit_of_unfinished(conn, ".datom/project.yaml")
+  # Ahead of the read too: with `project.yaml` itself conflicted, the read would
+  # fail on the conflict markers with a parser error instead of the merge
+  # message (task 8's checkpoint review).
+  .datom_check_before_commit(conn, ".datom/project.yaml")
 
   # --- Read full yaml (read-modify-write: never reconstruct from conn) --------
   # Checked before the merge below, and NOT covered by the connection-time gate:
@@ -156,13 +151,11 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
     message = commit_msg
   )
 
-  pushed <- .datom_pushed_artifacts(conn$path)
-  .datom_git_push(conn$path, pat = conn$github_pat)
+  .datom_push_naming_unpublished(conn)
 
   cli::cli_alert_success(
     "Updated {.file .datom/project.yaml} data store pointer for {.val {conn$project_name}}."
   )
-  .datom_note_pushed_unpublished(pushed)
   invisible(sha)
 }
 
@@ -427,10 +420,8 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
 
   project_name <- conn$project_name
 
-  # Before governance.json is written, so either stop changes nothing: the
-  # same two checks as in `datom_repo_set_data_store()`, for the same reasons.
-  .datom_check_merge(conn$path)
-  .datom_stop_commit_of_unfinished(conn, ".datom/governance.json")
+  # Before governance.json is written, so either stop changes nothing.
+  .datom_check_before_commit(conn, ".datom/governance.json")
 
   # --- Build + write governance.json (git canonical) -------------------------
   gov_json <- .datom_create_governance_json(
@@ -446,8 +437,7 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
     files   = ".datom/governance.json",
     message = commit_msg
   )
-  pushed <- .datom_pushed_artifacts(conn$path)
-  .datom_git_push(conn$path, pat = conn$github_pat)
+  .datom_push_naming_unpublished(conn)
 
   # --- Mirror to data storage (warn-and-continue on failure) -----------------
   tryCatch(
@@ -464,7 +454,6 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
   cli::cli_alert_success(
     "Wrote data-side governance record for {.val {project_name}}."
   )
-  .datom_note_pushed_unpublished(pushed)
   invisible(sha)
 }
 
@@ -484,7 +473,7 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
 # tree may hold a human's work in progress. A human moment is the opposite: the
 # caller asked for it, so `paths = NULL` means what `git add .` means -- except
 # that a commit taking datom's own uncommitted files stops instead
-# (`.datom_stop_commit_of_unfinished()`).
+# (`.datom_check_before_commit()`).
 
 
 #' Connection Requirements Shared by the Two Git-Mutation Verbs
@@ -713,13 +702,8 @@ datom_repo_commit <- function(conn, message, paths = NULL, push = TRUE) {
   # `push = FALSE` there is no later push failure to reveal it.
   branch_name <- .datom_git_branch(conn$path)
 
-  # Both before anything is staged, so either stop changes nothing. The merge
-  # check runs here, and not only inside the push's pull, because `push = FALSE`
-  # makes no pull, and a commit made mid-merge would finish a merge datom did not
-  # start (requirements R3.9). Then a commit that would take datom's own
-  # uncommitted files stops: they are a write that never committed (R3.5).
-  .datom_check_merge(conn$path)
-  .datom_stop_commit_of_unfinished(conn, paths)
+  # Before anything is staged, so either stop changes nothing.
+  .datom_check_before_commit(conn, paths)
 
   # Nothing-to-do is detected here rather than read off the helper's return
   # value. `.datom_git_commit()` returns HEAD's SHA when nothing ends up staged
@@ -760,9 +744,7 @@ datom_repo_commit <- function(conn, message, paths = NULL, push = TRUE) {
     ahead <- if (created) NA_integer_ else .datom_git_ahead(conn$path)
 
     if (created || is.na(ahead) || ahead > 0L) {
-      pushed <- .datom_pushed_artifacts(conn$path)
-      .datom_git_push(conn$path, pat = conn$github_pat)
-      .datom_note_pushed_unpublished(pushed)
+      .datom_push_naming_unpublished(conn)
     } else {
       cli::cli_alert_info(
         "Remote already has every commit on {.val {branch_name}}."
@@ -850,8 +832,7 @@ datom_repo_push <- function(conn) {
     return(invisible(TRUE))
   }
 
-  pushed <- .datom_pushed_artifacts(conn$path)
-  .datom_git_push(conn$path, pat = conn$github_pat)
+  .datom_push_naming_unpublished(conn)
 
   # Deliberately no commit count in the message: the push pulls first, so a merge
   # can add a commit between the count above and what actually went out, and a
@@ -860,7 +841,6 @@ datom_repo_push <- function(conn) {
   # starts with a dot, and a local binding is clearer than working around that.
   branch_name <- .datom_git_branch(conn$path)
   cli::cli_alert_success("Pushed {.val {branch_name}} to the data remote.")
-  .datom_note_pushed_unpublished(pushed)
 
   invisible(TRUE)
 }

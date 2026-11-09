@@ -1653,16 +1653,24 @@
 
 # --- The git and config commands ------------------------------------------------
 
-#' Stop a Commit That Would Take datom's Own Uncommitted Files
+#' The Checks Before a Git or Config Command Commits
 #'
 #' [datom_repo_commit()], [datom_repo_attach_governance()] and
-#' [datom_repo_set_data_store()] never commit a datom write that never committed
-#' (requirements R3.5, D9). The last two pass their one file as `paths`, so for
-#' them it stops only on a datom file already staged. Its files, left by a write that stopped before its
-#' commit, would otherwise become a version nobody published, with half its
-#' steps done. The command acts on an artifact it is not writing, so it stops
-#' rather than reset them (D14 principle 8): the artifact's own write, re-run,
-#' finishes it, and `datom_validate(fix = TRUE)` discards the changes.
+#' [datom_repo_set_data_store()] run this before they stage or write anything,
+#' so either stop changes nothing. Two checks, in order:
+#'
+#' 1. **The merge check** ([.datom_check_merge()]). Each of these commands
+#'    commits before its push pulls (and `datom_repo_commit(push = FALSE)` never
+#'    pulls), so the check inside the pull would come too late: a commit made
+#'    mid-merge finishes the merge, datom's or the user's (requirements R3.9).
+#' 2. **A commit that would take datom's own uncommitted files stops.** The
+#'    commands never commit a datom write that never committed (R3.5, D9). The
+#'    two config commands pass their one file as `paths`, so for them it stops
+#'    only on a datom file already staged. Such a write's files would otherwise
+#'    become a version nobody published, with half its steps done. The command
+#'    acts on an artifact it is not writing, so it stops rather than reset them
+#'    (D14 principle 8): the artifact's own write, re-run, finishes it, and
+#'    `datom_validate(fix = TRUE)` discards the changes.
 #'
 #' **What the commit would take** is worked out the way git stages, before
 #' anything is staged:
@@ -1685,7 +1693,9 @@
 #' @return Invisibly `NULL` when the commit takes none of datom's uncommitted
 #'   files; otherwise does not return.
 #' @keywords internal
-.datom_stop_commit_of_unfinished <- function(conn, paths = NULL) {
+.datom_check_before_commit <- function(conn, paths = NULL) {
+  .datom_check_merge(conn$path)
+
   st <- git2r::status(
     git2r::repository(conn$path),
     staged = TRUE, unstaged = TRUE, untracked = TRUE
@@ -1732,9 +1742,10 @@
 #' not publish (requirements R3.6, D10). When the commits they push hold a datom
 #' version, this names each such artifact and the way to publish it. Every
 #' version in commits being pushed is unpublished by definition, since a write
-#' publishes only after its push, so this needs no storage read: the caller
-#' takes the names from [.datom_pushed_artifacts()] **before** the push, while
-#' the commits are still the clone's alone.
+#' publishes only after its push, so this needs no storage read:
+#' [.datom_push_naming_unpublished()] takes the names from
+#' [.datom_pushed_artifacts()] **before** the push, while the commits are still
+#' the clone's alone.
 #'
 #' A message rather than a warning: the push did what was asked. The state it
 #' leaves is not hidden either way, since a write of any other artifact then
@@ -1760,4 +1771,25 @@
     pushed = names
   )
   invisible(NULL)
+}
+
+
+#' Push, Naming Any Version Readers Cannot See Yet
+#'
+#' The push of the four git and config commands ([datom_repo_push()],
+#' [datom_repo_commit()], [datom_repo_attach_governance()],
+#' [datom_repo_set_data_store()]): it takes the artifacts from
+#' [.datom_pushed_artifacts()] before the push, while the commits are still the
+#' clone's alone, pushes ([.datom_git_push()], which pulls first), then says
+#' which versions it pushed without publishing them
+#' ([.datom_note_pushed_unpublished()]).
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @return Invisibly, the artifacts it named.
+#' @keywords internal
+.datom_push_naming_unpublished <- function(conn) {
+  pushed <- .datom_pushed_artifacts(conn$path)
+  .datom_git_push(conn$path, pat = conn$github_pat)
+  .datom_note_pushed_unpublished(pushed)
+  invisible(pushed)
 }
