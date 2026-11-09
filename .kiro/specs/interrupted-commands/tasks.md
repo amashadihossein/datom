@@ -71,8 +71,24 @@ same day, after its open point was settled by the owner (the stop also looks at 
 staged); its entry below lists five differences from the plan. Its checkpoint review the same day
 (below) approved it with one point, taken with a second found while checking it, both fixed in
 `6921561`. The reviewer's check of `6921561` approved it with one optional nit, taken the same day,
-and **the owner closed task 8 on 2026-11-07**. **Next: the purity audit on a more capable model
-(tasks 2-8, flagged at planning), then task 9 in a new session: "Starting task 9 cold" below.**
+and **the owner closed task 8 on 2026-11-07**. The purity audit flagged after task 8 ran on
+2026-11-08 (below); its fixes land one commit per point before task 9. **Next: the audit's points
+1-6, then task 9: "Starting task 9 cold" below.**
+
+**Purity audit after task 8, 2026-11-08**, of `347a403..6921561` under `R/`, on Claude Opus 5.5,
+with the owner's request to watch for places where one rule could replace case-by-case handling.
+No dead code and no behaviour change found. The list was reviewed by another agent and evaluated
+with the owner; points 7-9 stay as they are, points 1-6 are taken, in this order:
+
+| Point | Outcome |
+|---|---|
+| 1. The push before publishing sat in three places (heal's publish after its checks, the repair's `.datom_repair_push()`, the metadata-only route) | **Taken**: `.datom_publish_artifacts()` pushes first when the clone is ahead (or has no upstream), without pulling, for every caller. The rule: every document readers follow is on GitHub first (data files and set payloads go into storage before their commit, by D1). Kept as they were: heal's gate (it reaches the publish only past its checks), its early push with no upstream, the write's own push with its pull and the manifest recheck. The probes of tasks 4b and 7 are rerun, the moved ones retargeted in `research/audit_guard_probes.R`. Not done: removing the repair's second publish (heal's, then every artifact's), kept on 2026-10-30 so heal stays the same on every route; raised with the owner at this point's checkpoint |
+| 2. Three stops for "another artifact has unfinished work" (heal's reset, heal's publish, the blocked pull), each worded differently | **Taken**: one message and one class |
+| 3. Four "what has happened" lines chosen through flags passed down the pull and the push | **Taken**: one line, "Nothing was published.", true at every stop before publishing (the review: on a clone with no upstream heal pushes before its checks, so "Nothing was pushed" was already false there). Heal's reset announces each reset itself, so the "put back" line loses nothing. **The data-file line is dropped** (owner, 2026-11-08): a data file stored before a stop is named by nothing and reused by a re-run; design sections 4 and 10 amended |
+| 4. Repeated pairs of calls in the git and config commands | **Taken**: one helper for the merge check and the stop before a commit, one for naming what a push carried |
+| 5. About 35 spec IDs, review notes and `research/` paths in `R/` comments | **Taken for `R/` only**; test names keep their requirement IDs, which `dev/check-spec.R` traces |
+| 6. Stale text: `R/version-commit.R` counts two history uploaders (one since task 7), the artifact finder's help counts three callers (seven), `.datom_commit_and_mirror()` now publishes | **Taken**; renamed `.datom_commit_and_publish()` (no test mocks it by name) |
+| 7-9. One wrapper for the three calls every write starts with; healing per table inside `datom_sync()`; small one-line helpers | **Left as they are** |
 
 **Task 8's checkpoint review, 2026-11-07**, by another agent, of `3f48a48`, read against the code;
 evaluated with the owner:

@@ -898,16 +898,15 @@
 #'   this: it publishes the clone's version, says which stored version it
 #'   replaced, and drops a stored row whose artifact the clone lacks.
 #'
-#' Then, finishing a version of its own, it pushes if the clone is ahead,
-#' **without pulling again**: the route's
-#' pull ran moments ago, and a remote that moved since makes git refuse the
-#' push, which stops the command before storage changes. Pulling here could
-#' bring in a teammate's commit whose version is not in storage yet, and the
-#' manifest below would then name it. With no upstream branch it cannot tell
-#' whether it is ahead, so it pushes before the checks instead (git refuses the
-#' push when the clone is behind). Then it publishes the artifacts through
-#' [.datom_publish_artifacts()], manifest last. If that fails, the command stops
-#' before its own work.
+#' Then, finishing a version of its own, it publishes the artifacts through
+#' [.datom_publish_artifacts()], which pushes first when the clone is ahead,
+#' **without pulling again**: the route's pull ran moments ago, and a remote
+#' that moved since makes git refuse the push, which stops the command before
+#' storage changes. Pulling here could bring in a teammate's commit whose
+#' version is not in storage yet, and the manifest would then name it. With no
+#' upstream branch it cannot tell whether it is ahead, so it pushes before the
+#' checks instead (git refuses the push when the clone is behind). The manifest
+#' goes last. If the publish fails, the command stops before its own work.
 #'
 #' The stops here say "Nothing was pushed or published" rather than "datom
 #' changed nothing": by now heal's reset may have put back the command's own
@@ -926,15 +925,8 @@
   # pulled could be misread as unfinished work), and a push that lands sets the
   # upstream. With an upstream, the push waits until the checks below pass, so
   # a write never pushes another artifact's commit.
-  ahead <- .datom_git_ahead(conn$path)
-  pushed <- FALSE
-  if (is.na(ahead)) {
-    .datom_git_push(conn$path, pat = conn$github_pat, pull_first = FALSE)
-    pushed <- TRUE
-    ahead <- FALSE
-  } else {
-    ahead <- ahead > 0L
-  }
+  pushed <- is.na(.datom_git_ahead(conn$path))
+  if (pushed) .datom_git_push(conn$path, pat = conn$github_pat, pull_first = FALSE)
 
   stored <- .datom_stored_manifest(conn)
   if (identical(stored$status, "unreadable")) {
@@ -982,14 +974,11 @@
   if (isTRUE(all)) .datom_warn_stored_replaced(own, unseen, stored$rows, clone_rows)
 
   # Past the gate and the stop on other artifacts, every differing row is the
-  # command's own, so a push here always carries a version being finished.
-  if (ahead) {
-    .datom_git_push(conn$path, pat = conn$github_pat, pull_first = FALSE)
-    pushed <- TRUE
-  }
-
+  # command's own, so the push the publish makes first always carries a version
+  # being finished.
   to_publish <- intersect(own, names(clone_rows))
   result <- .datom_publish_artifacts(conn, to_publish, on_failure = "return")
+  pushed <- pushed || isTRUE(result$pushed)
   if (length(result$failed) > 0L) .datom_stop_publish_failed(result$failed)
 
   purrr::iwalk(result$published, function(version, nm) {
@@ -1096,7 +1085,20 @@
 #'
 #' **The one publish path.** A write's own publish (after its push), heal's
 #' publish, the metadata-only route and the repair all go through it, so the
-#' order readers depend on lives in one place. For each artifact, the documents as committed
+#' order readers depend on lives in one place.
+#'
+#' **Every document readers follow is on GitHub first.** Before any upload,
+#' commits the git remote lacks are pushed, without pulling again: every caller
+#' pulled moments before, and a remote that moved since makes git refuse the
+#' push, which stops the publish before storage changes. After a write's own
+#' push, or once heal has pushed, the clone is level and nothing more is sent.
+#' (A data file goes into storage before its commit, and the repair puts back a
+#' set's payload before this push: those are named by nothing until the
+#' documents published here name them.) Callers decide *whether* to publish;
+#' heal's publish, for one, gets here only past its checks, so a write with
+#' nothing to save never pushes a commit of the user's own.
+#'
+#' For each artifact, the documents as committed
 #' in the clone go up through [.datom_push_metadata_s3()]: the snapshot, the
 #' history, then `metadata.json` last. Then the manifest, last of all, and only
 #' if every artifact's documents went up: a manifest published after a failure
@@ -1127,8 +1129,9 @@
 #'   failure as it was raised; `"return"` hands the failures back, for heal's
 #'   stop and the repair's report.
 #' @return Invisibly, a list with `published` (versions, named by artifact),
-#'   `failed` (conditions, named by artifact) and `manifest` (`"published"`,
-#'   `"held_back"`, `"not_reached"` or `"none"` when the clone has no manifest).
+#'   `failed` (conditions, named by artifact), `manifest` (`"published"`,
+#'   `"held_back"`, `"not_reached"` or `"none"` when the clone has no manifest)
+#'   and `pushed` (`TRUE` when it pushed).
 #' @keywords internal
 .datom_publish_artifacts <- function(conn, names, commit_sha = NULL,
                                      recheck_manifest = FALSE,
@@ -1140,6 +1143,12 @@
       class = "datom_internal_error"
     )
   }
+
+  # GitHub first (see above). With no upstream branch datom cannot count, so it
+  # pushes; git refuses when the clone is behind.
+  ahead <- .datom_git_ahead(conn$path)
+  pushed <- is.na(ahead) || ahead > 0L
+  if (pushed) .datom_git_push(conn$path, pat = conn$github_pat, pull_first = FALSE)
 
   outcomes <- purrr::map(names, function(nm) {
     tryCatch(
@@ -1162,7 +1171,8 @@
   invisible(list(
     published = published %||% character(),
     failed = failed,
-    manifest = manifest
+    manifest = manifest,
+    pushed = pushed
   ))
 }
 

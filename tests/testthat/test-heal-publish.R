@@ -452,7 +452,14 @@ hp_push_bringing_in <- function(fx, b, teammate_published = FALSE,
       if (!isTRUE(data_file_stored)) {
         return(real_push(path, pat = pat, pull_first = pull_first))
       }
-      if (teammate_published) suppressMessages(.datom_publish_artifacts(b$conn, "lb"))
+      # The teammate's documents only: the publish would push their commit
+      # first, and this stand-in for a merge keeps that commit off the remote.
+      if (teammate_published) {
+        testthat::with_mocked_bindings(
+          suppressMessages(.datom_publish_artifacts(b$conn, "lb")),
+          .datom_git_ahead = function(...) 0L
+        )
+      }
       fs::dir_copy(file.path(b$repo, "lb"), file.path(path, "lb"), overwrite = TRUE)
       theirs <- jsonlite::read_json(file.path(b$repo, ".datom", "manifest.json"))
       manifest_path <- file.path(path, ".datom", "manifest.json")

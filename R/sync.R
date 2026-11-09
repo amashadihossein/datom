@@ -123,14 +123,13 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 #'    acts: calling it is the consent. A stored version this clone has never
 #'    seen is replaced by the clone's, and a stored row for an artifact the
 #'    clone lacks is dropped, each with a warning ([.datom_heal_publish()]);
-#'    then any commit the git remote still lacks is pushed, without pulling
-#'    again: heal pushes only to finish a differing manifest row, and storage
-#'    must never name a document the remote does not have;
 #' 4. every artifact is published through the one publish path,
-#'    [.datom_publish_artifacts()]: the snapshot, the history, `metadata.json`
-#'    last, then the manifest, and the manifest only if every artifact
-#'    published, so a failure leaves the manifest naming versions whose
-#'    documents are in storage.
+#'    [.datom_publish_artifacts()]: first any commit the git remote still lacks
+#'    is pushed, without pulling again (heal pushes only to finish a differing
+#'    manifest row, and every document readers follow is on GitHub first); then
+#'    the snapshot, the history, `metadata.json` last, then the manifest, and the
+#'    manifest only if every artifact published, so a failure leaves the
+#'    manifest naming versions whose documents are in storage.
 #'
 #' Republishing every artifact, not only those whose manifest row differs, is
 #' what corrects two publishes that crossed (the stored manifest naming one
@@ -245,9 +244,13 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 
   unpushed <- .datom_pushed_artifacts(repo_path)
   heal_publish <- .datom_heal_publish(conn, all = TRUE)
-  pushed <- isTRUE(heal_publish$pushed) || .datom_repair_push(conn)
 
+  # Heal pushes only to finish a manifest row that differs from storage's, so a
+  # commit whose row agrees (a document committed outside datom, or one whose
+  # publish already landed) can still be unpushed here; the publish pushes it
+  # first.
   publish <- .datom_publish_artifacts(conn, names_now, on_failure = "return")
+  pushed <- isTRUE(heal_publish$pushed) || isTRUE(publish$pushed)
   failed <- publish$failed
 
   table_results <- .datom_repair_results(
@@ -320,29 +323,6 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 # nothing at run time.
 interactive <- NULL
 readline <- NULL
-
-
-#' The Repair's Push of Commits the Remote Lacks
-#'
-#' Heal's publish pushes only to finish a manifest row that differs from
-#' storage's, so a commit whose row agrees (a document committed outside datom,
-#' or an artifact's commit whose publish already landed) can still be unpushed
-#' when the repair is about to republish every artifact. Pushed here first,
-#' without pulling again: the repair pulled moments ago, and a remote that moved
-#' since makes git refuse the push, which stops the repair before storage
-#' changes.
-#'
-#' @param conn A `datom_conn` object with a local path.
-#' @return `TRUE` when it pushed.
-#' @keywords internal
-.datom_repair_push <- function(conn) {
-  ahead <- .datom_git_ahead(conn$path)
-  # NA (no upstream branch) does not reach here unpushed: heal's publish pushes
-  # first in that case.
-  if (is.na(ahead) || ahead == 0L) return(FALSE)
-  .datom_git_push(conn$path, pat = conn$github_pat, pull_first = FALSE)
-  TRUE
-}
 
 
 #' What the Repair Did, Per Artifact
