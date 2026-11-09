@@ -1149,8 +1149,7 @@ datom_read <- function(conn,
     ".datom/manifest.json"
   )
   commit_sha <- .datom_git_commit(conn$path, git_files, message)
-  pulled_in <- .datom_git_push(conn$path, pat = conn$github_pat,
-                               data_file_stored = TRUE)
+  pulled_in <- .datom_git_push(conn$path, pat = conn$github_pat)
 
   # The commit is threaded through rather than re-derived: this function made it,
   # so the stored history can name it without a git walk.
@@ -1410,8 +1409,8 @@ datom_write <- function(conn,
   #     Heal acts on this table only: another artifact's unfinished work stops
   #     the write here, before anything is pushed or published.
   if (!isTRUE(.healed)) {
-    healed <- .datom_heal(conn, artifact = name)
-    .datom_pull_before_write(conn, reset = healed$reset)
+    .datom_heal(conn, artifact = name)
+    .datom_pull_before_write(conn)
     .datom_heal_publish(conn, artifact = name)
   }
 

@@ -230,7 +230,7 @@ datom_pull <- function(conn, finish_merge = FALSE) {
   # Heal, on every artifact: the only place this route runs it. Its reset and
   # the pull first ...
   healed <- .datom_heal(conn, all = TRUE)
-  .datom_pull_before_write(conn, reset = healed$reset)
+  .datom_pull_before_write(conn)
 
   # Again after them: the reset removes a first write that never committed, and
   # the pull can bring in a teammate's new artifact.
@@ -1113,8 +1113,8 @@ datom_sync <- function(conn,
   own <- unique(manifest$name)
   rewrite <- unique(manifest$name[manifest$status %in% c("new", "changed")])
   .datom_check_write_entry(conn, own)
-  healed <- .datom_heal(conn, artifact = own, rewrite = rewrite)
-  .datom_pull_before_write(conn, reset = healed$reset)
+  .datom_heal(conn, artifact = own, rewrite = rewrite)
+  .datom_pull_before_write(conn)
   published <- names(.datom_heal_publish(conn, artifact = own)$published)
 
   # --- filter to actionable rows ---

@@ -637,8 +637,8 @@
   # again on every artifact, against what the pull left on disk; without a merge
   # nothing new arrived, and the check at datom_write()'s door already read this
   # table.
-  healed <- .datom_heal(conn, artifact = name, rewrite = character())
-  .datom_pull_before_write(conn, reset = healed$reset)
+  .datom_heal(conn, artifact = name, rewrite = character())
+  .datom_pull_before_write(conn)
 
   # After the pull, which can bring the table in; before heal's publish, so a
   # mistyped name pushes nothing.

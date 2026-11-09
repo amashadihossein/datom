@@ -346,7 +346,7 @@ test_that("another table's write broken after its commit stops a write of a diff
                  fixed = TRUE, label = step)
     # A stored row that differs can be a teammate's publish not yet pulled.
     expect_match(msg, "If a teammate has just written it", fixed = TRUE, label = step)
-    expect_match(msg, "Nothing was pushed or published", label = step)
+    expect_match(msg, "Nothing was published", label = step)
     expect_match(msg, "datom_validate(fix = TRUE)", fixed = TRUE, label = step)
     expect_identical(hp_snapshot(fx), before, label = step)
   }
@@ -449,9 +449,9 @@ hp_push_bringing_in <- function(fx, b, teammate_published = FALSE,
                                 env = parent.frame()) {
   real_push <- get(".datom_git_push", envir = asNamespace("datom"))
   local_mocked_bindings(
-    .datom_git_push = function(path, pat = NULL, pull_first = TRUE,
-                               data_file_stored = FALSE) {
-      if (!isTRUE(data_file_stored)) {
+    .datom_git_push = function(path, pat = NULL, pull_first = TRUE) {
+      # Only the write's own push pulls first; heal's and the publish's do not.
+      if (!isTRUE(pull_first)) {
         return(real_push(path, pat = pat, pull_first = pull_first))
       }
       # The teammate's documents only: the publish would push their commit
@@ -617,9 +617,9 @@ test_that("a committed history that does not parse stops a metadata-only change 
 })
 
 
-# === the "datom changed nothing" line ============================================
+# === the line saying what happened ===============================================
 
-test_that("a pull that stops after heal put the write's own files back says so, not that datom changed nothing", {
+test_that("a pull that stops after heal put the write's own files back says nothing was published; heal's own line names the reset", {
   fx <- local_interrupt_project()
   hp_write(fx$conn, "dm")
   writeLines("v1", file.path(fx$repo, "app.R"))
@@ -642,9 +642,9 @@ test_that("a pull that stops after heal put the write's own files back says so, 
     }
   )
 
-  expect_match(notes, "writing it again now")
+  expect_match(notes, "unfinished write of \"dm\".*writing it again now")
   msg <- hp_msg(err)
   expect_match(msg, "git stash -u", fixed = TRUE)
-  expect_match(msg, "datom put back the unfinished files of \"dm\"", fixed = TRUE)
+  expect_match(msg, "Nothing was published.", fixed = TRUE)
   expect_no_match(msg, "datom changed nothing")
 })

@@ -1223,8 +1223,8 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # published. Heal acts on this set only; another artifact's unfinished work
   # stops the write here, before anything is pushed or published.
   # `include_paths` are the caller's files and are never reset.
-  healed <- .datom_heal(conn, artifact = name)
-  .datom_pull_before_write(conn, reset = healed$reset)
+  .datom_heal(conn, artifact = name)
+  .datom_pull_before_write(conn)
   .datom_heal_publish(conn, artifact = name)
 
   chg <- .datom_has_changes(conn, name, data_sha, metadata_sha)

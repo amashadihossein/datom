@@ -145,8 +145,8 @@
 
   cli::cli_abort(
     c(
-      "A merge datom did not start is in progress ({.val {what}}). datom \\
-       changed nothing.",
+      "A merge datom did not start is in progress ({.val {what}}).",
+      "i" = "Nothing was published.",
       "i" = "Resolve it with git and run \\
              {.code datom_pull(conn, finish_merge = TRUE)} to let datom rebuild \\
              the manifest and commit, or drop it with {.code git merge --abort}."
@@ -172,13 +172,9 @@
 #' re-running the write rebuilds the manifest and finishes the merge.
 #'
 #' @param path Repository path.
-#' @param after_pull `TRUE` when the pull just produced the conflict; the message
-#'   then ends "No version is published."
-#' @param data_file_stored See [.datom_git_push()].
 #' @return Does not return.
 #' @keywords internal
-.datom_stop_merge_conflict <- function(path, after_pull = FALSE,
-                                       data_file_stored = FALSE) {
+.datom_stop_merge_conflict <- function(path) {
   repo <- git2r::repository(path)
   conflicted <- .datom_git_conflicted(repo)
 
@@ -219,9 +215,8 @@
       if (length(own) > 0L) {
         c("i" = "Resolve your own files and {.code git add} them.")
       },
-      "i" = rerun,
-      if (isTRUE(after_pull)) c("i" = "No version is published."),
-      .datom_data_file_note(data_file_stored)
+      "i" = "Nothing was published.",
+      "i" = rerun
     ),
     class = "datom_merge_conflict"
   )
@@ -284,11 +279,9 @@
 #' It runs only on the conflict path, so the common path never reaches it.
 #'
 #' @param path Repository path.
-#' @param data_file_stored See [.datom_git_push()]; a refusal then adds the line
-#'   about the write's data file.
 #' @return Invisibly, the artifacts whose rows were rebuilt.
 #' @keywords internal
-.datom_resolve_manifest_conflict <- function(path, data_file_stored = FALSE) {
+.datom_resolve_manifest_conflict <- function(path) {
   rel <- ".datom/manifest.json"
   parses <- function(text) {
     !is.null(text) && is.list(tryCatch(
@@ -317,7 +310,7 @@
     },
     error = function(e) e
   )
-  if (!is.null(refused)) .datom_stop_merge_refused(refused, data_file_stored)
+  if (!is.null(refused)) .datom_stop_merge_refused(refused)
 
   read <- .datom_read_manifest(clone, "clone", operation = "write")
   manifest <- read$manifest
@@ -438,17 +431,15 @@
 #' build cannot read, the installed datom version), follows as the cause.
 #'
 #' @param e The refusal.
-#' @param data_file_stored See [.datom_git_push()].
 #' @return Does not return.
 #' @keywords internal
-.datom_stop_merge_refused <- function(e, data_file_stored = FALSE) {
+.datom_stop_merge_refused <- function(e) {
   cli::cli_abort(
     c(
       "A merge is in progress, and this build of datom cannot write what it \\
        brings in (below), so datom did not finish it.",
-      "i" = "The merge is still in progress: datom committed nothing for it, \\
-             and nothing was pushed or published.",
-      .datom_data_file_note(data_file_stored),
+      "i" = "The merge is still in progress: datom committed nothing for it.",
+      "i" = "Nothing was published.",
       "i" = "Upgrade datom and re-run, or drop the merge with \\
              {.code git merge --abort}."
     ),
@@ -469,7 +460,7 @@
     c(
       "A merge is in progress, and datom cannot finish it: neither side of the \\
        merge holds a {.file .datom/manifest.json} that parses.",
-      "i" = "datom changed nothing.",
+      "i" = "Nothing was published.",
       "i" = "Drop the merge with {.code git merge --abort}."
     ),
     class = "datom_merge_conflict"
@@ -488,8 +479,8 @@
 #' storage state heal can change and before change detection:
 #'
 #' ```
-#' healed <- .datom_heal(conn, artifact = name)
-#' .datom_pull_before_write(conn, reset = healed$reset)
+#' .datom_heal(conn, artifact = name)
+#' .datom_pull_before_write(conn)
 #' .datom_heal_publish(conn, artifact = name)
 #' ```
 #'
@@ -635,8 +626,7 @@
 
   if (length(others) > 0L || (owners$unknown_rows && !isTRUE(all))) {
     .datom_stop_unfinished_work(
-      .datom_uncommitted_items(owners, others),
-      c("i" = "datom changed nothing.")
+      .datom_uncommitted_items(owners, others)
     )
   }
 
@@ -826,7 +816,6 @@
 #'
 #' @param items What is unfinished, one line per artifact, named by artifact
 #'   (`.datom/manifest.json` for manifest changes datom cannot tie to one).
-#' @param outcome The cli bullets saying what the command has done so far.
 #' @param lead The message's first line, when the stop is part of a larger
 #'   failure (the pull); `NULL` for the plain headline.
 #' @param teammate `TRUE` when an item can be a teammate's write this clone has
@@ -834,8 +823,8 @@
 #' @param class Condition classes to add before `datom_unfinished_work`.
 #' @return Does not return.
 #' @keywords internal
-.datom_stop_unfinished_work <- function(items, outcome, lead = NULL,
-                                        teammate = FALSE, class = NULL) {
+.datom_stop_unfinished_work <- function(items, lead = NULL, teammate = FALSE,
+                                        class = NULL) {
   what <- names(items)
   n <- length(setdiff(what, ".datom/manifest.json"))
   details <- purrr::imap_chr(items, function(desc, a) {
@@ -857,7 +846,7 @@
       lead %||% "{.val {what}} {?has/have} unfinished work this command does \\
                  not finish.",
       purrr::set_names(details, rep("*", length(details))),
-      outcome,
+      "i" = "Nothing was published.",
       if (isTRUE(teammate)) {
         c("i" = "{cli::qty(n)}If a teammate has just written {?it/them}, a \\
                  re-run may be enough: a write pulls first.")
@@ -932,9 +921,9 @@
 #' checks instead (git refuses the push when the clone is behind). The manifest
 #' goes last. If the publish fails, the command stops before its own work.
 #'
-#' The stops here say "Nothing was pushed or published" rather than "datom
-#' changed nothing": by now heal's reset may have put back the command's own
-#' files, and the pull may have brought the clone up to date.
+#' The stops here say "Nothing was published", true at every stop before
+#' publishing: with no upstream heal has pushed already, and heal's reset may
+#' have put back the command's own files (it says so itself).
 #'
 #' @param conn A `datom_conn` object with a local path.
 #' @param artifact Names of the artifacts the command publishes.
@@ -992,7 +981,6 @@
     )
     .datom_stop_unfinished_work(
       stats::setNames(items, others),
-      c("i" = "Nothing was pushed or published."),
       teammate = TRUE
     )
   }
@@ -1381,7 +1369,7 @@
   cli::cli_abort(
     c(
       purrr::set_names(details, rep("x", length(details))),
-      "i" = "Nothing was pushed or published.",
+      "i" = "Nothing was published.",
       "i" = "Re-run: a write pulls first, which brings in a teammate's newer \\
              version. If this persists, run {.code datom_validate(fix = TRUE)}, \\
              which publishes this clone's version in its place."
@@ -1440,7 +1428,7 @@
       "Could not read the stored manifest, so datom cannot tell what storage is \\
        missing.",
       "x" = "{why}",
-      "i" = "Nothing was pushed or published.",
+      "i" = "Nothing was published.",
       "i" = "Re-run once storage is reachable. If the file itself is damaged, \\
              run {.code datom_validate(fix = TRUE)}, which publishes it again \\
              from this clone."
@@ -1559,12 +1547,10 @@
 #' Not part of heal: removing heal would leave this in place.
 #'
 #' @param conn A `datom_conn` object with a local path.
-#' @param reset The artifacts heal's reset has just put back, so a stop here
-#'   says so rather than "datom changed nothing".
 #' @return Invisibly, whether HEAD moved.
 #' @keywords internal
-.datom_pull_before_write <- function(conn, reset = character()) {
-  moved <- .datom_git_pull(conn$path, pat = conn$github_pat, reset = reset)
+.datom_pull_before_write <- function(conn) {
+  moved <- .datom_git_pull(conn$path, pat = conn$github_pat)
   if (isTRUE(moved)) .datom_check_write_entry(conn, NULL)
   invisible(moved)
 }
@@ -1713,8 +1699,7 @@
   if (length(taken) == 0L) return(invisible(NULL))
 
   .datom_stop_unfinished_work(
-    .datom_uncommitted_items(.datom_unfinished_owners(conn, taken)),
-    c("i" = "datom changed nothing.")
+    .datom_uncommitted_items(.datom_unfinished_owners(conn, taken))
   )
 }
 

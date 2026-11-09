@@ -205,8 +205,8 @@ test_that("two clones writing the same table still stop at the push, publishing 
 
   msg <- mc_msg(err)
   expect_match(msg, "dm/version_history.json", fixed = TRUE)
-  expect_match(msg, "No version is published")
-  expect_match(msg, "data file may already be in storage")
+  expect_match(msg, "Nothing was published")
+  expect_no_match(msg, "data file")
   expect_true(mc_merging(b$repo))
   expect_identical(mc_versions(mc_stored_manifest(fx))[["dm"]], v2$metadata_sha)
   expect_identical(mc_rows_read(fx, "dm"), 5L)
@@ -459,12 +459,11 @@ test_that("the merge check's two stops say exactly this", {
       "'dm/metadata.json', and 'dm/version_history.json'.",
       "i Take the remote copy of datom's files:",
       "`git checkout MERGE_HEAD -- dm/metadata.json dm/version_history.json`.",
-      "i Then re-run your write: datom rebuilds the manifest and finishes the merge.",
-      "i No version is published."
+      "i Nothing was published.",
+      "i Then re-run your write: datom rebuilds the manifest and finishes the merge."
     )
   )
-  # Repeated by the merge check on the next command, without the lines only the
-  # pull that made the conflict can say.
+  # Repeated, word for word, by the merge check on the next command.
   err <- expect_error(suppressMessages(datom_pull(b$conn)), class = "datom_merge_conflict")
   expect_identical(
     mc_msg(err),
@@ -473,6 +472,7 @@ test_that("the merge check's two stops say exactly this", {
       "'dm/metadata.json', and 'dm/version_history.json'.",
       "i Take the remote copy of datom's files:",
       "`git checkout MERGE_HEAD -- dm/metadata.json dm/version_history.json`.",
+      "i Nothing was published.",
       "i Then re-run your write: datom rebuilds the manifest and finishes the merge."
     )
   )
@@ -487,7 +487,7 @@ test_that("the merge check's two stops say exactly this", {
     mc_msg(err),
     paste(
       "A merge datom did not start is in progress (\"Merge branch 'feature'\").",
-      "datom changed nothing.",
+      "i Nothing was published.",
       "i Resolve it with git and run `datom_pull(conn, finish_merge = TRUE)` to let",
       "datom rebuild the manifest and commit, or drop it with `git merge --abort`."
     )

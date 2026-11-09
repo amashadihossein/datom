@@ -87,7 +87,7 @@ test_that("datom_repo_commit(paths = NULL) stops on a write that never committed
   msg <- ru_msg(err)
   expect_match(msg, "\"dm\" has unfinished work", fixed = TRUE)
   expect_match(msg, "datom_validate(fix = TRUE)", fixed = TRUE)
-  expect_match(msg, "datom changed nothing", fixed = TRUE)
+  expect_match(msg, "Nothing was published", fixed = TRUE)
   expect_identical(ru_snapshot(fx), before)
 })
 

@@ -1208,7 +1208,7 @@ test_that(".datom_git_pull conflict message gives an actionable recourse", {
   expect_match(msg, "README.md")
   expect_match(msg, "Resolve your own files")
   expect_match(msg, "re-run your write")
-  expect_match(msg, "No version is published")
+  expect_match(msg, "Nothing was published")
   expect_no_match(msg, "git checkout MERGE_HEAD")
 
   # The merge is left in progress for the user to finish.

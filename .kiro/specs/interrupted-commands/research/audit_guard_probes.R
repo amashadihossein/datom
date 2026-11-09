@@ -10,7 +10,7 @@
 # Copied from task8_guard_probes.R; only the file list and the probes differ.
 main <- function() {
   root <- normalizePath(".")
-  files <- c("R/heal.R", "R/sync.R", "R/utils-sha.R")
+  files <- c("R/heal.R", "R/sync.R", "R/utils-sha.R", "R/utils-git.R")
   backup <- file.path(tempdir(), "..", "datom-audit-probe-pristine")
   backup <- normalizePath(backup, mustWork = FALSE)
   if (!dir.exists(backup)) {
@@ -45,6 +45,7 @@ main <- function() {
 
   hl <- "R/heal.R"
   sy <- "R/sync.R"
+  gt <- "R/utils-git.R"
   publish <- "^(heal|heal-publish)$"
   repair <- "^repair$"
   publish_push_line <- "  pushed <- is.na(ahead) || ahead > 0L\n  if (pushed) .datom_git_push(conn$path, pat = conn$github_pat, pull_first = FALSE)\n"
@@ -96,7 +97,19 @@ main <- function() {
     # ... and the shared class on every caller.
     p2_shared_class = list(filter = publish, edit = function() sub1(hl,
       "    class = c(class, \"datom_unfinished_work\")",
-      "    class = class %||% \"datom_unfinished_work\""))
+      "    class = class %||% \"datom_unfinished_work\"")),
+    # Point 3: the one line saying what happened, in the shared stop ...
+    p3_unfinished_line = list(filter = "^(heal|repo-unfinished)$", edit = function() sub1(hl,
+      "      purrr::set_names(details, rep(\"*\", length(details))),\n      \"i\" = \"Nothing was published.\",",
+      "      purrr::set_names(details, rep(\"*\", length(details))),")),
+    # ... in the merge-conflict stop, from the pull and from the merge check ...
+    p3_merge_conflict_line = list(filter = "^(heal|manifest-conflict|utils-git)$", edit = function() sub1(hl,
+      "      \"i\" = \"Nothing was published.\",\n      \"i\" = rerun",
+      "      \"i\" = rerun")),
+    # ... and in the fetch failure.
+    p3_fetch_line = list(filter = "^heal$", edit = function() sub1(gt,
+      "      \"i\" = \"Nothing was published.\",\n      \"i\" = \"Check your connection",
+      "      \"i\" = \"Check your connection"))
   )
   # Probe names on the command line run only those (the control is always run
   # first); none runs them all.

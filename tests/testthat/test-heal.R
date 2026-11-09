@@ -161,7 +161,7 @@ test_that("another table's write broken before its commit stops a write of a dif
   msg <- hl_msg(err)
   expect_match(msg, "dm/metadata.json", fixed = TRUE)
   expect_match(msg, "dm/version_history.json", fixed = TRUE)
-  expect_match(msg, "datom changed nothing")
+  expect_match(msg, "Nothing was published")
   expect_match(msg, "datom_validate(fix = TRUE)", fixed = TRUE)
   expect_identical(hl_snapshot(fx), before)
 })
@@ -420,7 +420,7 @@ test_that("a failed fetch stops a write before anything changes (P9)", {
 
   err <- expect_error(hl_write(fx$conn, "dm", 5L, "b"), class = "datom_fetch_failed")
 
-  expect_match(hl_msg(err), "datom changed nothing")
+  expect_match(hl_msg(err), "Nothing was published")
   expect_identical(
     list(clone = snapshot_clone(fx$repo), storage = snapshot_storage(fx)),
     before
@@ -455,7 +455,7 @@ test_that("a pull conflicting outside the manifest stops the write, publishing n
   expect_match(msg, "dm/metadata.json", fixed = TRUE)
   expect_match(msg, "git checkout MERGE_HEAD -- dm/metadata.json dm/version_history.json",
                fixed = TRUE)
-  expect_match(msg, "No version is published")
+  expect_match(msg, "Nothing was published")
   expect_identical(snapshot_storage(s$fx), before)
   expect_identical(hl_stored_manifest(s$fx)$artifacts$dm$current_version,
                    s$fx$v2$metadata_sha)
@@ -557,8 +557,8 @@ test_that("with no upstream branch, a clone behind the remote has its push refus
   msg <- hl_msg(err)
   expect_match(msg, "datom_pull(conn)", fixed = TRUE)
   expect_match(msg, "git branch --set-upstream-to=origin/", fixed = TRUE)
-  expect_match(msg, "Nothing was pushed or published")
-  expect_no_match(msg, "data file may already be in storage")
+  expect_match(msg, "Nothing was published")
+  expect_no_match(msg, "data file")
   expect_identical(hl_stored_manifest(fx), stored_before)
   expect_identical(snapshot_storage(fx), storage_before)
 })
@@ -811,13 +811,13 @@ test_that("a merge of another remote's branch stops a write and datom_pull() wit
 test_that("the stop for another artifact's unfinished work names each one and the same way out", {
   one <- expect_error(
     .datom_stop_unfinished_work(
-      c(dm = "changes to datom's files that were never committed"),
-      c("i" = "datom changed nothing.")
+      c(dm = "changes to datom's files that were never committed")
     ),
     class = "datom_unfinished_work"
   )
   msg <- hl_msg(one)
   expect_match(msg, "\"dm\" has unfinished work this command does not finish.", fixed = TRUE)
+  expect_match(msg, "Nothing was published.", fixed = TRUE)
   expect_match(msg, "\"dm\": changes to datom's files that were never committed", fixed = TRUE)
   expect_match(msg, "Re-run the write of that table or set to finish it", fixed = TRUE)
   expect_match(msg, "datom_validate(fix = TRUE)", fixed = TRUE)
@@ -827,7 +827,6 @@ test_that("the stop for another artifact's unfinished work names each one and th
     .datom_stop_unfinished_work(
       c(dm = "storage and this clone name different versions of it",
         lb = "storage names it, this clone does not have it"),
-      c("i" = "Nothing was pushed or published."),
       teammate = TRUE, class = "datom_pull_blocked"
     ),
     class = "datom_pull_blocked"
@@ -840,8 +839,7 @@ test_that("the stop for another artifact's unfinished work names each one and th
 
   manifest_only <- expect_error(
     .datom_stop_unfinished_work(
-      c(".datom/manifest.json" = "changed in a way datom cannot tie to a table or set"),
-      c("i" = "datom changed nothing.")
+      c(".datom/manifest.json" = "changed in a way datom cannot tie to a table or set")
     ),
     class = "datom_unfinished_work"
   )
