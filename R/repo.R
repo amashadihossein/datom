@@ -92,6 +92,17 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
     cli::cli_abort("No {.file .datom/project.yaml} found at {.path {conn$path}}.")
   }
 
+  # Before anything reads or rewrites the file, so either stop changes nothing.
+  # The commit below runs before the push's pull, so the merge check there would
+  # come too late: a commit made mid-merge finishes the merge (requirements
+  # R3.9). Ahead of the read, too: with `project.yaml` itself conflicted, the
+  # read would fail on the conflict markers with a parser error instead of the
+  # merge message (task 8's checkpoint review). And a commit takes the whole
+  # index, so a datom file already staged (a write stopped between staging and
+  # committing) would go into it (R3.5, D9).
+  .datom_check_merge(conn$path)
+  .datom_stop_commit_of_unfinished(conn, ".datom/project.yaml")
+
   # --- Read full yaml (read-modify-write: never reconstruct from conn) --------
   # Checked before the merge below, and NOT covered by the connection-time gate:
   # this verb edits, commits and pushes the file, so a shape this build cannot
@@ -110,14 +121,6 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
   # number.
   cfg <- yaml::read_yaml(yaml_path)
   .datom_check_project_schema(cfg, source = yaml_path, operation = "write")
-
-  # Before the file is rewritten, so either stop changes nothing. The commit
-  # below runs before the push's pull, so the merge check there would come too
-  # late: a commit made mid-merge finishes the merge (requirements R3.9). And a
-  # commit takes the whole index, so a datom file already staged (a write
-  # stopped between staging and committing) would go into it (R3.5, D9).
-  .datom_check_merge(conn$path)
-  .datom_stop_commit_of_unfinished(conn, ".datom/project.yaml")
 
   # --- Build new storage.data block from new_store ---------------------------
   backend <- .datom_store_backend(new_store)

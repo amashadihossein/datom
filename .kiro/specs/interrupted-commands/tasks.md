@@ -70,7 +70,8 @@ and found one gap and one ordering fault, fixed the same day with three smaller 
 same day, after its open point was settled by the owner (the stop also looks at datom files already
 staged); its entry below lists five differences from the plan. Its checkpoint review the same day
 (below) approved it with one point, taken with a second found while checking it, both fixed in
-`6921561`. **Next: the reviewer's check of `6921561`, then the purity audit on a more capable model
+`6921561`. The reviewer's check of `6921561` approved it with one optional nit, taken the same day,
+and **the owner closed task 8 on 2026-11-07**. **Next: the purity audit on a more capable model
 (tasks 2-8, flagged at planning), then task 9 in a new session: "Starting task 9 cold" below.**
 
 **Task 8's checkpoint review, 2026-11-07**, by another agent, of `3f48a48`, read against the code;
@@ -80,6 +81,9 @@ evaluated with the owner:
 |---|---|
 | The review's one point: `datom_repo_attach_governance()` and `datom_repo_set_data_store()` commit one named file, and a commit takes the whole index, so a write stopped between staging and committing (S3) would be committed and pushed with the config change | **Taken, placed earlier**: the review put the stop just before the commit; it runs at the start instead, before the command writes its file, so the stop's "datom changed nothing" is true. D9 and R3.5 amended to name both commands (owner's "ok") |
 | Ours, found while checking: the same two commands commit before their push pulls, so the merge check inside the pull comes too late. A probe: during a merge of a local branch left open with `--no-commit`, `.datom_git_commit()` of `.datom/project.yaml` made a two-parent commit and removed `MERGE_HEAD`, finishing the user's merge (S8 state, R3.9's harm) | **Taken** (owner's default): both run the merge check at their start too. No requirements change, R3.9 already covers it; design section 4 updated |
+| The reviewer's check of `6921561`: approved, task 8 can close, with one optional nit. In `datom_repo_set_data_store()` the two checks ran after `project.yaml` was read, so with that file itself conflicted (two clones changing the store at once, S7) the command stopped with a raw YAML parser error, naming no way out. Reproduced here first | **Taken** (owner's default): both checks run before the read; the format-refusal test's folder becomes a git repo (it was the reason for the old order). Set aside: running the merge check first only when the folder is a git repo, a condition in the code for a test's sake |
+
+**The owner closed task 8 on 2026-11-07**, after the nit's fix (below in task 8's entry).
 
 **Task 7's checkpoint review, 2026-11-07**, by another agent, of `9284ca9`, read against the code.
 Points 1 and 2 reproduced here on throwaway projects before fixing; evaluated with the owner:
@@ -448,13 +452,14 @@ by mocking the `interactive` and `readline` bindings `R/sync.R` holds for that p
 tests of the repair stub heal, the pull and the push with `local_repair_on_folder()` (`test-sync.R`).
 The newest guard-probe harness is `research/task7_guard_probes.R`.
 
-**After task 8** (2026-11-07): baseline 6238 expectations, 0 failed, 0 skipped, at `6921561` (6214
-at task 8's commit `3f48a48`, then 24 added by its checkpoint review's fixes). Task 8's tests on
+**After task 8** (2026-11-07): baseline 6244 expectations, 0 failed, 0 skipped, at the commit
+fixing the check of `6921561`'s nit (6214 at task 8's commit `3f48a48`, 6238 at `6921561` after its
+checkpoint review's fixes, then the nit's test). Task 8's tests on
 real projects live in `test-repo-unfinished.R`; its harness is `research/task8_guard_probes.R`.
 
-**Starting task 9 cold** (written 2026-11-07, while the reviewer checks `6921561`): first confirm
-in "Where things stand" that task 8 has closed (the reviewer's check of `6921561`) and that the
-purity audit flagged after task 8 is done or waived by the owner; if not, stop and ask. Then read
+**Starting task 9 cold** (written 2026-11-07; task 8 closed the same day): first confirm in "Where
+things stand" that the purity audit flagged after task 8 is done or waived by the owner; if not,
+stop and ask. Then read
 task 9 in full, requirements R6, D5 and R3.7 (its exception for init's first push), and design
 section 8. What the code holds today, checked 2026-11-07 with `research/init_rerun_probe.R` (folder
 remote, local store, `create_repo = TRUE`):
@@ -503,7 +508,7 @@ remote, local store, `create_repo = TRUE`):
   a short list of fields, so #156 can add one.
 - **Guard probes**: copy `research/task8_guard_probes.R` (replace the file list and the probes);
   each of R6.1's conditions needs its own probe and its own test (task 9's bullet).
-Baseline: 6238 expectations, 0 failed, 0 skipped, at `6921561`.
+Baseline: 6244 expectations, 0 failed, 0 skipped, at the commit after `075500e` that fixes the nit.
 
 **Starting task 8 cold** (written 2026-11-07, after task 7 closed at `ba57f3a`; done, kept as the
 record): read this
@@ -1417,6 +1422,7 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     | the message removed from `datom_repo_commit()` / `datom_repo_attach_governance()` / `datom_repo_set_data_store()` | that command's R3.6 test, one each |
     | (checkpoint review) the merge check removed from `datom_repo_set_data_store()` / `datom_repo_attach_governance()` | that command's merge test, one each |
     | (checkpoint review) the staged-file stop removed from `datom_repo_set_data_store()` / `datom_repo_attach_governance()` | that command's staged test, one each |
+    | (check of `6921561`) `datom_repo_set_data_store()`'s two checks moved back after the read of `project.yaml` | the conflicted-`project.yaml` test only |
   - `R/repo.R`: `datom_repo_commit()` calls the merge check, then, before staging, stops when the
     commit would include datom's own uncommitted files (`paths = NULL`, or an explicit path naming
     one), naming the artifact and `datom_validate(fix = TRUE)`; it resets nothing (R3.9, R3.5, D9 as

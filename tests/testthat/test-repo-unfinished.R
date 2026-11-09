@@ -348,6 +348,35 @@ ru_open_other_merge <- function(fx) {
   expect_true(fs::file_exists(fs::path(repo$path, "MERGE_HEAD")))
 }
 
+test_that("datom_repo_set_data_store() with project.yaml itself conflicted gives the merge message, changing nothing", {
+  # Two clones change the data store at once. This clone's push fails, its pull
+  # then stops on the conflict in project.yaml, and the command is run again:
+  # the merge check must run before the file is read, or the read fails on the
+  # conflict markers with a parser error (task 8's checkpoint review).
+  fx <- local_interrupt_project()
+  b <- local_second_clone(fx)
+  suppressMessages(datom_repo_set_data_store(
+    b$conn, datom_store_local(file.path(fx$root, "storage-b"))
+  ))
+  local({
+    local_break_at("push")
+    expect_error(
+      suppressMessages(datom_repo_set_data_store(
+        fx$conn, datom_store_local(file.path(fx$root, "storage-a"))
+      )),
+      class = "datom_test_break"
+    )
+  })
+  expect_error(suppressMessages(datom_pull(fx$conn)), class = "datom_merge_conflict")
+  before <- ru_snapshot(fx)
+  expect_true(before$clone$merging)
+
+  err <- expect_error(suppressMessages(ru_set_store(fx)), class = "datom_merge_conflict")
+
+  expect_match(ru_msg(err), "'.datom/project.yaml'", fixed = TRUE)
+  expect_identical(ru_snapshot(fx), before)
+})
+
 for (cmd in names(ru_config_commands)) {
   test_that(paste0("datom_repo_", cmd, "() stops on a datom file already staged, changing nothing"), {
     fx <- local_interrupt_project()

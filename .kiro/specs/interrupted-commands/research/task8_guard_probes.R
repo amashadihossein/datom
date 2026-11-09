@@ -104,6 +104,13 @@ main <- function() {
     store_merge = list(filter = own, edit = function() sub1(rp,
       "  .datom_check_merge(conn$path)\n  .datom_stop_commit_of_unfinished(conn, \".datom/project.yaml\")",
       "  .datom_stop_commit_of_unfinished(conn, \".datom/project.yaml\")")),
+    # Added from the review of 6921561: in datom_repo_set_data_store() both
+    # checks run before project.yaml is read; moved back after the format check.
+    store_merge_before_read = list(filter = own, edit = function() {
+      sub1(rp, "  .datom_check_merge(conn$path)\n  .datom_stop_commit_of_unfinished(conn, \".datom/project.yaml\")\n", "")
+      sub1(rp, "  .datom_check_project_schema(cfg, source = yaml_path, operation = \"write\")\n",
+           "  .datom_check_project_schema(cfg, source = yaml_path, operation = \"write\")\n  .datom_check_merge(conn$path)\n  .datom_stop_commit_of_unfinished(conn, \".datom/project.yaml\")\n")
+    }),
     store_staged = list(filter = own, edit = function() sub1(rp,
       "  .datom_stop_commit_of_unfinished(conn, \".datom/project.yaml\")\n",
       "")),

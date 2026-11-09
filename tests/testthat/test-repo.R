@@ -118,10 +118,13 @@ test_that("datom_repo_set_data_store() refuses a config format it cannot read", 
   # -- which is not contrived here, because this is the storage-migration verb,
   # called exactly when somebody is reorganising storage by hand.
   #
-  # No git repo and no push stub are needed: the refusal happens before the merge,
-  # so nothing reaches the commit.
+  # No push stub is needed: the refusal happens before the merge, so nothing
+  # reaches the commit. The folder is a git repo because the verb's merge check
+  # and staged-file stop run first, before it reads the file.
+  skip_if_no_git2r()
   withr::with_tempdir({
     repo_path <- fs::dir_create("repo")
+    git2r::init(repo_path)
     write_project_yaml(repo_path, schema_version = .datom_project_schema + 1L)
     yaml_path <- fs::path(repo_path, ".datom", "project.yaml")
     before <- readLines(yaml_path, warn = FALSE)
