@@ -75,6 +75,11 @@ the stop in D9 and R3.5 also looks at datom files already staged, since a commit
 index; and it covers `datom_repo_attach_governance()` and `datom_repo_set_data_store()` too, which
 commit one named file and so stop only on a datom file already staged (a write stopped between
 staging and committing leaves its files staged).
+**Amended 2026-11-08** by the owner, at the start of task 9: **D5 is reversed.** A re-run of
+`datom_init_repo()` after a break at its manifest upload no longer finishes the job; the stop names
+the repair as the way out, spelled so it works for someone with no connection yet (R6 rewritten,
+S5). Starting fresh was considered and is not possible once init has pushed: it would mean deleting
+a GitHub repo, which needs a token scope most users lack, or one the user supplied.
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -177,7 +182,7 @@ below it (`.datom_check_writer_floor()`, also on 0.2.0's repair route); 0.1.0 do
 | D2 | **No separate record of a write in progress.** Every step leaves a mark in git or storage, and a re-run reads those marks to see where the last run stopped | A record file in a git-ignored folder of the clone: a second account of the same state that can drift, and only the clone that broke would have it |
 | D3 | **The commit is the line.** Unfinished work found before its commit is reset; found after it, it is pushed and published from git. Says which in either case. **Who acts** (narrowed 2026-10-31, owner, design spot-check before task 4a): a write does this only for the artifact it is writing, and stops with a message on any other artifact's unfinished work, naming `datom_validate(fix = TRUE)`, which does it for every artifact (D14 principle 8) | Any command finishes or resets any artifact's work (the rule until 2026-10-31: heal kept meeting edge cases when it acted on other artifacts, and no check can prove whose work a leftover is); commit the unfinished files (can publish a write the user stopped on purpose). A refusal from every command, the same command's re-run included, was set aside in 2026-10 because one break would stop a whole sync |
 | D4 | **A new scan status, `unpushed`**, for a table whose input file is unchanged but whose committed version is in commits not yet pushed, so readers cannot see it. Set from the clone alone. Renamed from `unpublished` and narrowed on 2026-10-31 (owner, review of `058f29b`): the scan no longer fetches or reads storage, so a table pushed but not yet published (S4) shows `unchanged`, and `datom_sync()` publishes it anyway because it finishes committed work before deciding there is nothing to sync (R4.4). "Published" is defined in the help | Keep `unchanged` and print a line (misleads a script that checks `all(status == "unchanged")`). The narrowing leaves that one case, a table pushed but not published; no documented workflow skips `datom_sync()` on the scan's statuses |
-| D5 | **`datom_init_repo()` is in scope.** A re-run in a half-initialised folder finishes instead of refusing, under narrow conditions | Leave it refusing and pointing at the repair |
+| D5 | ~~**`datom_init_repo()` is in scope.** A re-run in a half-initialised folder finishes instead of refusing, under narrow conditions~~ **Reversed 2026-11-08 (owner):** a break after init's push stops with a way out that works, the repair; a re-run refuses as today. The case comes at most once per project, the repair already finishes it, and the re-run needed a new routine and four conditions (the folder's settings matching the call, the clone level with the remote, the config's format, storage holding no manifest) | Leave it refusing and pointing at the repair (taken on 2026-11-08); roll everything back, the remote included (not possible once pushed: deleting a GitHub repo needs a scope most tokens lack, and a repo the user supplied is not datom's to delete) |
 | D6 | **`datom_validate(fix = TRUE)` pushes** unpushed commits, then publishes | Publish only what GitHub has and name `datom_repo_push()` for the rest |
 | D7 | **No rescue for states a released datom already created.** datom is experimental; the fix is designed for what new writes can produce. D11 extends this to teammates still writing with a released datom | Storage checks before every skip, correcting a version's recorded hash after an arrow upgrade, flagging sets that pin a version with no data file, restoring a set payload from an older commit |
 | D8 | **The rule is written into `.github/copilot-instructions.md`** (wording in R9), with the detail in `dev/datom_specification.md` | Specification and engineering notes only (loaded on demand, so a session editing a write might not see it) |
@@ -229,7 +234,7 @@ The owner's principles, set 2026-10-30 to stop fixes accumulating one review at 
 | S2 | An outage mid-write or mid-sync, then the same command re-run (a teammate may have pushed meanwhile) | Regularly | Finishes on its own |
 | S3 | A crash or Ctrl-C mid-write, then any later command | Occasionally | The same command re-run resets and finishes on its own; any other write stops before changing anything and names `datom_validate(fix = TRUE)`, which resets it (principle 8) |
 | S4 | Storage fails after the push | Occasionally | The same command re-run, or `datom_validate(fix = TRUE)`, publishes; any other write stops and names that fix (principle 8) |
-| S5 | `datom_init_repo()` interrupted | Occasionally | A re-run finishes |
+| S5 | `datom_init_repo()` interrupted | Occasionally | Before its push: rolled back, and a re-run starts afresh. After it: the stop names the repair, which finishes (D5 as reversed) |
 | S6 | A teammate pushed earlier; this clone is behind | Occasionally | Pulls at the start, on its own |
 | S7 | Two developers' work overlaps (a merge conflict, a publish race) | Rarely | Stops before harm with a short message, or reports; the manual step is supported |
 | S8 | An older datom, hand edits, files changed in storage by hand, the user's own git operations in the clone | Rare, unsupported | Documented only; never left stuck (principle 7) |
@@ -530,15 +535,16 @@ writes nothing and is unchanged.
      0.2.0 (whose document no record names) gets the recorded version and is not reported for good.
    - It runs in `datom_validate()` only; no read and no write pays for it.
 
-### R6. `datom_init_repo()` re-run
+### R6. `datom_init_repo()` interrupted
 
-1. A re-run in a folder that already holds `.datom/project.yaml` finishes the job (uploads the
-   manifest and succeeds) only when all of these hold:
-   - the folder's `project.yaml` names the same project and the same data storage as the call;
-   - the remote holds the folder's initial commit;
-   - storage holds no manifest for the project.
-2. Any other existing folder refuses exactly as today.
-3. A break before the push is rolled back, as today.
+Rewritten 2026-11-08 (owner): D5 reversed; the re-run that finished the job is dropped.
+
+1. A break after the push (building the storage connection, or the manifest upload) stops with a
+   message that says the git remote has the repo and storage lacks the manifest, and names a way out
+   that works as written: connect with `datom_get_conn()` on that folder and the same store, then
+   run `datom_validate(conn, fix = TRUE)`. It says that re-running `datom_init_repo()` refuses.
+2. A re-run in a folder that already holds `.datom/project.yaml` refuses exactly as today.
+3. A break before the push is rolled back, as today, and the same call re-run succeeds.
 
 ### R7. Tests
 
@@ -629,7 +635,7 @@ and what to do).
    with `datom_repo_commit()`, because a plain `git commit` can capture a datom write halfway
    through), `?datom_sync_manifest` (the new status `unpushed`,
    "published", and that a table pushed but not yet published shows `unchanged`), `?datom_pull`
-   (`finish_merge`, for a merge datom did not start, R3.9), `?datom_validate` (the repair pushes; the new status `manifest_mismatch_s3`), `?datom_init_repo` (a re-run finishes),
+   (`finish_merge`, for a merge datom did not start, R3.9), `?datom_validate` (the repair pushes; the new status `manifest_mismatch_s3`), `?datom_init_repo` (after a break at the manifest upload, the repair finishes it),
    `?datom_write`'s `data = NULL` with `name` route (it publishes what is committed for that table;
    hand edits of datom's files are not supported and are reset; custom metadata is changed with
    `datom_write(conn, data, name, metadata = )`, D13),

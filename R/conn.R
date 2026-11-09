@@ -757,30 +757,44 @@ datom_init_repo <- function(path = ".",
   # below are reported but do NOT roll back local files (user has work to
   # recover) -- they abort with a clear recovery hint.
 
-  data_conn <- .datom_build_init_conn(
-    project_name, store$data, path, "developer", NULL,
-    gov_store = NULL,
-    gov_local_path = NULL,
-    data_repo_url = remote_url,
-    github_pat    = store$github_pat,
-    github_api_url = store$github_api_url
-  )
-
   # --- Mirror manifest to data storage ----------------------------------------
   # Manifest is part of the data-side contract -- readers need it to clone.
-  # Failure aborts with the verb that can actually finish the job: the recovery
-  # hint here used to name datom_sync_manifest(), which scans `input_files/` and
-  # returns a data frame of statuses and writes nothing to storage at all. The
-  # verb that mirrors metadata is reached through datom_validate(fix = TRUE).
+  # Building the storage connection is inside the same handler: it can fail too
+  # (a malformed credential), and after the push either failure leaves the same
+  # state. That state is not rolled back: the remote may be a GitHub repo, which
+  # datom cannot reliably delete, or one the caller supplied. A re-run of this
+  # call refuses, since the folder is initialised, so the stop names the repair,
+  # spelled for someone who has no connection yet; it uploads the manifest.
   tryCatch({
+    data_conn <- .datom_build_init_conn(
+      project_name, store$data, path, "developer", NULL,
+      gov_store = NULL,
+      gov_local_path = NULL,
+      data_repo_url = remote_url,
+      github_pat    = store$github_pat,
+      github_api_url = store$github_api_url
+    )
     .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
   }, error = function(e) {
-    cli::cli_abort(c(
-      "Data repo pushed but manifest upload failed.",
-      "x" = conditionMessage(e),
-      "i" = "Local data clone is intact at {.path {path}}.",
-      "i" = "After fixing the cause (e.g. credentials, connectivity), run {.code datom_validate(conn, fix = TRUE)} to upload the manifest."
-    ), call = NULL)
+    msg <- conditionMessage(e)
+    # Built first: a path interpolated inside {.code} would be quoted twice.
+    connect_cmd <- paste0("conn <- datom_get_conn(\"", path, "\", store)")
+    cli::cli_abort(
+      c(
+        "Pushed the data repo to the git remote, but could not upload its \\
+         manifest to data storage.",
+        "x" = "{msg}",
+        "i" = "The local clone at {.path {path}} is intact, and the git remote \\
+               has its first commit.",
+        "i" = "Once the cause is fixed (credentials, connectivity), connect \\
+               with {.code {connect_cmd}} and run \\
+               {.code datom_validate(conn, fix = TRUE)} to upload the manifest.",
+        "i" = "Running {.fn datom_init_repo} again refuses: the folder is \\
+               already initialised."
+      ),
+      class = "datom_init_manifest_failed",
+      call = NULL
+    )
   })
 
   .init_success <- TRUE

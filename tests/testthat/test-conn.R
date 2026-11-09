@@ -2660,7 +2660,7 @@ test_that("datom_init_repo's manifest-upload recovery names a verb that can do i
       project_name = "testproj",
       store = env$store
     ),
-    "manifest upload failed"
+    class = "datom_init_manifest_failed"
   )
   msg <- cli::ansi_strip(conditionMessage(err))
   expect_match(msg, "datom_validate", fixed = TRUE)

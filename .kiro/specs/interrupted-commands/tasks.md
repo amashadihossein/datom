@@ -24,7 +24,7 @@ what shipped and wait for the owner's go-ahead before the next one.
 | S2 | An outage mid-write or mid-sync, then the same command re-run (a teammate may have pushed meanwhile) | Regularly | Finishes on its own |
 | S3 | A crash or Ctrl-C mid-write, then any later command | Occasionally | The same command re-run resets and finishes on its own; any other write stops and names `datom_validate(fix = TRUE)` (D14 principle 8) |
 | S4 | Storage fails after the push | Occasionally | The same command re-run, or `datom_validate(fix = TRUE)`, publishes; any other write stops and names that fix |
-| S5 | `datom_init_repo()` interrupted | Occasionally | A re-run finishes |
+| S5 | `datom_init_repo()` interrupted | Occasionally | Before its push: rolled back, a re-run starts afresh. After it: the stop names the repair, which finishes (D5 reversed 2026-11-08) |
 | S6 | A teammate pushed earlier; this clone is behind | Occasionally | Pulls at the start, on its own |
 | S7 | Two developers' work overlaps (a merge conflict, a publish race) | Rarely | Stops before harm with a short message, or reports; the manual step is supported |
 | S8 | An older datom, hand edits, files changed in storage by hand, the user's own git operations in the clone | Rare, unsupported | Documented only; never left stuck (D14, principle 7) |
@@ -74,9 +74,10 @@ staged); its entry below lists five differences from the plan. Its checkpoint re
 and **the owner closed task 8 on 2026-11-07**. The purity audit flagged after task 8 ran on
 2026-11-08 (below); its points 1-6 landed the same day, one commit each (`cc7d6e1`, `b7a254a`,
 `9d53b1f`, `7b64414`, `93cee2f` and point 6's), plus `c83cc04` regenerating `man/` for points 1-4,
-which their commits had missed. Suite 6244 -> 6263 expectations, 0 failed, 0 skipped. **Next: task
-9: "Starting task 9 cold" below** (its first open point, which fields of the folder's
-`project.yaml` must match for a re-run to finish, was raised with the owner and not yet answered).
+which their commits had missed. Suite 6244 -> 6263 expectations, 0 failed, 0 skipped. Task 9 done the
+same day, reshaped by the owner: no re-run logic for `datom_init_repo()`; its stop after the push
+names the repair (D5 reversed; task 9's entry below). **Next: task 10 (documentation), which opens
+with the test coverage review flagged at planning.**
 
 **Purity audit after task 8, 2026-11-08**, of `347a403..6921561` under `R/`, on Claude Opus 5.5,
 with the owner's request to watch for places where one rule could replace case-by-case handling.
@@ -476,7 +477,8 @@ fixing the check of `6921561`'s nit (6214 at task 8's commit `3f48a48`, 6238 at 
 checkpoint review's fixes, then the nit's test). Task 8's tests on
 real projects live in `test-repo-unfinished.R`; its harness is `research/task8_guard_probes.R`.
 
-**Starting task 9 cold** (written 2026-11-07; task 8 closed the same day): first confirm in "Where
+**Starting task 9 cold** (written 2026-11-07; task 8 closed the same day; task 9 done 2026-11-08, reshaped
+by the owner, so the open points below are the record): first confirm in "Where
 things stand" that the purity audit flagged after task 8 is done or waived by the owner; if not,
 stop and ask. Then read
 task 9 in full, requirements R6, D5 and R3.7 (its exception for init's first push), and design
@@ -581,7 +583,7 @@ what a reader sees (the new version reads; the stored manifest names it).
 | `datom_sync()` | 6 | the second of three tables, at its file import, data file upload, commit, push and manifest upload; then the stop's way out (the same call, same preview) after a commit, push or manifest break, or a re-scan and re-sync after an import or upload break, and every table reads |
 | `datom_validate(fix = TRUE)` and the mirror-everything route | 7 | the push; between the first and second artifact's mirror; the final manifest upload |
 | `datom_repo_commit()` | 8 | its push (the re-run commits nothing and pushes) |
-| `datom_init_repo()` | 9 | its commit and its push (rolled back, so the re-run starts afresh); the manifest upload (the re-run finishes, R6) |
+| `datom_init_repo()` | 9 | its commit and its push (rolled back, so the re-run starts afresh); the storage connection and the manifest upload (the stop names the repair, which finishes; R6 as rewritten 2026-11-08) |
 
 `datom_sync_manifest()` changes nothing, so it has nothing to break.
 
@@ -1457,12 +1459,29 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   - Acceptance: R3.5, R3.6.
   - **Escalation after: purity audit on a more capable model** (tasks 2-8).
 
-- [ ] **9. `datom_init_repo()` re-run** (R6; design section 8)
-  - `R/conn.R`: `.datom_init_finish()`, called before the remote is resolved.
-  - Tests: the break table's `datom_init_repo()` row; a different project, different storage, a
-    remote without the initial commit, or a stored manifest each refuse exactly as today.
-  - Guards to probe: each of the three conditions.
-  - Acceptance: R6.1-R6.3.
+- [x] **9. `datom_init_repo()` interrupted** (R6 as rewritten; design section 8)
+  - **Done 2026-11-08, reshaped first.** The four open points of the cold start were raised with
+    the owner one at a time; the first three were settled (A each: `mode` and `set` must match too;
+    finish only when level with the remote; check the config's format). At the fourth the owner asked
+    why a half-done init is not simply started again. Answer: before the push it already is; after
+    it, starting fresh means deleting a GitHub repo, which needs a token scope most users lack, or
+    one the user supplied, and the repair already finishes the job. **The owner chose option B: no
+    re-run logic, a stop that names a way out that works** (requirements D5 reversed, R6 rewritten,
+    design section 8). `.datom_init_finish()` is not written.
+  - `R/conn.R`: after the push, building the storage connection and uploading the manifest run in
+    one handler (the connection was outside it, so a malformed credential stopped with a bare
+    error). The stop, class `datom_init_manifest_failed`, says the git remote has the repo, names
+    `conn <- datom_get_conn("<path>", store)` then `datom_validate(conn, fix = TRUE)`, and says a
+    re-run of `datom_init_repo()` refuses. It used to name `datom_validate(conn, fix = TRUE)` with a
+    `conn` the user did not have.
+  - Tests: new `tests/testthat/test-init-interrupted.R`, on a real project (folder remote, local
+    store): a break at the commit and at the push leaves nothing (clone, bare remote, stored
+    manifest) and the same call re-run succeeds; a break at the manifest upload names the way out,
+    which is followed as written and leaves a published manifest, an empty `datom_list()` for a
+    reader and a clean `datom_validate()`; a storage connection failing after the push names it too;
+    a re-run after the break refuses and changes nothing. `test-conn.R`'s recovery test matches the
+    new class.
+  - Acceptance: R6.1-R6.3 as rewritten.
 
 - [ ] **10. Documentation** (R8, R9)
   - **Escalation first: test coverage review on a more capable model**, including the break table

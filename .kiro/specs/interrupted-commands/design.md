@@ -210,7 +210,7 @@ write commands.
 | `R/heal.R` | `.datom_documents_version(meta, history)` | renamed (task 7) | Task 5's `.datom_clone_files_version()`, renamed because it now reads stored documents too, and given the placeability check; shared by the manifest rebuild and `manifest_mismatch_s3` |
 | `R/repo.R` | `datom_repo_commit()` | changed | The merge check, then, before staging, a stop naming `datom_validate(fix = TRUE)` when the commit would include datom's own uncommitted files (R3.5, R3.9; no reset since the spot-check before task 4a); the R3.6 message when it pushes |
 | `R/repo.R` | `datom_repo_push()`, `datom_repo_attach_governance()`, `datom_repo_set_data_store()` | changed | The R3.6 message around their push; the last two also run the merge check and `datom_repo_commit()`'s stop before writing their file (task 8's checkpoint review) |
-| `R/conn.R` | `datom_init_repo()` | changed | Finishes a half-initialised folder (section 8) |
+| `R/conn.R` | `datom_init_repo()` | changed | A break after its push stops naming the repair, spelled for someone with no connection yet (section 8; the re-run that finished the job was dropped on 2026-11-08) |
 
 In `R/forward-compat.R` only two messages change: the vocabulary refusal and the unreachable-shape
 refusal also name the installed datom version, as the schema and floor refusals already do, so every
@@ -947,7 +947,17 @@ fails naming the broken one, at one fetch and one stored-manifest read per table
 R3.4 rule out); re-checking storage before each later table's manifest upload (misses the break
 before the commit).
 
-## 8. `datom_init_repo()` re-run (R6)
+## 8. `datom_init_repo()` interrupted (R6)
+
+**Rewritten 2026-11-08** (owner; requirements D5 reversed). A break before the push is rolled back,
+as before, and the same call re-run succeeds. After the push, building the storage connection and
+uploading the manifest run inside one handler, which stops (class `datom_init_manifest_failed`)
+saying the git remote has the repo and storage lacks the manifest, and naming the way out:
+`conn <- datom_get_conn("<path>", store)`, then `datom_validate(conn, fix = TRUE)`, which uploads
+the manifest (probed: `research/init_rerun_probe.R`). It says that re-running `datom_init_repo()`
+refuses. No new routine and no new check: a re-run refuses as it always has.
+
+The plan that stood here until then, kept as the record:
 
 A new internal `.datom_init_finish(path, project_name, store)` runs right after argument validation
 and **before** the remote is resolved, because a GitHub `create_repo = TRUE` or a folder remote would
