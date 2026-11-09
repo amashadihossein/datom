@@ -214,3 +214,20 @@ Added 2026-11-07 in task 7:
   `datom_validate(fix = TRUE)`, now has the new version's snapshot stored and a pinned read
   working. `set_steps_probe.R`: every break fired, every re-run reads v2, and `datom_validate(fix =
   TRUE)` leaves v2. `other_command_probe.R`: unchanged from task 4b.
+- `task8_guard_probes.R`: the harness with task 8's probes (the stop before a commit that would
+  take datom's own uncommitted files, staged ones included; the merge check in the two config
+  commands; the push commands' note). Runs `test-repo-unfinished.R`. Results in task 8's commits.
+- `audit_guard_probes.R`: the harness for the purity audit after task 8 (2026-11-08), one group of
+  probes per point: point 1 (the one push before publishing, its gate, the early push with no
+  upstream, task 7's restore-before-heal retargeted), point 2 (the one stop for unfinished work),
+  point 3 (the one "Nothing was published." line), point 4 (the two helpers of the git and config
+  commands). Name probes on the command line to run only those. Results in each point's commit
+  message (`cc7d6e1`, `b7a254a`, `9d53b1f`, `7b64414`). After point 1, the task 4b and task 7
+  harnesses were rerun unchanged: four of their probes no longer apply, being the moved code, and
+  are retargeted here.
+- `init_rerun_probe.R`: what `datom_init_repo()` leaves after a break at its commit, its push and
+  its manifest upload, and what a re-run and the repair then do (written for task 9's cold start).
+- `task9_guard_probes.R`: the harness for task 9 (the storage connection inside the handler after
+  the push, the way out the stop names, the rollback before the push) and its review fix (the
+  folder check before anything touches the remote, its repair line). Runs `test-init-interrupted.R`
+  and `test-conn.R`. Results in `9127993` and `1646c9b`.

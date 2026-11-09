@@ -477,6 +477,46 @@ fixing the check of `6921561`'s nit (6214 at task 8's commit `3f48a48`, 6238 at 
 checkpoint review's fixes, then the nit's test). Task 8's tests on
 real projects live in `test-repo-unfinished.R`; its harness is `research/task8_guard_probes.R`.
 
+**After the purity audit and task 9** (2026-11-08): baseline **6325 expectations, 0 failed, 0
+skipped, at `3939c6c`**. The audit changed shared code later tasks rely on: every publish goes
+through `.datom_publish_artifacts()`, which pushes first; one stop for another artifact's unfinished
+work, `.datom_stop_unfinished_work()` (class `datom_unfinished_work`); every stop before publishing
+says "Nothing was published."; the git and config commands use `.datom_check_before_commit()` and
+`.datom_push_naming_unpublished()`; `.datom_commit_and_mirror()` is `.datom_commit_and_publish()`.
+Task 9's tests live in `test-init-interrupted.R`. Newest harnesses: `research/audit_guard_probes.R`
+and `research/task9_guard_probes.R` (`research/README.md` lists every harness). `man/` holds help
+for internal functions too: run `devtools::document()` before committing any roxygen change.
+
+**Starting task 10 cold** (written 2026-11-08, after task 9 closed at `3939c6c`):
+- **First, the escalation flagged at planning: a test coverage review on a more capable model.**
+  If the session is not on one, say so and stop until the owner answers (switch, or waive). The
+  review has two parts, and its findings go to the owner as one list, each naming its scenario
+  from the yardstick at the top of this file, before any documentation is written:
+  1. **Every guard watched going red.** Each task's commit message records its probes (task 2 on;
+     the harnesses are listed in `research/README.md`). Check that each guard a task added has a
+     recorded probe that reddened its own test, with a control that reddened nothing, and name any
+     guard with none. Known gaps to confirm or close: task 4b's `gate_ignores_ahead` no longer
+     applies as written (retargeted in `audit_guard_probes.R`); the comment-only and rename points
+     of the audit (5, 6) had nothing to probe.
+  2. **The break table against the tests that exist.** The break table is below ("Break table",
+     R7.1): for each command and each step it lists, find the test that breaks there and follows
+     the re-run (or, for `datom_init_repo()` after its push, the repair). Name each row with no test.
+- Then task 10 in full (its bullets below, with the additions from the audit and task 9), and
+  requirements R8 (the residual-failure table) and R9 (documentation), and design section 12.
+- **Open points to raise with the owner before writing, one at a time** (checked 2026-11-08;
+  re-check before raising):
+  1. R9.1's conventions text for `.github/copilot-instructions.md` was written before the audit.
+     It says "then metadata and manifest to storage" but not the audit's rule that every document
+     readers follow is on GitHub first, nor the one "Nothing was published." line, nor that a
+     stop's way out is spelled to work as written. Lean: add the first, as one clause in the order
+     bullet; leave the other two to the spec, as message details rather than conventions.
+  2. R9.5 asks for a lot of user-facing help across about ten pages. Lean: one short paragraph
+     per page, saying what the user sees and what to do, with the mechanism left to the spec, per
+     the communication rules; confirm the length the owner wants before writing ten of them.
+- **FYI:** the draft follow-up issue `draft-issue-validate-completeness.md` (storage-completeness
+  checks `datom_validate()` lacks, design section 12) is still not filed; filing it belongs to the
+  spec completion in task 11, not to task 10. #157 (decimals in custom metadata) is filed.
+
 **Starting task 9 cold** (written 2026-11-07; task 8 closed the same day; task 9 done 2026-11-08, reshaped
 by the owner, so the open points below are the record): first confirm in "Where
 things stand" that the purity audit flagged after task 8 is done or waived by the owner; if not,
@@ -1506,6 +1546,17 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     item 7a). It includes, from task 4b's checkpoint review: `datom_write()` now refuses a missing
     value (`NA`), `NaN` or `Inf` in custom metadata (a write that worked before now stops; leave
     the field out); and a write with nothing to save no longer pushes the user's own commits.
+    Added 2026-11-08, from task 9: `datom_init_repo()` in a folder that already holds a datom
+    repository refuses before touching the remote (with `create_repo = TRUE` it no longer creates
+    a GitHub repo first), and after a break past its push it names the repair; a script matching
+    the old message text needs the new classes (`datom_init_folder_taken`,
+    `datom_init_manifest_failed`). From the purity audit: every stop that comes before
+    publishing says "Nothing was published.", and the stops for another artifact's unfinished work
+    share one class, `datom_unfinished_work` (the blocked pull keeps `datom_pull_blocked` too).
+  - `?datom_init_repo` (R9.5 as amended): after a break past its push, the repair finishes the
+    job; a re-run refuses, naming the repair and, labelled as abandoning the project, starting
+    over. R9.4's list names `.datom_commit_and_mirror()`, renamed `.datom_commit_and_publish()` in
+    the audit (its docstring was corrected in task 2).
   - Search `R/` for any old-order wording left after tasks 2-4b ("serialization point", "After git,
     never before", "local -> git -> S3") and correct it (R9.4).
   - `dev/datom_specification.md` (R9.2, R9.3, and R9.7: the route table's `data = NULL` with `name`
