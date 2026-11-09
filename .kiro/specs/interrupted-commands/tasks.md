@@ -76,8 +76,26 @@ and **the owner closed task 8 on 2026-11-07**. The purity audit flagged after ta
 `9d53b1f`, `7b64414`, `93cee2f` and point 6's), plus `c83cc04` regenerating `man/` for points 1-4,
 which their commits had missed. Suite 6244 -> 6263 expectations, 0 failed, 0 skipped. Task 9 done the
 same day, reshaped by the owner: no re-run logic for `datom_init_repo()`; its stop after the push
-names the repair (D5 reversed; task 9's entry below). **Next: task 10 (documentation), which opens
-with the test coverage review flagged at planning.**
+names the repair (D5 reversed; task 9's entry below). The test coverage review flagged before task
+10 ran on 2026-11-09 (below); the owner had its four gaps filled before any documentation, in one
+commit. **Next: task 10 (documentation), starting with the open points in "Starting task 10 cold".**
+
+**Test coverage review before task 10, 2026-11-09**, on Claude Opus 5.5, of `347a403..25043b3`:
+every task's commit record and probe harness read, and the break table checked against the test
+files. Every other check tasks 1-9 and audit points 1-4 added has a recorded probe that reddened its
+own tests with a control that reddened nothing, and every other break-table row has a test that
+breaks there, re-runs (or follows the stop's way out) and checks what a reader sees. Confirmed
+closed: task 4b's `gate_ignores_ahead`, retargeted in `cc7d6e1`; audit points 5 and 6, text and a
+rename only; task 4a's reset gate, left unprobed at planning (no observable but cost). The gaps,
+filled by the owner's choice (probes in `research/coverage_guard_probes.R`, control green):
+
+| Gap | Scenario | Filled by | Probe reddened |
+|---|---|---|---|
+| A write whose stored manifest cannot be read (`datom_stored_manifest_unreadable`) had no test; nor the repair's branch for it (warn, publish everything from the clone) | S2 (unreachable), S8 (damaged) | Two tests in `test-heal-publish.R` (a damaged file, then the fix the stop names and the write; storage unreachable, then a re-run), one in `test-repair.R` | the stop removed: both write tests; each "unreadable" read as "absent": its own test; the repair stopping, or not warning: the repair test |
+| Heal's stop when it cannot finish publishing an earlier write was tested, never probed | S4 | (tests existed) | the stop removed: "heal's publish failing stops the write ..." and "datom_write(conn, name =) broken at its metadata upload ..." |
+| The stop on a `project.yaml` that does not parse was tested, never probed | S8 | (tests existed) | the file read as no floor: the two parse tests in `test-heal.R` and `test-forward-compat.R` |
+| `datom_repo_commit(paths = "./dm")` stopping like `"dm"` was never tested | S3 | `"./dm"` added to the path-forms test | the `./` stripping removed: the path-forms test |
+| `datom_init_repo()` failing to connect to storage after its push: the test checked the message but did not run the repair | S5 | The test follows the way out to a published manifest and a clean `datom_validate()` | (not a check; nothing to probe) |
 
 **Purity audit after task 8, 2026-11-08**, of `347a403..6921561` under `R/`, on Claude Opus 5.5,
 with the owner's request to watch for places where one rule could replace case-by-case handling.
@@ -487,8 +505,9 @@ Task 9's tests live in `test-init-interrupted.R`. Newest harnesses: `research/au
 and `research/task9_guard_probes.R` (`research/README.md` lists every harness). `man/` holds help
 for internal functions too: run `devtools::document()` before committing any roxygen change.
 
-**Starting task 10 cold** (written 2026-11-08, after task 9 closed at `3939c6c`):
-- **First, the escalation flagged at planning: a test coverage review on a more capable model.**
+**Starting task 10 cold** (written 2026-11-08, after task 9 closed at `3939c6c`; the review below
+was done on 2026-11-09 and its gaps filled, recorded in "Where things stand"):
+- **Done: first, the escalation flagged at planning: a test coverage review on a more capable model.**
   If the session is not on one, say so and stop until the owner answers (switch, or waive). The
   review has two parts, and its findings go to the owner as one list, each naming its scenario
   from the yardstick at the top of this file, before any documentation is written:

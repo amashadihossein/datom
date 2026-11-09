@@ -111,7 +111,9 @@ test_that("datom_repo_commit() stops when a path names a datom file or a folder 
   ru_unfinished_dm(fx)
   before <- ru_snapshot(fx)
 
-  for (p in list("dm", "dm/", "dm/metadata.json", ".datom", ".",
+  # "./dm" stages nothing in git2r, but the user meant the folder, so it stops
+  # too (a stop with a way out, not a miss).
+  for (p in list("dm", "dm/", "./dm", "dm/metadata.json", ".datom", ".",
                  c("build.R", "dm/version_history.json"))) {
     expect_error(
       suppressMessages(datom_repo_commit(fx$conn, "Commit", paths = p, push = FALSE)),

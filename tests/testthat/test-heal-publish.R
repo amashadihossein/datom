@@ -617,6 +617,57 @@ test_that("a committed history that does not parse stops a metadata-only change 
 })
 
 
+# === a stored manifest heal's publish cannot read =================================
+#
+# Storage unreachable (S2) or the file damaged (S8): datom cannot tell what storage
+# lacks, so a write stops before its own work rather than guess.
+
+test_that("a write whose stored manifest does not parse stops, changing nothing, and the fix it names lets the write through", {
+  fx <- local_interrupt_project()
+  hp_write(fx$conn, "dm")
+  writeLines("{ not json", .datom_local_path(fx$conn, ".metadata/manifest.json"))
+  before <- hp_snapshot(fx)
+
+  err <- expect_error(hp_write(fx$conn, "dm", 5L, "b"),
+                      class = "datom_stored_manifest_unreadable")
+
+  msg <- hp_msg(err)
+  expect_match(msg, "Could not read the stored manifest", fixed = TRUE)
+  expect_match(msg, "Nothing was published.", fixed = TRUE)
+  expect_match(msg, "If the file itself is damaged, run `datom_validate(fix = TRUE)`",
+               fixed = TRUE)
+  expect_identical(hp_snapshot(fx), before)
+
+  # The way out for a damaged file, as the message gives it, then the write.
+  suppressWarnings(suppressMessages(datom_validate(fx$conn, fix = TRUE)))
+  expect_identical(hp_write(fx$conn, "dm", 5L, "b")$action, "full")
+  expect_identical(hp_rows_read(fx, "dm"), 5L)
+  expect_identical(hp_stored_version(fx, "dm"), hp_clone_version(fx$repo, "dm"))
+})
+
+test_that("a write that cannot reach storage to look for its manifest stops, changing nothing, and a re-run goes through", {
+  fx <- local_interrupt_project()
+  hp_write(fx$conn, "dm")
+  before <- hp_snapshot(fx)
+  real <- get(".datom_storage_exists", envir = asNamespace("datom"))
+
+  local({
+    local_mocked_bindings(.datom_storage_exists = function(conn, key) {
+      if (identical(key, ".metadata/manifest.json")) stop("simulated: storage unreachable")
+      real(conn, key)
+    })
+    err <- expect_error(hp_write(fx$conn, "dm", 5L, "b"),
+                        class = "datom_stored_manifest_unreadable")
+    expect_match(hp_msg(err), "simulated: storage unreachable", fixed = TRUE)
+    expect_match(hp_msg(err), "Re-run once storage is reachable", fixed = TRUE)
+  })
+  expect_identical(hp_snapshot(fx), before)
+
+  expect_identical(hp_write(fx$conn, "dm", 5L, "b")$action, "full")
+  expect_identical(hp_rows_read(fx, "dm"), 5L)
+})
+
+
 # === the line saying what happened ===============================================
 
 test_that("a pull that stops after heal put the write's own files back says nothing was published; heal's own line names the reset", {

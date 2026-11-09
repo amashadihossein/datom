@@ -231,3 +231,9 @@ Added 2026-11-07 in task 7:
   the push, the way out the stop names, the rollback before the push) and its review fix (the
   folder check before anything touches the remote, its repair line). Runs `test-init-interrupted.R`
   and `test-conn.R`. Results in `9127993` and `1646c9b`.
+- `coverage_guard_probes.R`: the harness for the test coverage review before task 10
+  (2026-11-09), for the checks the review found with no recorded probe: heal's publish on a stored
+  manifest it cannot read (a write's stop, each of the two reads that report it, the repair carrying
+  on and warning), heal's stop when it cannot finish an earlier write, the stop on a `project.yaml`
+  that does not parse, and the `./` stripping in `datom_repo_commit()`'s paths. The sweep takes
+  about four minutes. Results in `../tasks.md` ("Where things stand") and the commit message.

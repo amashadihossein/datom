@@ -114,8 +114,20 @@ test_that("datom_init_repo() whose storage connection fails after the push names
   })
   msg <- ii_msg(err)
   expect_match(msg, "credentials rejected", fixed = TRUE)
+  expect_match(msg, paste0("conn <- datom_get_conn(\"", fs::path_abs(p$repo), "\", store)"),
+               fixed = TRUE)
   expect_match(msg, "datom_validate(conn, fix = TRUE)", fixed = TRUE)
   expect_true(dir.exists(p$remote))
+  expect_false(file.exists(ii_stored_manifest(p)))
+
+  # The way out, as the message spells it, once the credentials work.
+  store <- p$store
+  conn <- suppressMessages(datom_get_conn(p$repo, store))
+  suppressWarnings(suppressMessages(datom_validate(conn, fix = TRUE)))
+
+  expect_true(file.exists(ii_stored_manifest(p)))
+  expect_identical(nrow(ii_reader_lists(p)), 0L)
+  expect_true(suppressMessages(datom_validate(conn))$valid)
 })
 
 ii_expect_folder_taken <- function(err, p) {

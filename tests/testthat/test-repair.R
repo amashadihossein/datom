@@ -388,6 +388,29 @@ test_that("the repair broken at its final manifest upload finishes on a re-run",
   expect_true(rp_validate(fx)$valid)
 })
 
+test_that("the repair that cannot read the stored manifest says so, publishes every artifact and the manifest from the clone, and finishes", {
+  # A damaged stored manifest (S8), with a write broken at its metadata upload,
+  # so the repair has an unfinished version to publish too. A write stops on
+  # this (test-heal-publish.R); the repair is the fix that stop names.
+  fx <- local_interrupt_project()
+  rp_write(fx$conn, "dm")
+  rp_write(fx$conn, "lb")
+  rp_break(fx$conn, "metadata", "dm")
+  writeLines("{ not json", .datom_local_path(fx$conn, ".metadata/manifest.json"))
+
+  run <- rp_notes(datom_validate(fx$conn, fix = TRUE))
+
+  expect_true(run$value$fixed)
+  expect_true(any(grepl(
+    "Could not read the stored manifest, so every artifact and the manifest are published from this clone.",
+    run$warnings, fixed = TRUE
+  )))
+  expect_identical(rp_rows_read(fx, "dm"), 5L)
+  expect_identical(rp_rows_read(fx, "lb"), 3L)
+  for (t in c("dm", "lb")) expect_identical(rp_stored_version(fx, t), rp_clone_version(fx, t))
+  expect_true(rp_validate(fx)$valid)
+})
+
 test_that("a set payload the repair cannot put back stops it before anything is published, heal's publish included", {
   # The set's v2 is committed and pushed but not published, so heal's publish
   # would publish it; its payload is gone from storage (S8: storage edited by
