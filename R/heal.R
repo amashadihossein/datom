@@ -630,16 +630,14 @@
 .datom_reset_unfinished <- function(conn, unfinished, rewrite = NULL,
                                     all = FALSE) {
   owners <- .datom_unfinished_owners(conn, unfinished)
-  by_artifact <- owners$by_artifact
-  rows <- owners$rows
-  unknown_rows <- owners$unknown_rows
+  own <- if (isTRUE(all)) owners$touched else intersect(owners$touched, rewrite)
+  others <- setdiff(owners$touched, own)
 
-  touched <- owners$touched
-  own <- if (isTRUE(all)) touched else intersect(touched, rewrite)
-  others <- setdiff(touched, own)
-
-  if (length(others) > 0L || (unknown_rows && !isTRUE(all))) {
-    .datom_stop_unfinished_files(others, by_artifact, rows, unknown_rows)
+  if (length(others) > 0L || (owners$unknown_rows && !isTRUE(all))) {
+    .datom_stop_unfinished_work(
+      .datom_uncommitted_items(owners, others),
+      c("i" = "datom changed nothing.")
+    )
   }
 
   .datom_restore_files(conn$path, unfinished)
@@ -814,57 +812,83 @@
 }
 
 
-#' Stop on Another Artifact's Uncommitted Files
+#' Stop on Another Artifact's Unfinished Work
 #'
+#' **The one stop for a command that finds work it does not finish**: heal's
+#' reset (datom's files never committed), heal's publish (a stored row that
+#' differs, or one for an artifact the clone lacks), the git and config
+#' commands' stop before a commit, and the pull blocked by an unfinished write.
 #' A write never acts on an artifact it is not writing (requirements D14,
-#' principle 8): nothing can prove whose work a leftover is. Two ways out: that
-#' artifact's own write, re-run, finishes it (heal resets and rewrites it), and
-#' `datom_validate(fix = TRUE)` discards the changes for every artifact.
+#' principle 8): nothing can prove whose work a leftover is. The way out is the
+#' same for every kind: that artifact's own write, re-run, finishes it, and
+#' `datom_validate(fix = TRUE)` finishes every artifact from the clone,
+#' discarding changes never committed.
 #'
-#' @param others The artifacts with uncommitted changes the command does not
-#'   write.
-#' @param by_artifact Their files, by artifact.
-#' @param rows The artifacts whose manifest rows differ from HEAD's.
-#' @param unknown_rows `TRUE` when the manifest's changes cannot be tied to any
-#'   artifact.
+#' @param items What is unfinished, one line per artifact, named by artifact
+#'   (`.datom/manifest.json` for manifest changes datom cannot tie to one).
+#' @param outcome The cli bullets saying what the command has done so far.
+#' @param lead The message's first line, when the stop is part of a larger
+#'   failure (the pull); `NULL` for the plain headline.
+#' @param teammate `TRUE` when an item can be a teammate's write this clone has
+#'   not pulled yet, so a re-run of this command may be enough.
+#' @param class Condition classes to add before `datom_unfinished_work`.
 #' @return Does not return.
 #' @keywords internal
-.datom_stop_unfinished_files <- function(others, by_artifact, rows,
-                                         unknown_rows) {
-  files_of <- function(a) {
-    c(by_artifact[[a]], if (a %in% rows) ".datom/manifest.json")
-  }
-  details <- purrr::map_chr(others, function(a) {
-    files <- files_of(a)
-    cli::format_inline("{.val {a}}: {.file {files}}")
+.datom_stop_unfinished_work <- function(items, outcome, lead = NULL,
+                                        teammate = FALSE, class = NULL) {
+  what <- names(items)
+  n <- length(setdiff(what, ".datom/manifest.json"))
+  details <- purrr::imap_chr(items, function(desc, a) {
+    cli::format_inline("{.val {a}}: {desc}")
   })
-  if (unknown_rows) {
-    details <- c(details, cli::format_inline(
-      "{.file .datom/manifest.json}: changed in a way datom cannot tie to an \\
-       artifact"
-    ))
-  }
-  what <- if (length(others) > 0L) others else ".datom/manifest.json"
-  rerun <- if (length(others) == 0L) {
-    character()
-  } else if (length(others) == 1L) {
-    "Re-run that write to finish it, or run"
+
+  way_out <- if (n == 0L) {
+    "Run {.code datom_validate(fix = TRUE)} to discard the changes, then \\
+     re-run this command."
   } else {
-    "Re-run each of those writes to finish it, or run"
+    "{cli::qty(n)}Re-run the write of {?that table or set/each of them} to \\
+     finish it, or run {.code datom_validate(fix = TRUE)}, which finishes \\
+     every table and set from this clone and discards changes never \\
+     committed. Then re-run this command."
   }
-  way_out <- paste(c(rerun, if (length(rerun) == 0L) "Run"), collapse = "")
 
   cli::cli_abort(
     c(
-      "{.val {what}} {?has/have} unfinished work: changes to datom's files that \\
-       were never committed.",
+      lead %||% "{.val {what}} {?has/have} unfinished work this command does \\
+                 not finish.",
       purrr::set_names(details, rep("*", length(details))),
-      "i" = "datom changed nothing.",
-      "i" = "{way_out} {.code datom_validate(fix = TRUE)} to discard the \\
-             changes. Then re-run this command."
+      outcome,
+      if (isTRUE(teammate)) {
+        c("i" = "{cli::qty(n)}If a teammate has just written {?it/them}, a \\
+                 re-run may be enough: a write pulls first.")
+      },
+      "i" = way_out
     ),
-    class = "datom_unfinished_work"
+    class = c(class, "datom_unfinished_work")
   )
+}
+
+
+#' One Line per Artifact Whose datom Files Were Never Committed
+#'
+#' @param owners What [.datom_unfinished_owners()] found.
+#' @param names The artifacts to name; all of `owners`' by default.
+#' @return A named character vector for [.datom_stop_unfinished_work()], with
+#'   a `.datom/manifest.json` item when the manifest's changes cannot be tied
+#'   to any artifact.
+#' @keywords internal
+.datom_uncommitted_items <- function(owners, names = owners$touched) {
+  items <- purrr::map_chr(names, function(a) {
+    files <- c(owners$by_artifact[[a]], if (a %in% owners$rows) ".datom/manifest.json")
+    listed <- cli::format_inline("{.file {files}}")
+    paste0("changes to datom's files that were never committed (", listed, ")")
+  })
+  items <- stats::setNames(items, names)
+  if (isTRUE(owners$unknown_rows)) {
+    items[[".datom/manifest.json"]] <-
+      "changed in a way datom cannot tie to a table or set"
+  }
+  items
 }
 
 
@@ -958,7 +982,19 @@
   own <- if (isTRUE(all)) differ else intersect(differ, artifact)
   others <- setdiff(differ, own)
   if (length(others) > 0L) {
-    .datom_stop_unpublished_others(others, in_clone = names(clone_rows))
+    # A stored row that differs can be this clone's unfinished write or a
+    # teammate's newer publish this clone has not pulled; a stored row the
+    # clone lacks can be a teammate's new artifact.
+    items <- ifelse(
+      others %in% names(clone_rows),
+      "storage and this clone name different versions of it",
+      "storage names it, this clone does not have it"
+    )
+    .datom_stop_unfinished_work(
+      stats::setNames(items, others),
+      c("i" = "Nothing was pushed or published."),
+      teammate = TRUE
+    )
   }
 
   # The containment check (R3.10): storage must not name a version of the
@@ -1329,46 +1365,6 @@
 }
 
 
-#' Stop on Another Artifact's Committed Work Storage Does Not Match
-#'
-#' Heal's publish acts only on the command's own artifacts. A stored row that
-#' differs from the clone's can be this clone's unfinished write (committed,
-#' not published) or a teammate's newer publish this clone has not pulled; a
-#' stored row the clone lacks can be a teammate's new artifact. The message
-#' gives the way out for both.
-#'
-#' @param others The artifacts.
-#' @param in_clone The artifacts the clone's manifest names.
-#' @return Does not return.
-#' @keywords internal
-.datom_stop_unpublished_others <- function(others, in_clone) {
-  details <- purrr::map_chr(others, function(a) {
-    if (a %in% in_clone) {
-      cli::format_inline("{.val {a}}: storage and this clone name different \\
-                          versions of it")
-    } else {
-      cli::format_inline("{.val {a}}: storage names it, this clone does not \\
-                          have it")
-    }
-  })
-
-  # cli resolves a plural within one bullet, so each bullet names its count.
-  n <- length(others)
-  cli::cli_abort(
-    c(
-      "{.val {others}} {?has/have} unfinished work this command does not finish.",
-      purrr::set_names(details, rep("*", length(details))),
-      "i" = "Nothing was pushed or published.",
-      "i" = "Run {.code datom_validate(fix = TRUE)} to publish this clone's \\
-             {cli::qty(n)}version{?s} of {?it/them}, then re-run this command.",
-      "i" = "If a teammate has just written {cli::qty(n)}{?it/them}, a re-run \\
-             may be enough: a write pulls first."
-    ),
-    class = "datom_unfinished_work"
-  )
-}
-
-
 #' Stop When Storage Names a Version This Clone Has Never Seen
 #'
 #' @param unseen The command's own artifacts in that state.
@@ -1716,9 +1712,9 @@
                         .datom_paths_take(paths, unfinished)]
   if (length(taken) == 0L) return(invisible(NULL))
 
-  owners <- .datom_unfinished_owners(conn, taken)
-  .datom_stop_unfinished_files(
-    owners$touched, owners$by_artifact, owners$rows, owners$unknown_rows
+  .datom_stop_unfinished_work(
+    .datom_uncommitted_items(.datom_unfinished_owners(conn, taken)),
+    c("i" = "datom changed nothing.")
   )
 }
 

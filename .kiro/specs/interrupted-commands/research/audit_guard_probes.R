@@ -76,7 +76,27 @@ main <- function() {
       sub1(sy, "  .datom_repair_restore_payloads(conn, names_now)\n", "")
       sub1(sy, "  heal_publish <- .datom_heal_publish(conn, all = TRUE)\n",
            "  heal_publish <- .datom_heal_publish(conn, all = TRUE)\n  .datom_repair_restore_payloads(conn, names_now)\n")
-    })
+    }),
+    # Point 2: the one stop for unfinished work. The teammate line ...
+    p2_teammate_line = list(filter = publish, edit = function() sub1(hl,
+      "      if (isTRUE(teammate)) {",
+      "      if (FALSE) {")),
+    # ... asked for by heal's publish, whose stored rows can be a teammate's ...
+    p2_teammate_caller = list(filter = publish, edit = function() sub1(hl,
+      "      teammate = TRUE\n",
+      "      teammate = FALSE\n")),
+    # ... the way out with no artifact to name ...
+    p2_manifest_only_way_out = list(filter = publish, edit = function() sub1(hl,
+      "  way_out <- if (n == 0L) {",
+      "  way_out <- if (FALSE) {")),
+    # ... the pull's own class kept beside the shared one ...
+    p2_extra_class = list(filter = publish, edit = function() sub1(hl,
+      "    class = c(class, \"datom_unfinished_work\")",
+      "    class = \"datom_unfinished_work\"")),
+    # ... and the shared class on every caller.
+    p2_shared_class = list(filter = publish, edit = function() sub1(hl,
+      "    class = c(class, \"datom_unfinished_work\")",
+      "    class = class %||% \"datom_unfinished_work\""))
   )
   # Probe names on the command line run only those (the control is always run
   # first); none runs them all.

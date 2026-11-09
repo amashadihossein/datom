@@ -1038,8 +1038,13 @@
   clone <- list(path = path)
   unfinished <- .datom_unfinished_files(clone)
   if (length(unfinished) > 0L) {
-    .datom_stop_pull_blocked_by_write(
-      .datom_unfinished_owners(clone, unfinished), in_push, data_file_stored
+    .datom_stop_unfinished_work(
+      .datom_uncommitted_items(.datom_unfinished_owners(clone, unfinished)),
+      c("i" = .datom_pull_outcome(in_push), .datom_data_file_note(data_file_stored)),
+      lead = "Could not bring the clone up to date: local changes are in the \\
+              way of the incoming commits, among them unfinished work this \\
+              command does not finish.",
+      class = "datom_pull_blocked"
     )
   }
 
@@ -1054,50 +1059,6 @@
              {.code datom_pull(conn)}, bring them back with \\
              {.code git stash pop}, resolve anything {.code git stash pop} \\
              reports, then re-run."
-    ),
-    class = "datom_pull_blocked"
-  )
-}
-
-
-#' Stop When an Unfinished Write Is Among What Blocks the Pull
-#'
-#' See [.datom_stop_pull_blocked()]. One class with it: the failure is the
-#' same, a pull that could not catch up; only the way out differs.
-#'
-#' @param owners What [.datom_unfinished_owners()] found.
-#' @param in_push,data_file_stored See [.datom_git_pull()].
-#' @return Does not return.
-#' @keywords internal
-.datom_stop_pull_blocked_by_write <- function(owners, in_push, data_file_stored) {
-  names <- owners$touched
-  what <- if (length(names) == 0L) {
-    cli::format_inline("uncommitted changes to {.file .datom/manifest.json}")
-  } else if (length(names) == 1L) {
-    cli::format_inline("an unfinished write of {.val {names}}")
-  } else {
-    cli::format_inline("unfinished writes of {.val {names}}")
-  }
-  way_out <- if (length(names) == 0L) {
-    "Run {.code datom_validate(fix = TRUE)} to discard them, then re-run this \\
-     command."
-  } else if (length(names) == 1L) {
-    "Re-run that write to finish it, or run {.code datom_validate(fix = TRUE)} \\
-     to discard the changes, then re-run this command."
-  } else {
-    "Re-run each of those writes to finish it, or run \\
-     {.code datom_validate(fix = TRUE)} to discard the changes, then re-run \\
-     this command."
-  }
-
-  cli::cli_abort(
-    c(
-      "Could not bring the clone up to date: local changes are in the way of \\
-       the incoming commits, including {what} (changes to datom's files that \\
-       were never committed).",
-      "i" = .datom_pull_outcome(in_push),
-      .datom_data_file_note(data_file_stored),
-      "i" = way_out
     ),
     class = "datom_pull_blocked"
   )

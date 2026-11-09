@@ -279,7 +279,9 @@ test_that("a crash on a repo whose committed manifest is in the old format ties 
   # Another write stops on dm alone, not on itself.
   err <- expect_error(hl_write(fx$conn, "lb", 7L, "c"), class = "datom_unfinished_work")
   msg <- hl_msg(err)
-  expect_match(msg, "\"dm\": 'dm/metadata.json'", fixed = TRUE)
+  expect_match(msg, "\"dm\": changes to datom's files that were never committed ('dm/metadata.json'", fixed = TRUE)
+  # Files never committed are this clone's own; no teammate made them.
+  expect_no_match(msg, "teammate", fixed = TRUE)
   expect_no_match(msg, "\"lb\":", fixed = TRUE)
 
   # dm's re-run puts its files back and finishes; then lb's write runs.
@@ -305,7 +307,7 @@ test_that("the manifest is put back only when every row that differs from HEAD's
   edit_row("lb")
   before <- hl_snapshot(fx)
   err <- expect_error(hl_write(fx$conn, "dm", 5L, "b"), class = "datom_unfinished_work")
-  expect_match(hl_msg(err), "\"lb\": '.datom/manifest.json'", fixed = TRUE)
+  expect_match(hl_msg(err), "\"lb\": changes to datom's files that were never committed ('.datom/manifest.json')", fixed = TRUE)
   expect_identical(hl_snapshot(fx), before)
 
   # The write's own row: put back, and the write goes ahead.
@@ -519,8 +521,10 @@ test_that("a pull blocked by an unfinished write names that write, not the stash
   err <- expect_error(suppressMessages(datom_pull(fx$conn)), class = "datom_pull_blocked")
 
   msg <- hl_msg(err)
-  expect_match(msg, "an unfinished write of \"dm\"", fixed = TRUE)
-  expect_match(msg, "Re-run that write to finish it")
+  expect_match(msg, "\"dm\": changes to datom's files that were never committed", fixed = TRUE)
+  expect_match(msg, "Re-run the write of that table or set to finish it", fixed = TRUE)
+  # One stop for every kind of unfinished work, so a caller matches one class.
+  expect_s3_class(err, "datom_unfinished_work")
   expect_match(msg, "datom_validate(fix = TRUE)", fixed = TRUE)
   expect_no_match(msg, "git stash")
   expect_identical(hl_snapshot(fx), before)
@@ -800,4 +804,48 @@ test_that("a merge of another remote's branch stops a write and datom_pull() wit
   expect_error(hl_write(fx$conn, "dm", 5L, "b"), class = "datom_merge_other")
   expect_error(suppressMessages(datom_pull(fx$conn)), class = "datom_merge_other")
   expect_identical(hl_snapshot(fx), before)
+})
+
+# --- the one stop for unfinished work ---------------------------------------------
+
+test_that("the stop for another artifact's unfinished work names each one and the same way out", {
+  one <- expect_error(
+    .datom_stop_unfinished_work(
+      c(dm = "changes to datom's files that were never committed"),
+      c("i" = "datom changed nothing.")
+    ),
+    class = "datom_unfinished_work"
+  )
+  msg <- hl_msg(one)
+  expect_match(msg, "\"dm\" has unfinished work this command does not finish.", fixed = TRUE)
+  expect_match(msg, "\"dm\": changes to datom's files that were never committed", fixed = TRUE)
+  expect_match(msg, "Re-run the write of that table or set to finish it", fixed = TRUE)
+  expect_match(msg, "datom_validate(fix = TRUE)", fixed = TRUE)
+  expect_no_match(msg, "teammate")
+
+  two <- expect_error(
+    .datom_stop_unfinished_work(
+      c(dm = "storage and this clone name different versions of it",
+        lb = "storage names it, this clone does not have it"),
+      c("i" = "Nothing was pushed or published."),
+      teammate = TRUE, class = "datom_pull_blocked"
+    ),
+    class = "datom_pull_blocked"
+  )
+  expect_s3_class(two, "datom_unfinished_work")
+  msg <- hl_msg(two)
+  expect_match(msg, "\"dm\" and \"lb\" have unfinished work", fixed = TRUE)
+  expect_match(msg, "Re-run the write of each of them to finish it", fixed = TRUE)
+  expect_match(msg, "If a teammate has just written them", fixed = TRUE)
+
+  manifest_only <- expect_error(
+    .datom_stop_unfinished_work(
+      c(".datom/manifest.json" = "changed in a way datom cannot tie to a table or set"),
+      c("i" = "datom changed nothing.")
+    ),
+    class = "datom_unfinished_work"
+  )
+  msg <- hl_msg(manifest_only)
+  expect_match(msg, "Run `datom_validate(fix = TRUE)` to discard the changes", fixed = TRUE)
+  expect_no_match(msg, "Re-run the write")
 })

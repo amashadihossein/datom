@@ -189,7 +189,7 @@ test_that("datom_write(conn, name =) stops on an uncommitted change to the table
     class = "datom_unfinished_work"
   )
 
-  expect_match(hp_msg(err), "\"dm\": '.datom/manifest.json'", fixed = TRUE)
+  expect_match(hp_msg(err), "\"dm\": changes to datom's files that were never committed ('.datom/manifest.json')", fixed = TRUE)
   expect_identical(hp_snapshot(fx), before)
 })
 
@@ -344,6 +344,8 @@ test_that("another table's write broken after its commit stops a write of a diff
     msg <- hp_msg(err)
     expect_match(msg, "\"lb\": storage and this clone name different versions",
                  fixed = TRUE, label = step)
+    # A stored row that differs can be a teammate's publish not yet pulled.
+    expect_match(msg, "If a teammate has just written it", fixed = TRUE, label = step)
     expect_match(msg, "Nothing was pushed or published", label = step)
     expect_match(msg, "datom_validate(fix = TRUE)", fixed = TRUE, label = step)
     expect_identical(hp_snapshot(fx), before, label = step)
