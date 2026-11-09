@@ -69,9 +69,9 @@ and found one gap and one ordering fault, fixed the same day with three smaller 
 `ba57f3a`, and the owner closed task 7 the same day. Task 8 (the git and config commands) done the
 same day, after its open point was settled by the owner (the stop also looks at datom files already
 staged); its entry below lists five differences from the plan. Its checkpoint review the same day
-(below) approved it with one point, taken with a second found while checking it. **Next: the
-reviewer's check of the fix, then the purity audit on a more capable model (tasks 2-8, flagged at
-planning).**
+(below) approved it with one point, taken with a second found while checking it, both fixed in
+`6921561`. **Next: the reviewer's check of `6921561`, then the purity audit on a more capable model
+(tasks 2-8, flagged at planning), then task 9 in a new session: "Starting task 9 cold" below.**
 
 **Task 8's checkpoint review, 2026-11-07**, by another agent, of `3f48a48`, read against the code;
 evaluated with the owner:
@@ -448,7 +448,65 @@ by mocking the `interactive` and `readline` bindings `R/sync.R` holds for that p
 tests of the repair stub heal, the pull and the push with `local_repair_on_folder()` (`test-sync.R`).
 The newest guard-probe harness is `research/task7_guard_probes.R`.
 
-**Starting task 8 cold** (written 2026-11-07, after task 7 closed at `ba57f3a`): read this
+**After task 8** (2026-11-07): baseline 6238 expectations, 0 failed, 0 skipped, at `6921561` (6214
+at task 8's commit `3f48a48`, then 24 added by its checkpoint review's fixes). Task 8's tests on
+real projects live in `test-repo-unfinished.R`; its harness is `research/task8_guard_probes.R`.
+
+**Starting task 9 cold** (written 2026-11-07, while the reviewer checks `6921561`): first confirm
+in "Where things stand" that task 8 has closed (the reviewer's check of `6921561`) and that the
+purity audit flagged after task 8 is done or waived by the owner; if not, stop and ask. Then read
+task 9 in full, requirements R6, D5 and R3.7 (its exception for init's first push), and design
+section 8. What the code holds today, checked 2026-11-07 with `research/init_rerun_probe.R` (folder
+remote, local store, `create_repo = TRUE`):
+- **A break at the commit or the push is already rolled back, and the same call re-run succeeds**
+  (R6.3 holds today). `datom_init_repo()` (`R/conn.R`) tracks `.git_pushed`; until the push
+  succeeds, its `on.exit()` deletes what it created, the bare remote included
+  (`.datom_undo_folder_remote()`).
+- **A break at the manifest upload is the case task 9 changes.** The clone, `project.yaml` and the
+  pushed bare remote stay; storage has no manifest. Re-running the same call refuses, and not at
+  the "already exists" check: `.datom_init_folder_remote()` (`R/utils-git.R`), which runs earlier,
+  refuses "already has content" for the pushed bare remote, and a GitHub `create_repo = TRUE` would
+  try to create the repo again. That is why design section 8 puts `.datom_init_finish()` before the
+  remote is resolved. The refusal at the path check ("A datom repository already exists") is what
+  a call with an explicit `data_repo_url` meets. The way out the upload failure names today,
+  `datom_validate(conn, fix = TRUE)`, works: the probe shows it uploading the manifest.
+- **There is no fetch on its own.** The fetch sits inside `.datom_git_pull()` and `.datom_git_push()`
+  (`R/utils-git.R`); `.datom_git_ahead()` (`R/repo.R`) reads local refs only. "The remote has the
+  initial commit" therefore needs the pull or a new small fetch, and the pull also merges when the
+  clone is behind (see the open points).
+- Existing refusal tests to keep green unchanged (R6.2): in `test-conn.R`, "datom_init_repo aborts
+  if .datom already exists" and the "already has content" case of the folder-remote tests; the init
+  fixtures there are `setup_init_env()` and `setup_local_init_env()`. Real-project fixtures for
+  break-and-re-run are in `helper-interrupt.R` (`local_break_at()` has `"commit"`, `"push"` and
+  `"manifest"`, which match init's three steps).
+- **Open points to raise with the owner before any code, one at a time**, each with the lean noted
+  here (checked against the code on 2026-11-07; re-check before raising):
+  1. Which fields must match for a re-run to finish. R6.1 says project name and data storage. The
+     folder's `project.yaml` also records `mode` and `set` (a product repo); a re-run with a
+     different `mode`, `set` or `max_file_size_gb` would otherwise finish and leave the first call's
+     values. Lean: `mode` and `set` must match too (they change which writes are allowed); the rest
+     do not.
+  2. A clone behind its remote at the re-run (a teammate cloned and pushed in between). Design
+     section 8 asks for "ahead is 0", which a behind clone passes, and uploading its manifest would
+     then name only the first commit's state. R3.7 says nothing writes to storage before pulling.
+     Lean: refuse unless the clone is exactly level with the remote after a fetch; a teammate's
+     write that published would already have put a manifest in storage, which refuses anyway.
+  3. The format check on the folder's `project.yaml` before comparing it
+     (`.datom_check_project_schema(operation = "write")`, as `datom_repo_set_data_store()` does).
+     Lean: yes; a file from a newer datom refuses with its evidence.
+  4. The upload failure's message. It names `datom_validate(conn, fix = TRUE)`; after task 9 the
+     same `datom_init_repo()` call finishes too. Lean: name the re-run first, keep the repair as the
+     second way out.
+- **FYI, not task 9's to build:** the publish-branch rule (#156, spec on branch
+  `spec/publish-branch`) will add a `publish_branch` field to `project.yaml` and make an init
+  re-run that uploads the manifest a command that runs only on that branch. Write the comparison as
+  a short list of fields, so #156 can add one.
+- **Guard probes**: copy `research/task8_guard_probes.R` (replace the file list and the probes);
+  each of R6.1's conditions needs its own probe and its own test (task 9's bullet).
+Baseline: 6238 expectations, 0 failed, 0 skipped, at `6921561`.
+
+**Starting task 8 cold** (written 2026-11-07, after task 7 closed at `ba57f3a`; done, kept as the
+record): read this
 section's first paragraph, then task 8 in full, requirements D9, D10, R3.5, R3.6 and R7.2, and
 design section 4 ("0. The merge check", and the paragraph after its route table on
 `datom_repo_commit()` and the four push commands) and section 10's note that R3.6's message is
