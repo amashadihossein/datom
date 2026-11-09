@@ -126,6 +126,10 @@ ii_expect_folder_taken <- function(err, p) {
   expect_match(msg, "the same store you passed", fixed = TRUE)
   expect_match(msg, "datom_validate(conn, fix = TRUE)", fixed = TRUE)
   expect_match(msg, "and the git remote's repository", fixed = TRUE)
+  # The same refusal meets a re-run in a healthy project, so starting over is
+  # labelled for what it costs.
+  expect_match(msg, "To abandon this project and start over, which loses its history",
+               fixed = TRUE)
 }
 
 test_that("datom_init_repo() re-run after a break at its manifest upload refuses with both ways out, changing nothing, whatever the remote (R6.2)", {

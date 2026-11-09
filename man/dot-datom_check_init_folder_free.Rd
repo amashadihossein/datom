@@ -19,6 +19,8 @@ so every re-run in such a folder meets this refusal, whatever the remote.
 It cannot tell whether an earlier run stopped after its push (the git remote
 has the repo, storage lacks the manifest) or finished, so it names both ways
 out: the repair, which finishes the first case, and starting over, which
-needs the git remote's repository deleted too.
+needs the git remote's repository deleted too. The second is labelled as
+abandoning the project: the same refusal meets a re-run in a healthy,
+published project, where following it discards the history.
 }
 \keyword{internal}

@@ -813,7 +813,9 @@ datom_init_repo <- function(path = ".",
 #' It cannot tell whether an earlier run stopped after its push (the git remote
 #' has the repo, storage lacks the manifest) or finished, so it names both ways
 #' out: the repair, which finishes the first case, and starting over, which
-#' needs the git remote's repository deleted too.
+#' needs the git remote's repository deleted too. The second is labelled as
+#' abandoning the project: the same refusal meets a re-run in a healthy,
+#' published project, where following it discards the history.
 #'
 #' @param path The folder, as an absolute path.
 #' @return Invisibly `NULL` when the folder holds no `.datom/project.yaml`;
@@ -832,8 +834,9 @@ datom_init_repo <- function(path = ".",
              passed to {.fn datom_init_repo}, and run \\
              {.code datom_validate(conn, fix = TRUE)} instead: it uploads the \\
              manifest.",
-      "i" = "To start over instead, delete this folder's {.file .datom} and \\
-             {.file .git} and the git remote's repository, then re-run."
+      "i" = "To abandon this project and start over, which loses its history: \\
+             delete this folder's {.file .datom} and {.file .git} and the git \\
+             remote's repository, then re-run."
     ),
     class = "datom_init_folder_taken"
   )

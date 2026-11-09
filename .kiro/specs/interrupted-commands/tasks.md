@@ -1490,7 +1490,9 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     option A):** the folder check runs before anything touches the remote, and names both ways
     out (R6.2 amended, design section 8). The review's nit taken: both stops say to give
     `datom_get_conn()` the same store passed to `datom_init_repo()`. The re-run test covers all four
-    remotes, and that no GitHub repo is created.
+    remotes, and that no GitHub repo is created. A review of the fix (`1646c9b`) approved it with
+    one wording change, taken: the same refusal meets a re-run in a healthy, published project, so
+    the "start over" line now says it abandons the project and loses its history.
   - Acceptance: R6.1-R6.3 as rewritten.
 
 - [ ] **10. Documentation** (R8, R9)
