@@ -4,12 +4,10 @@
 \alias{.datom_stop_merge_refused}
 \title{Stop When the Format Check Refuses What a Merge Brings In}
 \usage{
-.datom_stop_merge_refused(e, data_file_stored = FALSE)
+.datom_stop_merge_refused(e)
 }
 \arguments{
 \item{e}{The refusal.}
-
-\item{data_file_stored}{See \code{\link[=.datom_git_push]{.datom_git_push()}}.}
 }
 \value{
 Does not return.

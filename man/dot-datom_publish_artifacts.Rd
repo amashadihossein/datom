@@ -29,20 +29,34 @@ stop and the repair's report.}
 }
 \value{
 Invisibly, a list with \code{published} (versions, named by artifact),
-\code{failed} (conditions, named by artifact) and \code{manifest} (\code{"published"},
-\code{"held_back"}, \code{"not_reached"} or \code{"none"} when the clone has no manifest).
+\code{failed} (conditions, named by artifact), \code{manifest} (\code{"published"},
+\code{"held_back"}, \code{"not_reached"} or \code{"none"} when the clone has no manifest)
+and \code{pushed} (\code{TRUE} when it pushed).
 }
 \description{
 \strong{The one publish path.} A write's own publish (after its push), heal's
 publish, the metadata-only route and the repair all go through it, so the
-order readers depend on lives in one place. For each artifact, the documents as committed
+order readers depend on lives in one place.
+}
+\details{
+\strong{Every document readers follow is on GitHub first.} Before any upload,
+commits the git remote lacks are pushed, without pulling again: every caller
+pulled moments before, and a remote that moved since makes git refuse the
+push, which stops the publish before storage changes. After a write's own
+push, or once heal has pushed, the clone is level and nothing more is sent.
+(A data file goes into storage before its commit, and the repair puts back a
+set's payload before this push: those are named by nothing until the
+documents published here name them.) Callers decide \emph{whether} to publish;
+heal's publish, for one, gets here only past its checks, so a write with
+nothing to save never pushes a commit of the user's own.
+
+For each artifact, the documents as committed
 in the clone go up through \code{\link[=.datom_push_metadata_s3]{.datom_push_metadata_s3()}}: the snapshot, the
 history, then \code{metadata.json} last. Then the manifest, last of all, and only
 if every artifact's documents went up: a manifest published after a failure
 would name a version whose \code{metadata.json} is old, and heal, which compares
 manifest rows, would then see nothing to finish.
-}
-\details{
+
 \strong{The snapshot is keyed by the document's own version}, computed from the
 \code{metadata.json} being published. That is the key the write itself used: the
 committed file is the document the write computed its version from, and the

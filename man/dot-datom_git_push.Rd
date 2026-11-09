@@ -4,7 +4,7 @@
 \alias{.datom_git_push}
 \title{Push to Remote}
 \usage{
-.datom_git_push(path, pat = NULL, pull_first = TRUE, data_file_stored = FALSE)
+.datom_git_push(path, pat = NULL, pull_first = TRUE)
 }
 \arguments{
 \item{path}{Repository path.}
@@ -14,9 +14,6 @@
 
 \item{pull_first}{Pull before pushing (default). Callers that know the
 remote is empty (the first push, a wiped remote) pass \code{FALSE}.}
-
-\item{data_file_stored}{\code{TRUE} when the caller is a write whose data file is
-already in storage, so a stop here says the file may be there unnamed.}
 }
 \value{
 Invisibly, \code{TRUE} when the pull before the push moved HEAD (it

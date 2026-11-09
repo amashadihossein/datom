@@ -4,13 +4,7 @@
 \alias{.datom_stop_push_rejected}
 \title{Stop on a Push git Refused Because the Clone Is Behind}
 \usage{
-.datom_stop_push_rejected(
-  repo,
-  remote_name,
-  branch_name,
-  e,
-  data_file_stored = FALSE
-)
+.datom_stop_push_rejected(repo, remote_name, branch_name, e)
 }
 \arguments{
 \item{repo}{A \code{git2r::repository} handle.}
@@ -18,8 +12,6 @@
 \item{remote_name, branch_name}{The remote and branch being pushed.}
 
 \item{e}{The condition git2r raised.}
-
-\item{data_file_stored}{See \code{\link[=.datom_git_push]{.datom_git_push()}}.}
 }
 \value{
 Does not return.

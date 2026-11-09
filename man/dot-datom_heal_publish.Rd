@@ -47,19 +47,18 @@ this: it publishes the clone's version, says which stored version it
 replaced, and drops a stored row whose artifact the clone lacks.
 }
 
-Then, finishing a version of its own, it pushes if the clone is ahead,
-\strong{without pulling again}: the route's
-pull ran moments ago, and a remote that moved since makes git refuse the
-push, which stops the command before storage changes. Pulling here could
-bring in a teammate's commit whose version is not in storage yet, and the
-manifest below would then name it. With no upstream branch it cannot tell
-whether it is ahead, so it pushes before the checks instead (git refuses the
-push when the clone is behind). Then it publishes the artifacts through
-\code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}, manifest last. If that fails, the command stops
-before its own work.
+Then, finishing a version of its own, it publishes the artifacts through
+\code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}, which pushes first when the clone is ahead,
+\strong{without pulling again}: the route's pull ran moments ago, and a remote
+that moved since makes git refuse the push, which stops the command before
+storage changes. Pulling here could bring in a teammate's commit whose
+version is not in storage yet, and the manifest would then name it. With no
+upstream branch it cannot tell whether it is ahead, so it pushes before the
+checks instead (git refuses the push when the clone is behind). The manifest
+goes last. If the publish fails, the command stops before its own work.
 
-The stops here say "Nothing was pushed or published" rather than "datom
-changed nothing": by now heal's reset may have put back the command's own
-files, and the pull may have brought the clone up to date.
+The stops here say "Nothing was published", true at every stop before
+publishing: with no upstream heal has pushed already, and heal's reset may
+have put back the command's own files (it says so itself).
 }
 \keyword{internal}

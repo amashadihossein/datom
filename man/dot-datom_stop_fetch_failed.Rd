@@ -4,26 +4,18 @@
 \alias{.datom_stop_fetch_failed}
 \title{Stop When the Fetch Fails}
 \usage{
-.datom_stop_fetch_failed(
-  remote_name,
-  e,
-  in_push,
-  data_file_stored,
-  reset = character()
-)
+.datom_stop_fetch_failed(remote_name, e)
 }
 \arguments{
 \item{remote_name}{The remote.}
 
 \item{e}{The condition git2r raised.}
-
-\item{in_push, data_file_stored, reset}{See \code{\link[=.datom_git_pull]{.datom_git_pull()}}.}
 }
 \value{
 Does not return.
 }
 \description{
-A failed fetch stops the command before it changes anything (design DD1):
+A failed fetch stops the command before it publishes anything (design DD1):
 the remote cannot be compared with, so nothing that depends on it is decided.
 }
 \keyword{internal}

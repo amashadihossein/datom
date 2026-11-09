@@ -4,15 +4,10 @@
 \alias{.datom_stop_merge_conflict}
 \title{Stop on a Merge of the Remote Branch That Still Conflicts}
 \usage{
-.datom_stop_merge_conflict(path, after_pull = FALSE, data_file_stored = FALSE)
+.datom_stop_merge_conflict(path)
 }
 \arguments{
 \item{path}{Repository path.}
-
-\item{after_pull}{\code{TRUE} when the pull just produced the conflict; the message
-then ends "No version is published."}
-
-\item{data_file_stored}{See \code{\link[=.datom_git_push]{.datom_git_push()}}.}
 }
 \value{
 Does not return.

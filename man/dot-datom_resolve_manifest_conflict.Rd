@@ -4,13 +4,10 @@
 \alias{.datom_resolve_manifest_conflict}
 \title{Finish a Merge Whose Only Conflict Is the Manifest}
 \usage{
-.datom_resolve_manifest_conflict(path, data_file_stored = FALSE)
+.datom_resolve_manifest_conflict(path)
 }
 \arguments{
 \item{path}{Repository path.}
-
-\item{data_file_stored}{See \code{\link[=.datom_git_push]{.datom_git_push()}}; a refusal then adds the line
-about the write's data file.}
 }
 \value{
 Invisibly, the artifacts whose rows were rebuilt.

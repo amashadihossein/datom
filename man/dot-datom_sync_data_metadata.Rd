@@ -41,14 +41,13 @@ published. Where a write stops on another artifact's work, the repair
 acts: calling it is the consent. A stored version this clone has never
 seen is replaced by the clone's, and a stored row for an artifact the
 clone lacks is dropped, each with a warning (\code{\link[=.datom_heal_publish]{.datom_heal_publish()}});
-then any commit the git remote still lacks is pushed, without pulling
-again: heal pushes only to finish a differing manifest row, and storage
-must never name a document the remote does not have;
 \item every artifact is published through the one publish path,
-\code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}: the snapshot, the history, \code{metadata.json}
-last, then the manifest, and the manifest only if every artifact
-published, so a failure leaves the manifest naming versions whose
-documents are in storage.
+\code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}: first any commit the git remote still lacks
+is pushed, without pulling again (heal pushes only to finish a differing
+manifest row, and every document readers follow is on GitHub first); then
+the snapshot, the history, \code{metadata.json} last, then the manifest, and the
+manifest only if every artifact published, so a failure leaves the
+manifest naming versions whose documents are in storage.
 }
 
 Republishing every artifact, not only those whose manifest row differs, is

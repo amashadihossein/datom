@@ -30,8 +30,8 @@ three in that order, in exactly one place, after the checks that need no
 storage state heal can change and before change detection:
 }
 \details{
-\if{html}{\out{<div class="sourceCode">}}\preformatted{healed <- .datom_heal(conn, artifact = name)
-.datom_pull_before_write(conn, reset = healed$reset)
+\if{html}{\out{<div class="sourceCode">}}\preformatted{.datom_heal(conn, artifact = name)
+.datom_pull_before_write(conn)
 .datom_heal_publish(conn, artifact = name)
 }\if{html}{\out{</div>}}
 

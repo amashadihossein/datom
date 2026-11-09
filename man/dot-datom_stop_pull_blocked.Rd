@@ -4,11 +4,9 @@
 \alias{.datom_stop_pull_blocked}
 \title{Stop When the Pull Could Not Catch Up}
 \usage{
-.datom_stop_pull_blocked(in_push, data_file_stored, path, reset = character())
+.datom_stop_pull_blocked(path)
 }
 \arguments{
-\item{in_push, data_file_stored, reset}{See \code{\link[=.datom_git_pull]{.datom_git_pull()}}.}
-
 \item{path}{Repository path, to look for datom's own uncommitted files.}
 }
 \value{

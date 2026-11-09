@@ -18,9 +18,10 @@ The git and config commands (\code{\link[=datom_repo_push]{datom_repo_push()}}, 
 not publish (requirements R3.6, D10). When the commits they push hold a datom
 version, this names each such artifact and the way to publish it. Every
 version in commits being pushed is unpublished by definition, since a write
-publishes only after its push, so this needs no storage read: the caller
-takes the names from \code{\link[=.datom_pushed_artifacts]{.datom_pushed_artifacts()}} \strong{before} the push, while
-the commits are still the clone's alone.
+publishes only after its push, so this needs no storage read:
+\code{\link[=.datom_push_naming_unpublished]{.datom_push_naming_unpublished()}} takes the names from
+\code{\link[=.datom_pushed_artifacts]{.datom_pushed_artifacts()}} \strong{before} the push, while the commits are still
+the clone's alone.
 }
 \details{
 A message rather than a warning: the push did what was asked. The state it

@@ -4,30 +4,13 @@
 \alias{.datom_git_pull}
 \title{Pull from Remote (Fetch, and Merge Only When Behind)}
 \usage{
-.datom_git_pull(
-  path,
-  pat = NULL,
-  in_push = FALSE,
-  data_file_stored = FALSE,
-  reset = character(),
-  finish_merge = FALSE
-)
+.datom_git_pull(path, pat = NULL, finish_merge = FALSE)
 }
 \arguments{
 \item{path}{Repository path.}
 
 \item{pat}{GitHub personal access token. Passed directly to
 \code{.datom_git_credentials()}. NULL means unauthenticated.}
-
-\item{in_push}{\code{TRUE} for the pull inside \code{\link[=.datom_git_push]{.datom_git_push()}}: a stop then
-says nothing was pushed or published, rather than that datom changed
-nothing (the caller may already have committed).}
-
-\item{data_file_stored}{\code{TRUE} when the caller is a write whose data file is
-already in storage; a stop then says the file may be there, unnamed.}
-
-\item{reset}{The artifacts heal's reset put back just before this pull, so
-a stop says datom put them back rather than that it changed nothing.}
 
 \item{finish_merge}{See \code{\link[=datom_pull]{datom_pull()}}; passed to the merge check.}
 }
@@ -61,7 +44,7 @@ artifacts conflict there and nowhere else. The manifest is derived from
 the artifacts' own files, so it is rebuilt from them and the merge
 committed. Any other conflict stops the command, leaving the merge in
 progress, with the merge check's message (it lists the conflicted files
-and says how to finish) ending "No version is published."
+and says how to finish).
 \item \strong{It confirms it caught up}: HEAD must contain the tip. git2r's merge
 silently does nothing when the user's own uncommitted or untracked files
 are in the way of the incoming commits -- no error, no \code{MERGE_HEAD}, and
@@ -73,5 +56,10 @@ are in the way of the incoming commits -- no error, no \code{MERGE_HEAD}, and
 Whether HEAD moved is returned for \code{\link[=.datom_pull_before_write]{.datom_pull_before_write()}}, which runs
 the format check on every artifact after a merge. A fast-forward counts:
 git2r returns \code{sha = NA} for one, so its return fields cannot say.
+
+\strong{Every stop here says "Nothing was published."} It is true wherever the
+pull runs: at a command's start, and inside a write's push, which comes
+before anything readers follow is published. (A write's data file may already
+be in storage by then; it is named by nothing, and a re-run reuses it.)
 }
 \keyword{internal}
