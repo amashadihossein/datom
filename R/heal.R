@@ -1663,8 +1663,10 @@
 
 #' Stop a Commit That Would Take datom's Own Uncommitted Files
 #'
-#' [datom_repo_commit()] never commits a datom write that never committed
-#' (requirements R3.5, D9). Its files, left by a write that stopped before its
+#' [datom_repo_commit()], [datom_repo_attach_governance()] and
+#' [datom_repo_set_data_store()] never commit a datom write that never committed
+#' (requirements R3.5, D9). The last two pass their one file as `paths`, so for
+#' them it stops only on a datom file already staged. Its files, left by a write that stopped before its
 #' commit, would otherwise become a version nobody published, with half its
 #' steps done. The command acts on an artifact it is not writing, so it stops
 #' rather than reset them (D14 principle 8): the artifact's own write, re-run,

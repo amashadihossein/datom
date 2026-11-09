@@ -207,7 +207,7 @@ write commands.
 | `R/validate.R` | `.datom_validate_one_table()` | changed | Reads the stored `metadata.json` and history, and reports `manifest_mismatch_s3` when the version they describe differs from the stored manifest's row, or the row is missing (`.datom_validate_manifest_mismatch()`; the stored manifest is read once per call, `.datom_validate_stored_rows()`). The version comes from `.datom_documents_version()`: the document's own version when every field is one this build can place and the history names it, else the recorded one (section 6; owner, 2026-11-06, replacing the history lookup alone) |
 | `R/heal.R` | `.datom_documents_version(meta, history)` | renamed (task 7) | Task 5's `.datom_clone_files_version()`, renamed because it now reads stored documents too, and given the placeability check; shared by the manifest rebuild and `manifest_mismatch_s3` |
 | `R/repo.R` | `datom_repo_commit()` | changed | The merge check, then, before staging, a stop naming `datom_validate(fix = TRUE)` when the commit would include datom's own uncommitted files (R3.5, R3.9; no reset since the spot-check before task 4a); the R3.6 message when it pushes |
-| `R/repo.R` | `datom_repo_push()`, `datom_repo_attach_governance()`, `datom_repo_set_data_store()` | changed | The R3.6 message around their push |
+| `R/repo.R` | `datom_repo_push()`, `datom_repo_attach_governance()`, `datom_repo_set_data_store()` | changed | The R3.6 message around their push; the last two also run the merge check and `datom_repo_commit()`'s stop before writing their file (task 8's checkpoint review) |
 | `R/conn.R` | `datom_init_repo()` | changed | Finishes a half-initialised folder (section 8) |
 
 In `R/forward-compat.R` only two messages change: the vocabulary refusal and the unreachable-shape
@@ -348,7 +348,8 @@ another artifact cannot meet that class.
 **0. The merge check** (R3.9; a helper named in task 4a, in `R/heal.R` but independent of heal).
 Called at the start of `.datom_git_pull()` (so by every pull: a write's, `datom_pull()`'s, the four
 push commands', and the migration pull in `datom_get_conn()`), by heal before its reset, and by
-`datom_repo_commit()` before it stages anything (task 8). Calling it twice in one command is harmless. On the
+`datom_repo_commit()` before it stages anything (task 8), and by `datom_repo_attach_governance()` and
+`datom_repo_set_data_store()` before they write their file (task 8's checkpoint review). Calling it twice in one command is harmless. On the
 common path it only finds that `.git/MERGE_HEAD` does not exist.
 
 When a merge is in progress, it first asks **what is being merged** (2026-10-31, owner, from the
@@ -670,8 +671,12 @@ GitHub lacks (review of `5bdb7da`).
 
 `datom_write()` itself does not heal on the two routes without data: it hands them to those helper
 functions before anything else runs. `datom_repo_commit()` calls the merge check, then stops if the
-commit would include datom's own uncommitted files (R3.5); it resets nothing. The four push commands
-meet the merge check through their pull and call nothing else (D10).
+commit would include datom's own uncommitted files (R3.5); it resets nothing. `datom_repo_push()`
+meets the merge check through its pull and calls nothing else (D10). `datom_repo_attach_governance()`
+and `datom_repo_set_data_store()` commit their one file before their push pulls, so they call the
+merge check and the same stop themselves, before writing that file (task 8's checkpoint review,
+2026-11-07): a probe showed a commit made mid-merge finishes the merge (two parents, `MERGE_HEAD`
+gone), and a commit takes whatever is already staged.
 
 ## 5. A conflict only in the manifest (R3.8)
 

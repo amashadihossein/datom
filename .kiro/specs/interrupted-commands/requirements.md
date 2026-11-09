@@ -69,7 +69,12 @@ have reported a consistent store that its fix could not clear.
 fails partway after changing the clone stops the sync; `continue_on_error = TRUE` carries on only
 past failures that leave the clone untouched). **Amended again the same day**, from task 6's
 checkpoint review (of `c24b17f`): a held-back manifest stops the sync too, and the way out a stop
-names is the same `datom_sync()` call, with the same preview (R4.6).
+names is the same `datom_sync()` call, with the same preview (R4.6). **Amended again the same
+day** with the owner, settling task 8's open point and then its checkpoint review (of `3f48a48`):
+the stop in D9 and R3.5 also looks at datom files already staged, since a commit takes the whole
+index; and it covers `datom_repo_attach_governance()` and `datom_repo_set_data_store()` too, which
+commit one named file and so stop only on a datom file already staged (a write stopped between
+staging and committing leaves its files staged).
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -176,7 +181,7 @@ below it (`.datom_check_writer_floor()`, also on 0.2.0's repair route); 0.1.0 do
 | D6 | **`datom_validate(fix = TRUE)` pushes** unpushed commits, then publishes | Publish only what GitHub has and name `datom_repo_push()` for the rest |
 | D7 | **No rescue for states a released datom already created.** datom is experimental; the fix is designed for what new writes can produce. D11 extends this to teammates still writing with a released datom | Storage checks before every skip, correcting a version's recorded hash after an arrow upgrade, flagging sets that pin a version with no data file, restoring a set payload from an older commit |
 | D8 | **The rule is written into `.github/copilot-instructions.md`** (wording in R9), with the detail in `dev/datom_specification.md` | Specification and engineering notes only (loaded on demand, so a session editing a write might not see it) |
-| D9 | **`datom_repo_commit()` never commits a datom write that never committed.** Amended 2026-10-31 (owner, design spot-check before task 4a): it no longer resets one. When the commit would include datom's own uncommitted files (`paths = NULL`, or an explicit path that names one), it stops before staging anything, naming the artifact and `datom_validate(fix = TRUE)`; a commit whose paths do not include them goes ahead. A plain `git commit` from a terminal is outside datom's reach and is discouraged in the help | Leave datom's files out of an add-everything commit (the clone stays unclean); reset them before staging, as decided on 2026-10-28 (it acts on an artifact the command is not writing) |
+| D9 | **`datom_repo_commit()` never commits a datom write that never committed.** Amended 2026-10-31 (owner, design spot-check before task 4a): it no longer resets one. When the commit would include datom's own uncommitted files (`paths = NULL`, an explicit path that names one or a folder holding one, or one already staged, since a commit takes the whole index; amended 2026-11-07), it stops before staging anything, naming the artifact and `datom_validate(fix = TRUE)`; a commit whose paths do not include them goes ahead. **`datom_repo_attach_governance()` and `datom_repo_set_data_store()` keep the same rule** (amended 2026-11-07, owner, task 8's checkpoint review): each commits one named file, so each stops, before writing it, on a datom file already staged. A plain `git commit` from a terminal is outside datom's reach and is discouraged in the help | Leave datom's files out of an add-everything commit (the clone stays unclean); reset them before staging, as decided on 2026-10-28 (it acts on an artifact the command is not writing) |
 | D10 | **The git and config commands push, and say so.** `datom_repo_push()`, `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_set_data_store()` do not publish a datom write whose commit they push; they name it and say a write of that artifact, or `datom_validate(fix = TRUE)`, publishes it (amended 2026-11-03: under D14 principle 8 a write of any other artifact stops instead) | Publish what they push (commands about git or config start writing to storage, and after a data-store change "which storage" has two answers); refuse to push (blocks a product layer's commit) |
 | D11 | **Teams writing one repo with mixed datom versions are not guarded against** (Q3). In practice everyone writing to a repo upgrades together. Recorded in R8 | Set `min_writer_version` at init for new repos and ask existing owners to add it; check for the data file before publishing any version |
 | D12 | **datom resolves a merge conflict confined to `.datom/manifest.json`** by rebuilding the manifest from the artifacts' files in the merged clone, completing the merge, and saying so (R3.8). The manifest is derived, so nothing can be lost. Conflicts in any other file stop the command as today and stay with #105 | Leave every conflict to #105: a write whose push broke while a colleague pushed would not finish on a re-run, the main conflict R3.7 leaves |
@@ -341,9 +346,12 @@ command, told apart by what they are asked to change:
 4. Finding unpublished work costs one read of the stored manifest per command, not one read per
    artifact.
 5. `datom_repo_commit()` never commits a datom write that never committed (D9, amended 2026-10-31).
-   When the commit would include datom's own uncommitted files (`paths = NULL`, or an explicit path
-   naming one), it stops before staging anything, naming the artifact and
-   `datom_validate(fix = TRUE)`. A commit whose paths do not include them goes ahead.
+   When the commit would include datom's own uncommitted files (`paths = NULL`, an explicit path
+   naming one or a folder holding one, or one already staged), it stops before staging anything,
+   naming the artifact and `datom_validate(fix = TRUE)`. A commit whose paths do not include them
+   goes ahead. `datom_repo_attach_governance()` and `datom_repo_set_data_store()` keep the same rule
+   for the one file each commits, so they stop on a datom file already staged, before writing their
+   own (amended 2026-11-07).
 6. `datom_repo_push()`, `datom_repo_commit()` (when it pushes), `datom_repo_attach_governance()` and
    `datom_repo_set_data_store()` do not publish (D10). When the commits they push hold a datom
    version, they name each such artifact and say that readers cannot see it until a write of that

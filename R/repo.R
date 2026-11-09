@@ -27,6 +27,10 @@
 #' (a write whose own push failed), it names the table or set, which readers
 #' cannot see until `datom_validate(fix = TRUE)`, or a write of it, publishes it.
 #'
+#' It stops before changing anything while a merge datom did not start is in
+#' progress, and when one of datom's own files for a table or set is already
+#' staged (a write stopped partway), since the commit would take it.
+#'
 #' @param conn A `datom_conn` object with `role = "developer"` and a local
 #'   repo path (`conn$path`).
 #' @param new_store A `datom_store_s3` or `datom_store_local` component
@@ -106,6 +110,14 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
   # number.
   cfg <- yaml::read_yaml(yaml_path)
   .datom_check_project_schema(cfg, source = yaml_path, operation = "write")
+
+  # Before the file is rewritten, so either stop changes nothing. The commit
+  # below runs before the push's pull, so the merge check there would come too
+  # late: a commit made mid-merge finishes the merge (requirements R3.9). And a
+  # commit takes the whole index, so a datom file already staged (a write
+  # stopped between staging and committing) would go into it (R3.5, D9).
+  .datom_check_merge(conn$path)
+  .datom_stop_commit_of_unfinished(conn, ".datom/project.yaml")
 
   # --- Build new storage.data block from new_store ---------------------------
   backend <- .datom_store_backend(new_store)
@@ -331,6 +343,10 @@ datom_repo_delete <- function(conn, confirm, force_gov_attached = FALSE) {
 #' (a write whose own push failed), it names the table or set, which readers
 #' cannot see until `datom_validate(fix = TRUE)`, or a write of it, publishes it.
 #'
+#' It stops before changing anything while a merge datom did not start is in
+#' progress, and when one of datom's own files for a table or set is already
+#' staged (a write stopped partway), since the commit would take it.
+#'
 #' @param conn A `datom_conn` object with `role = "developer"` and a local
 #'   data clone (`conn$path`).
 #' @param gov_repo_url HTTPS clone URL of the governance git repository to
@@ -407,6 +423,11 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
   }
 
   project_name <- conn$project_name
+
+  # Before governance.json is written, so either stop changes nothing: the
+  # same two checks as in `datom_repo_set_data_store()`, for the same reasons.
+  .datom_check_merge(conn$path)
+  .datom_stop_commit_of_unfinished(conn, ".datom/governance.json")
 
   # --- Build + write governance.json (git canonical) -------------------------
   gov_json <- .datom_create_governance_json(

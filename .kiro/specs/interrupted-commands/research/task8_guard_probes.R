@@ -97,7 +97,22 @@ main <- function() {
       "{.val {project_name}}.\"\n  )")),
     store_note = list(filter = own, edit = function() sub1(rp,
       "{.val {conn$project_name}}.\"\n  )\n  .datom_note_pushed_unpublished(pushed)",
-      "{.val {conn$project_name}}.\"\n  )"))
+      "{.val {conn$project_name}}.\"\n  )")),
+
+    # Added from task 8's checkpoint review: both checks in the two config
+    # commands, each alone.
+    store_merge = list(filter = own, edit = function() sub1(rp,
+      "  .datom_check_merge(conn$path)\n  .datom_stop_commit_of_unfinished(conn, \".datom/project.yaml\")",
+      "  .datom_stop_commit_of_unfinished(conn, \".datom/project.yaml\")")),
+    store_staged = list(filter = own, edit = function() sub1(rp,
+      "  .datom_stop_commit_of_unfinished(conn, \".datom/project.yaml\")\n",
+      "")),
+    gov_merge = list(filter = own, edit = function() sub1(rp,
+      "  .datom_check_merge(conn$path)\n  .datom_stop_commit_of_unfinished(conn, \".datom/governance.json\")",
+      "  .datom_stop_commit_of_unfinished(conn, \".datom/governance.json\")")),
+    gov_staged = list(filter = own, edit = function() sub1(rp,
+      "  .datom_stop_commit_of_unfinished(conn, \".datom/governance.json\")\n",
+      ""))
   )
 
   # Probe names on the command line run only those (the control is always run

@@ -309,3 +309,83 @@ test_that("datom_repo_commit() broken at its push: the re-run commits nothing an
   expect_identical(ru_head(fx$repo), committed)
   expect_identical(ru_remote_tip(fx), committed)
 })
+
+
+# === the two config commands commit too (R3.5, R3.9; task 8's checkpoint review) ==
+#
+# Each commits one named file before its push makes any pull, and a commit takes
+# the whole index. So a datom file already staged would go into it, and a merge
+# in progress would be finished by it (a probe on 2026-11-07: two parents,
+# MERGE_HEAD gone). Both checks run before the command writes its file.
+
+ru_attach_gov <- function(fx) {
+  datom_repo_attach_governance(
+    fx$conn,
+    gov_repo_url = "https://github.com/example/acme-gov",
+    gov_store = datom_store_local(file.path(fx$root, "gov-storage"))
+  )
+}
+
+ru_set_store <- function(fx) {
+  datom_repo_set_data_store(fx$conn, datom_store_local(file.path(fx$root, "storage-moved")))
+}
+
+ru_config_commands <- list(attach_governance = ru_attach_gov, set_data_store = ru_set_store)
+
+# A merge of a local branch, started with --no-commit and left open: a merge
+# datom did not start.
+ru_open_other_merge <- function(fx) {
+  repo <- git2r::repository(fx$repo)
+  home <- git2r::repository_head(repo)$name
+  git2r::checkout(repo, "feature", create = TRUE)
+  writeLines("feature", file.path(fx$repo, "feature.R"))
+  git_commit_files(fx$repo, "feature.R", "Feature work", push = FALSE)
+  git2r::checkout(repo, home)
+  writeLines("main", file.path(fx$repo, "main.R"))
+  git_commit_files(fx$repo, "main.R", "Main work", push = FALSE)
+  res <- git2r::merge(repo, "feature", commit_on_success = FALSE)
+  force(res)
+  expect_true(fs::file_exists(fs::path(repo$path, "MERGE_HEAD")))
+}
+
+for (cmd in names(ru_config_commands)) {
+  test_that(paste0("datom_repo_", cmd, "() stops on a datom file already staged, changing nothing"), {
+    fx <- local_interrupt_project()
+    ru_unfinished_dm(fx)
+    git2r::add(git2r::repository(fx$repo), "dm/metadata.json")
+    before <- ru_snapshot(fx)
+
+    err <- expect_error(
+      suppressMessages(ru_config_commands[[cmd]](fx)),
+      class = "datom_unfinished_work"
+    )
+
+    expect_match(ru_msg(err), "'dm/metadata.json'", fixed = TRUE)
+    expect_identical(ru_snapshot(fx), before)
+  })
+
+  test_that(paste0("datom_repo_", cmd, "() goes ahead when datom's uncommitted files are not staged"), {
+    fx <- local_interrupt_project()
+    ru_unfinished_dm(fx)
+    unfinished <- .datom_unfinished_files(fx$conn)
+
+    sha <- suppressMessages(ru_config_commands[[cmd]](fx))
+
+    expect_identical(ru_remote_tip(fx), sha)
+    expect_identical(.datom_unfinished_files(fx$conn), unfinished)
+  })
+
+  test_that(paste0("datom_repo_", cmd, "() stops on a merge datom did not start, changing nothing"), {
+    fx <- local_interrupt_project()
+    ru_write(fx$conn, "dm")
+    ru_open_other_merge(fx)
+    before <- ru_snapshot(fx)
+
+    expect_error(
+      suppressMessages(ru_config_commands[[cmd]](fx)),
+      class = "datom_merge_other"
+    )
+
+    expect_identical(ru_snapshot(fx), before)
+  })
+}

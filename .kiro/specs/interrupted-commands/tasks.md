@@ -68,8 +68,18 @@ check found something). Its checkpoint review the same day (below) agreed with t
 and found one gap and one ordering fault, fixed the same day with three smaller points in
 `ba57f3a`, and the owner closed task 7 the same day. Task 8 (the git and config commands) done the
 same day, after its open point was settled by the owner (the stop also looks at datom files already
-staged); its entry below lists five differences from the plan. **Next: the purity audit on a more
-capable model (tasks 2-8, flagged at planning), then task 8's checkpoint review.**
+staged); its entry below lists five differences from the plan. Its checkpoint review the same day
+(below) approved it with one point, taken with a second found while checking it. **Next: the
+reviewer's check of the fix, then the purity audit on a more capable model (tasks 2-8, flagged at
+planning).**
+
+**Task 8's checkpoint review, 2026-11-07**, by another agent, of `3f48a48`, read against the code;
+evaluated with the owner:
+
+| Point | Outcome |
+|---|---|
+| The review's one point: `datom_repo_attach_governance()` and `datom_repo_set_data_store()` commit one named file, and a commit takes the whole index, so a write stopped between staging and committing (S3) would be committed and pushed with the config change | **Taken, placed earlier**: the review put the stop just before the commit; it runs at the start instead, before the command writes its file, so the stop's "datom changed nothing" is true. D9 and R3.5 amended to name both commands (owner's "ok") |
+| Ours, found while checking: the same two commands commit before their push pulls, so the merge check inside the pull comes too late. A probe: during a merge of a local branch left open with `--no-commit`, `.datom_git_commit()` of `.datom/project.yaml` made a two-parent commit and removed `MERGE_HEAD`, finishing the user's merge (S8 state, R3.9's harm) | **Taken** (owner's default): both run the merge check at their start too. No requirements change, R3.9 already covers it; design section 4 updated |
 
 **Task 7's checkpoint review, 2026-11-07**, by another agent, of `9284ca9`, read against the code.
 Points 1 and 2 reproduced here on throwaway projects before fixing; evaluated with the owner:
@@ -1323,10 +1333,10 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
        datom's own uncommitted files, and the repair reaches what it can (AC17)",
        `test-foreign-content.R`) is rewritten to the stop: the commit stops, the human's edit stays,
        and after `datom_validate(fix = TRUE)` the same commit takes the human's edit only.
-    5. Not covered, left as it is (S8): `datom_repo_attach_governance()` and
-       `datom_repo_set_data_store()` commit one named file through `.datom_git_commit()`, which also
-       takes whatever is already staged, so a datom file the user staged by hand goes into their
-       commit. D9 names only `datom_repo_commit()`; raised at the checkpoint.
+    5. Left open at `3f48a48`, closed by its checkpoint review (below): `datom_repo_attach_governance()`
+       and `datom_repo_set_data_store()` commit one named file through `.datom_git_commit()`, which
+       also takes whatever is already staged. Each now runs the merge check and the same stop at its
+       start, before writing its file.
   - Tests in the new `test-repo-unfinished.R` (real projects): the stop with `paths = NULL`, with
     six path forms, and with a staged datom file, each changing nothing in the clone, the remote or
     storage; a commit of the user's own path going ahead and leaving the write's files as they
@@ -1347,6 +1357,8 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     | already-staged files ignored | the staged test |
     | `datom_repo_push()` taking the names after its push | its R3.6 test |
     | the message removed from `datom_repo_commit()` / `datom_repo_attach_governance()` / `datom_repo_set_data_store()` | that command's R3.6 test, one each |
+    | (checkpoint review) the merge check removed from `datom_repo_set_data_store()` / `datom_repo_attach_governance()` | that command's merge test, one each |
+    | (checkpoint review) the staged-file stop removed from `datom_repo_set_data_store()` / `datom_repo_attach_governance()` | that command's staged test, one each |
   - `R/repo.R`: `datom_repo_commit()` calls the merge check, then, before staging, stops when the
     commit would include datom's own uncommitted files (`paths = NULL`, or an explicit path naming
     one), naming the artifact and `datom_validate(fix = TRUE)`; it resets nothing (R3.9, R3.5, D9 as
