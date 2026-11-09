@@ -25,14 +25,15 @@ so either stop changes nothing. Two checks, in order:
 \item \strong{The merge check} (\code{\link[=.datom_check_merge]{.datom_check_merge()}}). Each of these commands
 commits before its push pulls (and \code{datom_repo_commit(push = FALSE)} never
 pulls), so the check inside the pull would come too late: a commit made
-mid-merge finishes the merge, datom's or the user's (requirements R3.9).
+mid-merge finishes the merge, datom's or the user's.
 \item \strong{A commit that would take datom's own uncommitted files stops.} The
-commands never commit a datom write that never committed (R3.5, D9). The
+commands never commit a datom write that never committed. The
 two config commands pass their one file as \code{paths}, so for them it stops
 only on a datom file already staged. Such a write's files would otherwise
 become a version nobody published, with half its steps done. The command
 acts on an artifact it is not writing, so it stops rather than reset them
-(D14 principle 8): the artifact's own write, re-run, finishes it, and
+(nothing proves whose work it is): the artifact's own write, re-run,
+finishes it, and
 \code{datom_validate(fix = TRUE)} discards the changes.
 }
 

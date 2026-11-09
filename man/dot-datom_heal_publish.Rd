@@ -18,10 +18,10 @@ Invisibly, a list with \code{published} (the versions published, named by
 artifact) and \code{pushed} (\code{TRUE} when it pushed).
 }
 \description{
-The second half of heal (requirements R2.2, R2.3, R3.2-R3.4, R3.10), run by
-each route right after its own pull (see \code{\link[=.datom_heal]{.datom_heal()}} for the order). It
-finishes a committed version that GitHub or storage lacks: a write whose push
-broke, or whose storage upload failed after the push.
+The second half of heal, run by each route right after its own pull (see
+\code{\link[=.datom_heal]{.datom_heal()}} for the order). It finishes a committed version that GitHub
+or storage lacks: a write whose push broke, or whose storage upload failed
+after the push.
 }
 \details{
 \strong{Check, then act.} The check is one read of the stored manifest: does any
@@ -30,11 +30,10 @@ anything run. Whether the clone is ahead of the remote is not the check: an
 unfinished datom version always shows as a differing row (the manifest is
 published after the push), while a commit of the user's own, made with
 \code{datom_repo_commit(push = FALSE)}, makes the clone ahead with nothing to
-finish, and a write with nothing to save must not push it (task 4b's
-checkpoint review). On a clean, current, published clone this reads and
-writes nothing else.
+finish, and a write with nothing to save must not push it. On a clean,
+current, published clone this reads and writes nothing else.
 
-\strong{A write acts only on its own artifacts} (requirements D14 principle 8):
+\strong{A write acts only on its own artifacts}:
 \itemize{
 \item another artifact whose stored row differs, or a stored row for an artifact
 the clone lacks, stops the command before the push, naming it and

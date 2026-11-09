@@ -24,7 +24,7 @@ artifact whose never-committed first write was reset is listed with
 }
 \description{
 Brings storage in line with git for \strong{every artifact of either kind}
-(\code{\link[=.datom_clone_artifact_names]{.datom_clone_artifact_names()}}), in this order (requirements R5):
+(\code{\link[=.datom_clone_artifact_names]{.datom_clone_artifact_names()}}), in this order:
 }
 \details{
 \enumerate{

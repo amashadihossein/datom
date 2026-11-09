@@ -15,7 +15,7 @@ Invisibly \code{NULL}.
 \description{
 The git and config commands (\code{\link[=datom_repo_push]{datom_repo_push()}}, \code{\link[=datom_repo_commit]{datom_repo_commit()}},
 \code{\link[=datom_repo_attach_governance]{datom_repo_attach_governance()}}, \code{\link[=datom_repo_set_data_store]{datom_repo_set_data_store()}}) push and do
-not publish (requirements R3.6, D10). When the commits they push hold a datom
+not publish. When the commits they push hold a datom
 version, this names each such artifact and the way to publish it. Every
 version in commits being pushed is unpublished by definition, since a write
 publishes only after its push, so this needs no storage read:

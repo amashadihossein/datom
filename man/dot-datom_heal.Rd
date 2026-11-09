@@ -24,7 +24,7 @@ back.
 }
 \description{
 Heal has two halves, and the command's own pull runs between them: this one,
-the reset (requirements R2.4, R3.1), and \code{\link[=.datom_heal_publish]{.datom_heal_publish()}}, which
+the reset, and \code{\link[=.datom_heal_publish]{.datom_heal_publish()}}, which
 pushes and publishes what an earlier run committed. Each route calls the
 three in that order, in exactly one place, after the checks that need no
 storage state heal can change and before change detection:

@@ -439,9 +439,8 @@ datom_read <- function(conn,
 #' in: `NA` and `NA_character_` are saved as `null`, which reads back as
 #' nothing, and the others as the text `"NA"`, `"NaN"` or `"Inf"`. The first
 #' kind also changes the version id the document hashes to once it has been
-#' read back, so every lookup of that version by id fails (task 4b's checkpoint
-#' review, 2026-11-06). Absence is spelled by leaving the field out, as a set's
-#' tags already require.
+#' read back, so every lookup of that version by id fails. Absence is spelled
+#' by leaving the field out, as a set's tags already require.
 #'
 #' Runs while the metadata is built, before any hashing of it, any heal and any
 #' file write, so a refusal changes nothing.

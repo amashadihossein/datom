@@ -108,7 +108,7 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 #' The Repair: Finish Every Artifact's Unfinished Work and Publish It All
 #'
 #' Brings storage in line with git for **every artifact of either kind**
-#' ([.datom_clone_artifact_names()]), in this order (requirements R5):
+#' ([.datom_clone_artifact_names()]), in this order:
 #'
 #' 1. heal's reset and the pull, on every artifact (`all = TRUE`): datom's
 #'    files an interrupted write left uncommitted are put back to the last
@@ -364,7 +364,7 @@ readline <- NULL
 
 #' Say What the Repair Did, Per Artifact
 #'
-#' One line per artifact (requirements R5.3), then what became of the
+#' One line per artifact, then what became of the
 #' manifest. A failure names its file and its error, and the way out.
 #'
 #' @param results What [.datom_repair_results()] returned.
@@ -824,7 +824,7 @@ datom_sync_manifest <- function(conn,
 
   # The manifest as last committed, not the working tree's: a write that stopped
   # before its commit has already rewritten the working tree's row, and the
-  # table must still show as changed so the sync writes it again (R4.1).
+  # table must still show as changed so the sync writes it again.
   # .datom_read_manifest() also checks the declared schema version, because the
   # clone can be ahead of this build (a collaborator wrote with a newer datom and
   # this developer pulled) and the comparison below would otherwise run against a
@@ -874,7 +874,7 @@ datom_sync_manifest <- function(conn,
 
   # A table whose input file matches its last commit, but whose version is in
   # commits not yet pushed (a sync or write that stopped at its push). Read from
-  # the clone alone: no fetch and no storage read (R4.2). Asked only when some
+  # the clone alone: no fetch and no storage read. Asked only when some
   # row is unchanged, which a repo with no commits never has.
   unchanged <- result$status == "unchanged"
   if (any(unchanged)) {
@@ -1102,13 +1102,13 @@ datom_sync <- function(conn,
 
   # --- the start of every write: the format check, heal and the pull ---
   # Once for the whole batch, so the sync pulls and reads the stored manifest
-  # once (R3.7, R3.4), and each table's write below skips them (`.healed`).
+  # once, and each table's write below skips them (`.healed`).
   # Every table in the preview is the sync's own: heal pushes and publishes any
   # of them an earlier run committed and storage lacks (an `unpushed` row, or one
   # pushed but not published), and puts back the uncommitted files of the rows
   # it writes again (`new`, `changed`). Unfinished work on any other table, or
   # uncommitted edits of a row it does not write, stops the sync here, before
-  # anything changes (R4.4). The format check comes first, on every table heal
+  # anything changes. The format check comes first, on every table heal
   # may act on, as `datom_write()`'s door does for its one table.
   own <- unique(manifest$name)
   rewrite <- unique(manifest$name[manifest$status %in% c("new", "changed")])
@@ -1123,7 +1123,7 @@ datom_sync <- function(conn,
   manifest$error <- NA_character_
 
   # An `unpushed` row is work, and heal has just done it: pushed and published
-  # without importing the file again (R4.3). So is an `unchanged` row whose
+  # without importing the file again. So is an `unchanged` row whose
   # table heal published (pushed by an earlier run, not published). Heal's own
   # message has named each one it published.
   finished <- manifest$status == "unpushed" |
@@ -1170,7 +1170,7 @@ datom_sync <- function(conn,
     tbl_original_file_sha <- manifest$original_file_sha[i]
 
     # For telling, if this table's write fails, whether it had begun changing
-    # the clone (R4.6).
+    # the clone.
     head_before <- .datom_clone_head(conn$path)
 
     tryCatch({
@@ -1191,7 +1191,7 @@ datom_sync <- function(conn,
       # pull ran once above, for the whole batch. A write whose push brought in
       # a teammate's version storage lacks holds back the manifest and warns;
       # the warning goes through to the caller, and the sync stops after it
-      # (R4.6), since no later write checks the stored manifest again.
+      # since no later write checks the stored manifest again.
       write_result <- withCallingHandlers(
         datom_write(
           conn,
@@ -1214,7 +1214,7 @@ datom_sync <- function(conn,
 
       manifest$result[i] <- "success"
 
-      # A stale preview (DD3): a teammate imported the same file, the pull above
+      # A stale preview: a teammate imported the same file, the pull above
       # brought it in, and the write found nothing to save.
       if (identical(write_result$action, "none")) {
         cli::cli_alert_info("{.val {tbl_name}} was already up to date.")
@@ -1247,7 +1247,7 @@ datom_sync <- function(conn,
       if (left_changes) stopped_at <<- tbl_name
     })
 
-    # No later table may be written (R4.6) when this one's write:
+    # No later table may be written when this one's write:
     # - failed after it had begun changing the clone: a later commit would take
     #   its uncommitted manifest row, and a later manifest upload would name a
     #   version storage lacks;
@@ -1286,7 +1286,7 @@ datom_sync <- function(conn,
 
 #' Say That a Sync Stopped Partway
 #'
-#' Requirements R4.6, for its two reasons. The way out is the same
+#' For either of its two reasons. The way out is the same
 #' [datom_sync()] call again, with the same preview, so rows the user dropped
 #' from the preview stay dropped; it was traced for each:
 #' - **a write that failed after changing the clone**: before its commit, heal

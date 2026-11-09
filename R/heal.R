@@ -239,8 +239,8 @@
 
 #' Finish a Merge Whose Only Conflict Is the Manifest
 #'
-#' Requirements R3.8 (design section 5). The manifest is derived: every fact on
-#' a row is also recorded in the artifact's own files. So a manifest a merge
+#' The manifest is derived: every fact on a row is also recorded in the
+#' artifact's own files. So a manifest a merge
 #' left in conflict is rebuilt from those files rather than merged by hand. Two
 #' callers: the pull ([.datom_git_pull()]), when its merge conflicts in
 #' `.datom/manifest.json` and nowhere else (every write rewrites the manifest's
@@ -272,9 +272,9 @@
 #'
 #' **It needs no connection.** Everything it reads is in the clone: since the
 #' writer floor is read from `.datom/project.yaml`, the format check uses only
-#' the clone's path, so a stand-in holding the path is passed (design section
-#' 10, item 6). That is how the pull inside [datom_get_conn()], which runs
-#' before the connection exists, reaches it.
+#' the clone's path, so a stand-in holding the path is passed. That is how the
+#' pull inside [datom_get_conn()], which runs before the connection exists,
+#' reaches it.
 #'
 #' It runs only on the conflict path, so the common path never reaches it.
 #'
@@ -473,7 +473,7 @@
 #' Heal What an Interrupted Write Left Behind: the Reset
 #'
 #' Heal has two halves, and the command's own pull runs between them: this one,
-#' the reset (requirements R2.4, R3.1), and [.datom_heal_publish()], which
+#' the reset, and [.datom_heal_publish()], which
 #' pushes and publishes what an earlier run committed. Each route calls the
 #' three in that order, in exactly one place, after the checks that need no
 #' storage state heal can change and before change detection:
@@ -808,8 +808,8 @@
 #' reset (datom's files never committed), heal's publish (a stored row that
 #' differs, or one for an artifact the clone lacks), the git and config
 #' commands' stop before a commit, and the pull blocked by an unfinished write.
-#' A write never acts on an artifact it is not writing (requirements D14,
-#' principle 8): nothing can prove whose work a leftover is. The way out is the
+#' A write never acts on an artifact it is not writing: nothing can prove
+#' whose work a leftover is. The way out is the
 #' same for every kind: that artifact's own write, re-run, finishes it, and
 #' `datom_validate(fix = TRUE)` finishes every artifact from the clone,
 #' discarding changes never committed.
@@ -885,10 +885,10 @@
 
 #' Heal What an Interrupted Write Left Behind: Push and Publish
 #'
-#' The second half of heal (requirements R2.2, R2.3, R3.2-R3.4, R3.10), run by
-#' each route right after its own pull (see [.datom_heal()] for the order). It
-#' finishes a committed version that GitHub or storage lacks: a write whose push
-#' broke, or whose storage upload failed after the push.
+#' The second half of heal, run by each route right after its own pull (see
+#' [.datom_heal()] for the order). It finishes a committed version that GitHub
+#' or storage lacks: a write whose push broke, or whose storage upload failed
+#' after the push.
 #'
 #' **Check, then act.** The check is one read of the stored manifest: does any
 #' stored row name a different version from the clone's? Only then does
@@ -896,11 +896,10 @@
 #' unfinished datom version always shows as a differing row (the manifest is
 #' published after the push), while a commit of the user's own, made with
 #' `datom_repo_commit(push = FALSE)`, makes the clone ahead with nothing to
-#' finish, and a write with nothing to save must not push it (task 4b's
-#' checkpoint review). On a clean, current, published clone this reads and
-#' writes nothing else.
+#' finish, and a write with nothing to save must not push it. On a clean,
+#' current, published clone this reads and writes nothing else.
 #'
-#' **A write acts only on its own artifacts** (requirements D14 principle 8):
+#' **A write acts only on its own artifacts**:
 #' - another artifact whose stored row differs, or a stored row for an artifact
 #'   the clone lacks, stops the command before the push, naming it and
 #'   `datom_validate(fix = TRUE)`;
@@ -985,7 +984,7 @@
     )
   }
 
-  # The containment check (R3.10): storage must not name a version of the
+  # The containment check: storage must not name a version of the
   # artifact that this clone's history lacks.
   unseen <- own[purrr::map_lgl(own, function(nm) {
     version <- stored$rows[[nm]]$current_version
@@ -1019,8 +1018,8 @@
 
 #' The Stored Manifest, Told Apart From an Absent or Unreadable One
 #'
-#' The one read of the stored manifest heal's publish makes (requirements
-#' R3.4). An existence check first, because the two failures mean different
+#' The one read of the stored manifest heal's publish makes. An existence
+#' check first, because the two failures mean different
 #' things: an absent manifest means storage names nothing, so every artifact
 #' the clone holds differs from it; one that exists and cannot be read (storage
 #' unreachable, or the file damaged) means datom cannot tell what storage
@@ -1537,8 +1536,8 @@
 
 #' The Pull a Write Makes Before Its Own Work
 #'
-#' The write commands' step between heal's reset and the command's own work
-#' (requirements R3.7): [.datom_git_pull()], then, only when HEAD moved, the
+#' The write commands' step between heal's reset and the command's own work:
+#' [.datom_git_pull()], then, only when HEAD moved, the
 #' format check on every artifact. A merge -- a fast-forward included -- may have
 #' brought documents from a newer datom, or a raised writer floor in
 #' `project.yaml`. Without a merge nothing new arrived, and the check at the
@@ -1560,8 +1559,8 @@
 
 #' The Artifacts Whose Files the Commits Not Yet Pushed Change
 #'
-#' What the scan's `unpushed` status is read from (requirements R4.2), and what
-#' the push commands' message will name (R3.6): the artifacts whose datom files
+#' What the scan's `unpushed` status is read from, and what the push commands'
+#' message names: the artifacts whose datom files
 #' differ between HEAD and the last commit it shares with its upstream branch.
 #' Taken from that common commit rather than from the upstream tip, so commits
 #' the remote holds and the clone lacks (a teammate's, already fetched) are not
@@ -1626,8 +1625,8 @@
 
 #' Did a Failed Write Leave Anything in the Clone
 #'
-#' [datom_sync()] asks this after one table's write fails, on the error path only
-#' (requirements R4.6). The sync heals once for the whole batch, so no later
+#' [datom_sync()] asks this after one table's write fails, on the error path
+#' only. The sync heals once for the whole batch, so no later
 #' table's write checks for another table's unfinished work: a later commit would
 #' take the failed table's uncommitted manifest row, and a later manifest upload
 #' would name a version whose `metadata.json` is not in storage. So the sync stops
@@ -1662,14 +1661,15 @@
 #' 1. **The merge check** ([.datom_check_merge()]). Each of these commands
 #'    commits before its push pulls (and `datom_repo_commit(push = FALSE)` never
 #'    pulls), so the check inside the pull would come too late: a commit made
-#'    mid-merge finishes the merge, datom's or the user's (requirements R3.9).
+#'    mid-merge finishes the merge, datom's or the user's.
 #' 2. **A commit that would take datom's own uncommitted files stops.** The
-#'    commands never commit a datom write that never committed (R3.5, D9). The
+#'    commands never commit a datom write that never committed. The
 #'    two config commands pass their one file as `paths`, so for them it stops
 #'    only on a datom file already staged. Such a write's files would otherwise
 #'    become a version nobody published, with half its steps done. The command
 #'    acts on an artifact it is not writing, so it stops rather than reset them
-#'    (D14 principle 8): the artifact's own write, re-run, finishes it, and
+#'    (nothing proves whose work it is): the artifact's own write, re-run,
+#'    finishes it, and
 #'    `datom_validate(fix = TRUE)` discards the changes.
 #'
 #' **What the commit would take** is worked out the way git stages, before
@@ -1739,7 +1739,7 @@
 #'
 #' The git and config commands ([datom_repo_push()], [datom_repo_commit()],
 #' [datom_repo_attach_governance()], [datom_repo_set_data_store()]) push and do
-#' not publish (requirements R3.6, D10). When the commits they push hold a datom
+#' not publish. When the commits they push hold a datom
 #' version, this names each such artifact and the way to publish it. Every
 #' version in commits being pushed is unpublished by definition, since a write
 #' publishes only after its push, so this needs no storage read:

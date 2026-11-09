@@ -15,8 +15,8 @@
 \code{TRUE} or \code{FALSE}.
 }
 \description{
-\code{\link[=datom_sync]{datom_sync()}} asks this after one table's write fails, on the error path only
-(requirements R4.6). The sync heals once for the whole batch, so no later
+\code{\link[=datom_sync]{datom_sync()}} asks this after one table's write fails, on the error path
+only. The sync heals once for the whole batch, so no later
 table's write checks for another table's unfinished work: a later commit would
 take the failed table's uncommitted manifest row, and a later manifest upload
 would name a version whose \code{metadata.json} is not in storage. So the sync stops

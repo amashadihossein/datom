@@ -13,8 +13,8 @@
 Invisibly, the artifacts whose rows were rebuilt.
 }
 \description{
-Requirements R3.8 (design section 5). The manifest is derived: every fact on
-a row is also recorded in the artifact's own files. So a manifest a merge
+The manifest is derived: every fact on a row is also recorded in the
+artifact's own files. So a manifest a merge
 left in conflict is rebuilt from those files rather than merged by hand. Two
 callers: the pull (\code{\link[=.datom_git_pull]{.datom_git_pull()}}), when its merge conflicts in
 \code{.datom/manifest.json} and nowhere else (every write rewrites the manifest's
@@ -48,9 +48,9 @@ the user resolved and staged. A message says so.
 
 \strong{It needs no connection.} Everything it reads is in the clone: since the
 writer floor is read from \code{.datom/project.yaml}, the format check uses only
-the clone's path, so a stand-in holding the path is passed (design section
-10, item 6). That is how the pull inside \code{\link[=datom_get_conn]{datom_get_conn()}}, which runs
-before the connection exists, reaches it.
+the clone's path, so a stand-in holding the path is passed. That is how the
+pull inside \code{\link[=datom_get_conn]{datom_get_conn()}}, which runs before the connection exists,
+reaches it.
 
 It runs only on the conflict path, so the common path never reaches it.
 }

@@ -526,7 +526,7 @@ datom_validate <- function(conn, fix = FALSE) {
 
 #' Does the Stored Manifest Name the Version the Stored Documents Describe
 #'
-#' The `manifest_mismatch_s3` check (requirements R5.5). Storage against
+#' The `manifest_mismatch_s3` check. Storage against
 #' itself: the stored `metadata.json` and history describe one version
 #' ([.datom_documents_version()]: the document's own version when this build can
 #' place every field and the history names it, else the recorded one), and the

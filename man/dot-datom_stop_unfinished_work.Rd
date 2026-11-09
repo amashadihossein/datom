@@ -26,8 +26,8 @@ Does not return.
 reset (datom's files never committed), heal's publish (a stored row that
 differs, or one for an artifact the clone lacks), the git and config
 commands' stop before a commit, and the pull blocked by an unfinished write.
-A write never acts on an artifact it is not writing (requirements D14,
-principle 8): nothing can prove whose work a leftover is. The way out is the
+A write never acts on an artifact it is not writing: nothing can prove
+whose work a leftover is. The way out is the
 same for every kind: that artifact's own write, re-run, finishes it, and
 \code{datom_validate(fix = TRUE)} finishes every artifact from the clone,
 discarding changes never committed.

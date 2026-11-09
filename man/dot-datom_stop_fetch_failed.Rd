@@ -15,7 +15,7 @@
 Does not return.
 }
 \description{
-A failed fetch stops the command before it publishes anything (design DD1):
+A failed fetch stops the command before it publishes anything:
 the remote cannot be compared with, so nothing that depends on it is decided.
 }
 \keyword{internal}

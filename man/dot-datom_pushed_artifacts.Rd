@@ -13,8 +13,8 @@
 Artifact names, possibly empty.
 }
 \description{
-What the scan's \code{unpushed} status is read from (requirements R4.2), and what
-the push commands' message will name (R3.6): the artifacts whose datom files
+What the scan's \code{unpushed} status is read from, and what the push commands'
+message names: the artifacts whose datom files
 differ between HEAD and the last commit it shares with its upstream branch.
 Taken from that common commit rather than from the upstream tip, so commits
 the remote holds and the clone lacks (a teammate's, already fetched) are not

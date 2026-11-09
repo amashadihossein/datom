@@ -20,9 +20,9 @@ Invisibly, \code{TRUE} when HEAD moved (a merge or a fast-forward),
 }
 \description{
 The pull every write makes before it writes to the git remote or to storage
-(requirements R3.7), and the one \code{\link[=datom_pull]{datom_pull()}}, the push commands and the
-migration pull make. Owned by the commands, not by heal: removing heal would
-leave it in place.
+(no command writes there before it has pulled), and the one \code{\link[=datom_pull]{datom_pull()}},
+the push commands and the migration pull make. Owned by the commands, not by
+heal: removing heal would leave it in place.
 }
 \details{
 In order:

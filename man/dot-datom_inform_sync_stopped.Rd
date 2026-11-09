@@ -20,7 +20,7 @@ not be read to check them, else \code{NULL}).}
 Invisibly \code{NULL}.
 }
 \description{
-Requirements R4.6, for its two reasons. The way out is the same
+For either of its two reasons. The way out is the same
 \code{\link[=datom_sync]{datom_sync()}} call again, with the same preview, so rows the user dropped
 from the preview stay dropped; it was traced for each:
 \itemize{

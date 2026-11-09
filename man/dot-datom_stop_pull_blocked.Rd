@@ -24,20 +24,19 @@ the artifact and says to re-run that write, which puts its files back and
 finishes, or \code{datom_validate(fix = TRUE)}. The stash recipe would be wrong
 here: \verb{git stash pop} brings the write's manifest row back on top of the
 incoming manifest and leaves conflict markers in \code{.datom/manifest.json},
-which only hand-merging datom's JSON clears (review of task 4a, traced).
+which only hand-merging datom's JSON clears (traced).
 The artifacts are told apart as heal's reset tells them apart
 (\code{\link[=.datom_unfinished_owners]{.datom_unfinished_owners()}}), so both name the same ones. If the user's
 own files are in the way too, the re-run's own pull stops next with the
 stash recipe.
-\item \strong{Only the user's own files}: the \verb{git stash -u} recipe, traced
-(\code{research/dirty_pull_probe.R}): \code{-u}, because a plain \verb{git stash} leaves
-an untracked file in the way; and "resolve anything \verb{git stash pop}
-reports", because pop can report a conflict or refuse to restore an
-untracked file, keeping the stash, and a set write listing such a file in
-\code{include_paths} would otherwise commit conflict markers. The files are not
-named: that would mean comparing the clone's changes with what the incoming
-commits touch, for a rare case, and the recipe works without knowing which
-file blocks.
+\item \strong{Only the user's own files}: the \verb{git stash -u} recipe, traced: \code{-u},
+because a plain \verb{git stash} leaves an untracked file in the way; and
+"resolve anything \verb{git stash pop} reports", because pop can report a
+conflict or refuse to restore an untracked file, keeping the stash, and a
+set write listing such a file in \code{include_paths} would otherwise commit
+conflict markers. The files are not named: that would mean comparing the
+clone's changes with what the incoming commits touch, for a rare case, and
+the recipe works without knowing which file blocks.
 }
 }
 \keyword{internal}

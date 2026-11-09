@@ -17,7 +17,7 @@
 Invisibly \code{NULL}.
 }
 \description{
-One line per artifact (requirements R5.3), then what became of the
+One line per artifact, then what became of the
 manifest. A failure names its file and its error, and the way out.
 }
 \keyword{internal}

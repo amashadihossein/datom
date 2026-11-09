@@ -13,8 +13,8 @@
 Invisibly, whether HEAD moved.
 }
 \description{
-The write commands' step between heal's reset and the command's own work
-(requirements R3.7): \code{\link[=.datom_git_pull]{.datom_git_pull()}}, then, only when HEAD moved, the
+The write commands' step between heal's reset and the command's own work:
+\code{\link[=.datom_git_pull]{.datom_git_pull()}}, then, only when HEAD moved, the
 format check on every artifact. A merge -- a fast-forward included -- may have
 brought documents from a newer datom, or a raised writer floor in
 \code{project.yaml}. Without a merge nothing new arrived, and the check at the

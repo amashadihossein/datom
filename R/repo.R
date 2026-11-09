@@ -95,7 +95,7 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
   # Before anything reads or rewrites the file, so either stop changes nothing.
   # Ahead of the read too: with `project.yaml` itself conflicted, the read would
   # fail on the conflict markers with a parser error instead of the merge
-  # message (task 8's checkpoint review).
+  # message.
   .datom_check_before_commit(conn, ".datom/project.yaml")
 
   # --- Read full yaml (read-modify-write: never reconstruct from conn) --------

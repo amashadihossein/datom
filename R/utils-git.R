@@ -716,9 +716,9 @@
 #' Pull from Remote (Fetch, and Merge Only When Behind)
 #'
 #' The pull every write makes before it writes to the git remote or to storage
-#' (requirements R3.7), and the one [datom_pull()], the push commands and the
-#' migration pull make. Owned by the commands, not by heal: removing heal would
-#' leave it in place.
+#' (no command writes there before it has pulled), and the one [datom_pull()],
+#' the push commands and the migration pull make. Owned by the commands, not by
+#' heal: removing heal would leave it in place.
 #'
 #' In order:
 #'
@@ -925,7 +925,7 @@
 
 #' Stop When the Fetch Fails
 #'
-#' A failed fetch stops the command before it publishes anything (design DD1):
+#' A failed fetch stops the command before it publishes anything:
 #' the remote cannot be compared with, so nothing that depends on it is decided.
 #'
 #' @param remote_name The remote.
@@ -957,20 +957,19 @@
 #'   finishes, or `datom_validate(fix = TRUE)`. The stash recipe would be wrong
 #'   here: `git stash pop` brings the write's manifest row back on top of the
 #'   incoming manifest and leaves conflict markers in `.datom/manifest.json`,
-#'   which only hand-merging datom's JSON clears (review of task 4a, traced).
+#'   which only hand-merging datom's JSON clears (traced).
 #'   The artifacts are told apart as heal's reset tells them apart
 #'   ([.datom_unfinished_owners()]), so both name the same ones. If the user's
 #'   own files are in the way too, the re-run's own pull stops next with the
 #'   stash recipe.
-#' - **Only the user's own files**: the `git stash -u` recipe, traced
-#'   (`research/dirty_pull_probe.R`): `-u`, because a plain `git stash` leaves
-#'   an untracked file in the way; and "resolve anything `git stash pop`
-#'   reports", because pop can report a conflict or refuse to restore an
-#'   untracked file, keeping the stash, and a set write listing such a file in
-#'   `include_paths` would otherwise commit conflict markers. The files are not
-#'   named: that would mean comparing the clone's changes with what the incoming
-#'   commits touch, for a rare case, and the recipe works without knowing which
-#'   file blocks.
+#' - **Only the user's own files**: the `git stash -u` recipe, traced: `-u`,
+#'   because a plain `git stash` leaves an untracked file in the way; and
+#'   "resolve anything `git stash pop` reports", because pop can report a
+#'   conflict or refuse to restore an untracked file, keeping the stash, and a
+#'   set write listing such a file in `include_paths` would otherwise commit
+#'   conflict markers. The files are not named: that would mean comparing the
+#'   clone's changes with what the incoming commits touch, for a rare case, and
+#'   the recipe works without knowing which file blocks.
 #'
 #' @param path Repository path, to look for datom's own uncommitted files.
 #' @return Does not return.

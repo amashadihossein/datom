@@ -15,8 +15,8 @@ A list with \code{status} (\code{"ok"}, \code{"absent"} or \code{"unreadable"}),
 \code{"unreadable"}).
 }
 \description{
-The one read of the stored manifest heal's publish makes (requirements
-R3.4). An existence check first, because the two failures mean different
+The one read of the stored manifest heal's publish makes. An existence
+check first, because the two failures mean different
 things: an absent manifest means storage names nothing, so every artifact
 the clone holds differs from it; one that exists and cannot be read (storage
 unreachable, or the file damaged) means datom cannot tell what storage
