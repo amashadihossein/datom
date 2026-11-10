@@ -31,6 +31,17 @@ Git is the source of truth for all metadata (manifest, dispatch, table
 metadata). The manifest and other metadata files live in git and are
 pulled along with any other committed changes.
 
+When the incoming commits conflict with this clone's only in
+\code{.datom/manifest.json} (two people wrote different tables), datom rebuilds
+that file from the tables' own files and finishes the merge. Any other
+conflict stops the pull with the files in conflict and the
+\verb{git checkout MERGE_HEAD -- ...} command for each conflicted table or set;
+every later datom command stops the same way until the merge is finished. A
+merge datom did not start (of a local branch, say) is never finished unasked:
+finish it with \code{finish_merge = TRUE}, or end it with \verb{git merge --abort}. If
+your own changed files are in the way of the incoming commits, the pull stops
+and gives the \verb{git stash -u} steps.
+
 Requires developer role (readers have no git access).
 }
 \examples{

@@ -1001,6 +1001,17 @@ print.datom_store_s3_creds <- function(x, ...) {
 #' the governance or data component of a `datom_store`. Validates that the path
 #' exists (or is creatable) and is writable.
 #'
+#' A data file is stored only if nothing is stored at its key yet: it is copied
+#' under a temporary name beginning with `.` and ending in `.tmp`, beside the
+#' final key, then hard-linked into place, and the temporary name removed. A
+#' crash in between can leave that temporary file. Readers never see it, and
+#' [datom_storage_copy()] and [datom_storage_verify()] skip it, though
+#' [datom_storage_list()] shows it; it takes space only if the crash came
+#' mid-copy. On a file system without hard links the file is checked for, then
+#' moved into place, so two writers storing the same new content at the same
+#' moment can replace each other's file, and reads of one of the two versions
+#' are then refused by the hash check.
+#'
 #' @param path Directory path for the store root.
 #' @param prefix Key prefix within the root (e.g., `"project/"`). NULL for no
 #'   prefix.

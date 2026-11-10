@@ -31,8 +31,9 @@ A stored version this clone has never seen is replaced by the clone's,
 and an artifact the stored manifest names but the clone lacks loses its
 row; each gets a warning. So a repair run while a teammate is writing can
 replace the version they published seconds earlier, until their table's
-next write. The repair reports, per artifact, what it reset, pushed and
-published.
+next write. If the stored manifest cannot be read, every artifact and the
+manifest are published from the clone, with a warning saying so. The
+repair reports, per artifact, what it reset, pushed and published.
 
 A merge in progress, a failed fetch, a refused push or a set payload
 storage will not take stops the repair with an error before anything is

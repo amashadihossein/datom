@@ -21,7 +21,11 @@ datom_write(
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
-\item{data}{Data frame to write. If NULL with name, does metadata-only sync.}
+\item{data}{Data frame to write. If \code{NULL} with \code{name}, publishes what is
+committed for that table (its metadata and history, then the manifest),
+pushing first when GitHub lacks the commit; it commits nothing, and stops
+on an uncommitted change to that table's datom files. To change custom
+metadata, write the data again with \verb{metadata =}.}
 
 \item{name}{Table name. If NULL with NULL data, runs the repair of
 \code{datom_validate(fix = TRUE)} after asking: it puts back datom's files an
@@ -73,6 +77,29 @@ the project's GitHub repository. If nothing has changed since the last
 version, nothing is saved. To bring in files rather than data frames, use
 \code{\link[=datom_sync]{datom_sync()}}.
 }
+\section{If a write stops partway}{
+
+If \code{datom_write()} stops partway, for example on a dropped connection or
+Ctrl-C, run the same call again: it finishes that version rather than saving
+it twice. Every write first pulls what teammates have pushed; when two clones
+disagree only in the project's manifest, datom rebuilds that file and finishes
+the merge itself. If GitHub cannot be reached, another table or set has
+unfinished work, or a merge is in progress, the write stops before changing
+anything and says what to run (for another artifact's unfinished work,
+\code{datom_validate(fix = TRUE)}, which finishes every table and set).
+
+The data file goes into storage before anything is committed, so a write
+that stops before its commit can leave a data file that no version names: it
+costs space, and for sensitive data the bytes are in the bucket. datom's own
+files (each table's \code{metadata.json} and \code{version_history.json}, a set's
+\code{set.json}, and \code{.datom/manifest.json}) are written only by datom commands;
+an edit by hand is treated as an unfinished write: a write of that table
+undoes it, and other writes stop on it. Commit your own
+files with \code{\link[=datom_repo_commit]{datom_repo_commit()}} rather than a plain \verb{git commit}, which can
+capture a datom write halfway through. Two R sessions writing through one
+clone at the same time are not supported.
+}
+
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
 # local directory for object storage.

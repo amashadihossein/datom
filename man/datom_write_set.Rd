@@ -184,6 +184,18 @@ name. A \code{name} argument that disagrees with the set's own name stops it too
 A plain list of member records carries neither, so neither is checked.
 }
 
+\section{If a write stops partway}{
+
+If \code{datom_write_set()} stops partway, for example on a dropped connection,
+run the same call again: it finishes that version rather than saving it
+twice. The set's payload goes into storage before anything is committed, so
+one that stops before its commit can leave a payload no version names. If
+another table or set has unfinished work, the write stops before changing
+anything, names it, and says to run \code{datom_validate(fix = TRUE)}, which
+finishes every table and set. As for tables (see \code{\link[=datom_write]{datom_write()}}), datom's own
+files are not edited by hand.
+}
+
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
 # local directory for object storage.

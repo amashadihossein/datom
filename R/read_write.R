@@ -1199,8 +1199,33 @@ datom_read <- function(conn,
 #' version, nothing is saved. To bring in files rather than data frames, use
 #' [datom_sync()].
 #'
+#' @section If a write stops partway:
+#' If `datom_write()` stops partway, for example on a dropped connection or
+#' Ctrl-C, run the same call again: it finishes that version rather than saving
+#' it twice. Every write first pulls what teammates have pushed; when two clones
+#' disagree only in the project's manifest, datom rebuilds that file and finishes
+#' the merge itself. If GitHub cannot be reached, another table or set has
+#' unfinished work, or a merge is in progress, the write stops before changing
+#' anything and says what to run (for another artifact's unfinished work,
+#' `datom_validate(fix = TRUE)`, which finishes every table and set).
+#'
+#' The data file goes into storage before anything is committed, so a write
+#' that stops before its commit can leave a data file that no version names: it
+#' costs space, and for sensitive data the bytes are in the bucket. datom's own
+#' files (each table's `metadata.json` and `version_history.json`, a set's
+#' `set.json`, and `.datom/manifest.json`) are written only by datom commands;
+#' an edit by hand is treated as an unfinished write: a write of that table
+#' undoes it, and other writes stop on it. Commit your own
+#' files with [datom_repo_commit()] rather than a plain `git commit`, which can
+#' capture a datom write halfway through. Two R sessions writing through one
+#' clone at the same time are not supported.
+#'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
-#' @param data Data frame to write. If NULL with name, does metadata-only sync.
+#' @param data Data frame to write. If `NULL` with `name`, publishes what is
+#'   committed for that table (its metadata and history, then the manifest),
+#'   pushing first when GitHub lacks the commit; it commits nothing, and stops
+#'   on an uncommitted change to that table's datom files. To change custom
+#'   metadata, write the data again with `metadata =`.
 #' @param name Table name. If NULL with NULL data, runs the repair of
 #'   `datom_validate(fix = TRUE)` after asking: it puts back datom's files an
 #'   interrupted write left uncommitted, pulls, puts back a **set**'s missing

@@ -1,4 +1,70 @@
 # datom (development version)
+* **Upgrade everyone who writes to a repo at the same time.** A write by datom
+  0.2.0 or earlier that stops after its push leaves a version with no data
+  file, and an upgraded teammate's next write then publishes it, so its reads
+  fail. A project such a write has already broken is not rescued: a re-run or
+  `datom_validate(fix = TRUE)` can still leave its readers failing (#155).
+
+* **A command that stops partway finishes when you run it again.**
+  `datom_write()`, `datom_write_set()`, `datom_sync()` and
+  `datom_validate(fix = TRUE)`, stopped by a dropped connection or Ctrl-C at
+  any step, finish the version on a re-run instead of saving it twice or
+  leaving reads failing. The data file now goes into storage first, so a write
+  stopped before its commit can leave a data file no version names (#155,
+  "If a write stops partway" in `?datom_write`).
+
+* **Breaking:** `datom_write()` refuses a missing value (`NA`), `NaN` or `Inf`
+  anywhere in custom metadata: none of them reads back as written, so lookups
+  by version failed. Leave the field out (#155, `?datom_write`).
+
+* **Breaking:** datom's own files (`metadata.json`, `version_history.json`,
+  `set.json`, `.datom/manifest.json`) are no longer edited by hand. A write of
+  that table or set undoes such an edit as unfinished work, other writes stop
+  on it, and `datom_write(conn, name =)` no
+  longer commits one: it publishes what is committed, and stops on an
+  uncommitted change. Change custom metadata with
+  `datom_write(conn, data, name, metadata = )` (#155).
+
+* **Breaking:** a write and `datom_sync()` now stop, changing nothing, when
+  another table or set has unfinished work, and name
+  `datom_validate(fix = TRUE)`. `datom_repo_commit()`,
+  `datom_repo_attach_governance()` and `datom_repo_set_data_store()` never
+  commit a datom write that stopped before its own commit (#155,
+  `?datom_repo_commit`).
+
+* **Breaking:** a merge datom did not start (of a local branch, say) stops every
+  datom command until you run `datom_pull(conn, finish_merge = TRUE)` or
+  `git merge --abort`. A conflict only in `.datom/manifest.json`, the usual one
+  when two people write different tables, is now resolved by datom (#155,
+  `?datom_pull`).
+
+* **Breaking, for scripts that match messages:** the stops for another table or
+  set's unfinished work share one class, `datom_unfinished_work` (a blocked
+  pull keeps `datom_pull_blocked` too), and every stop before anything is
+  published says "Nothing was published.". `datom_init_repo()` in a folder that
+  already holds a project refuses before touching the git repo
+  (`datom_init_folder_taken`; with `create_repo = TRUE` it no longer creates a
+  GitHub repo first), and after a stop past its push it names the repair
+  (`datom_init_manifest_failed`) (#155, `?datom_init_repo`).
+
+* `datom_validate(fix = TRUE)` always runs the repair, which now puts back
+  datom's files an interrupted write left uncommitted, pulls, pushes commits
+  GitHub lacks, and publishes every table and set. `datom_validate()` reports
+  a new status, `manifest_mismatch_s3` (#155, `?datom_validate`).
+
+* `datom_sync_manifest()` compares with the last commit, and has a new status,
+  `unpushed`, for a table saved but not pushed; `datom_sync()` finishes it
+  (#155, `?datom_sync_manifest`).
+
+* A write with nothing to save no longer pushes your own unpushed commits.
+  `datom_repo_push()`, `datom_repo_commit()`, `datom_repo_attach_governance()`
+  and `datom_repo_set_data_store()` say when the commits they push hold a datom
+  version readers cannot see yet (#155).
+
+* Requires `paws.storage` 0.8.0 or later. Data files are uploaded only if
+  absent, with a checksum; an S3-compatible service that rejects either stops
+  every write at its first step (#155, `endpoint` in `?datom_get_conn`).
+
 * **Breaking:** `datom_store()` with an `https://` `data_repo_url` and no
   `github_pat` now stops; it used to make a read-only store. Leave out
   `data_repo_url` for a reader. SSH addresses (`git@host:...`, `ssh://`) and

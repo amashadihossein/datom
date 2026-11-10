@@ -20,7 +20,7 @@ artifact) and \code{pushed} (\code{TRUE} when it pushed).
 \description{
 The second half of heal, run by each route right after its own pull (see
 \code{\link[=.datom_heal]{.datom_heal()}} for the order). It finishes a committed version that GitHub
-or storage lacks: a write whose push broke, or whose storage upload failed
+or storage lacks: a write whose push broke, or whose metadata upload failed
 after the push.
 }
 \details{

@@ -91,6 +91,20 @@ project: \code{project.yaml} is the location authority, no \code{governance.json
 component on \code{store}, if present, is ignored here. Governance is attached
 later via the governance layer (\code{gov_attach()}).
 }
+\section{If it stops partway}{
+
+If \code{datom_init_repo()} stops before its first push, for example at the commit
+or on a dropped connection at the push, it removes what it created, and the
+same call run again starts afresh. If it stops after the push, while
+connecting to storage or recording the project there, the git repo is kept
+and the message says how to finish: connect with
+\code{conn <- datom_get_conn(path, store)}, using the same store, then run
+\code{datom_validate(conn, fix = TRUE)}. Running \code{datom_init_repo()} again in a
+folder that already holds a project refuses before touching the git repo or
+storage, and names both that repair and, labelled as abandoning the project,
+how to start over.
+}
+
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
 # local directory for object storage.

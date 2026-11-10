@@ -302,6 +302,18 @@ print.datom_conn <- function(x, ...) {
 #' component on `store`, if present, is ignored here. Governance is attached
 #' later via the governance layer (`gov_attach()`).
 #'
+#' @section If it stops partway:
+#' If `datom_init_repo()` stops before its first push, for example at the commit
+#' or on a dropped connection at the push, it removes what it created, and the
+#' same call run again starts afresh. If it stops after the push, while
+#' connecting to storage or recording the project there, the git repo is kept
+#' and the message says how to finish: connect with
+#' `conn <- datom_get_conn(path, store)`, using the same store, then run
+#' `datom_validate(conn, fix = TRUE)`. Running `datom_init_repo()` again in a
+#' folder that already holds a project refuses before touching the git repo or
+#' storage, and names both that repair and, labelled as abandoning the project,
+#' how to start over.
+#'
 #' @param path Path to the project folder. Defaults to current directory.
 #' @param project_name Project name, used for S3 namespace and git repo.
 #' @param store A `datom_store` object (from `datom_store()`). Must have role
@@ -1020,7 +1032,18 @@ datom_clone <- function(path, store, ...) {
 #'   The data component provides bucket, prefix, region, and credentials.
 #' @param project_name Project name. Required for readers (no local repo).
 #'   Ignored when `path` is provided (read from yaml).
-#' @param endpoint Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.
+#' @param endpoint Optional S3 endpoint URL (e.g., for S3 access points or an
+#'   S3-compatible service). NULL for default. A data file is uploaded only if
+#'   nothing is stored at its key (S3's conditional write, `If-None-Match`),
+#'   with a whole-file SHA-256 checksum. On an S3-compatible service:
+#'   * one that rejects either header (400 or 501) stops every write at its
+#'     first step, the data file upload, with the service's own error, and
+#'     nothing changes. paws alone can cause this: from `paws.common` 0.9.0
+#'     every upload carries a checksum by default, metadata uploads included;
+#'   * one that ignores conditional writes lets two writers storing the same
+#'     new content at the same moment both upload. The second file replaces
+#'     the first, and reads of one of the two versions are then refused by the
+#'     hash check.
 #'
 #' @return A `datom_conn` object.
 #' @export

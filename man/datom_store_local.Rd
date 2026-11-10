@@ -23,6 +23,18 @@ Constructs a validated local filesystem storage component for use as either
 the governance or data component of a \code{datom_store}. Validates that the path
 exists (or is creatable) and is writable.
 }
+\details{
+A data file is stored only if nothing is stored at its key yet: it is copied
+under a temporary name beginning with \code{.} and ending in \code{.tmp}, beside the
+final key, then hard-linked into place, and the temporary name removed. A
+crash in between can leave that temporary file. Readers never see it, and
+\code{\link[=datom_storage_copy]{datom_storage_copy()}} and \code{\link[=datom_storage_verify]{datom_storage_verify()}} skip it, though
+\code{\link[=datom_storage_list]{datom_storage_list()}} shows it; it takes space only if the crash came
+mid-copy. On a file system without hard links the file is checked for, then
+moved into place, so two writers storing the same new content at the same
+moment can replace each other's file, and reads of one of the two versions
+are then refused by the hash check.
+}
 \examples{
 tmp <- tempfile("datom_store_")
 store <- datom_store_local(path = tmp, validate = TRUE)

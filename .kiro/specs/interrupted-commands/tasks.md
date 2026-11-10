@@ -78,7 +78,9 @@ which their commits had missed. Suite 6244 -> 6263 expectations, 0 failed, 0 ski
 same day, reshaped by the owner: no re-run logic for `datom_init_repo()`; its stop after the push
 names the repair (D5 reversed; task 9's entry below). The test coverage review flagged before task
 10 ran on 2026-11-09 (below); the owner had its four gaps filled before any documentation, in one
-commit. **Next: task 10 (documentation), starting with the open points in "Starting task 10 cold".**
+commit. Task 10 (documentation) done the same day, after the owner settled its two open points
+(its entry below lists six differences from the plan). **Next: task 11 (end to end and spec
+completion), after task 10's checkpoint.**
 
 **Test coverage review before task 10, 2026-11-09**, on Claude Opus 5.5, of `347a403..25043b3`:
 every task's commit record and probe harness read, and the break table checked against the test
@@ -1554,7 +1556,32 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     the "start over" line now says it abandons the project and loses its history.
   - Acceptance: R6.1-R6.3 as rewritten.
 
-- [ ] **10. Documentation** (R8, R9)
+- [x] **10. Documentation** (R8, R9)
+  - **Done 2026-11-09**, after the test coverage review and its gaps (`9432cba`). The cold start's
+    two open points were settled by the owner first: R9.1's conventions text gains one sentence in
+    its order bullet, "Every publish pushes first, so storage never names a version GitHub lacks"
+    (the "Nothing was published." line and ways out spelled to work stay spec details); R9.5's help
+    is one short paragraph per page saying what the user sees and what to run, two for
+    `?datom_write`. What differs from the plan, or was not in it:
+    1. Several R9.5 pages were already written by earlier tasks and are left as they were:
+       `?datom_sync` and `?datom_sync_manifest` (task 6), `?datom_repo_commit` and the three other
+       push commands (task 8), `?datom_validate`'s `fix` (task 7), which gains one sentence for a
+       stored manifest the repair cannot read (the coverage review's new test).
+    2. `?datom_store_local` gains a paragraph: design section 12 documents two rows there (the
+       temporary file, a file system without hard links); R9.5 did not list the page.
+    3. `dev/datom_specification.md`: beyond R9.2, R9.3 and R9.7, the "Conflict Resolution" section
+       is rewritten (it described `.datom_check_git_current()`, deleted in task 6, and a manual
+       `git commit` recipe), the change-detection bullet on re-runs, the route table's
+       `NULL`/`NULL` row (the repair), and the bullet that said the parquet upload "stays after
+       the git push" and "must not be refactored".
+    4. `.kiro/specs/datom-sets/design.md`: beside I5's note, one under section 19.7's decision that
+       `datom_repo_commit(paths = NULL)` sweeps in datom's files, which D9 reversed.
+    5. R9.4: none of the three old-order phrases is left in `R/`; two docstrings (heal's publish,
+       the metadata-only route) said "storage upload failed" for what is now the metadata upload,
+       corrected.
+    6. `devtools::document()` reports two link warnings to internal functions with no help page
+       (`.datom_restore_set_payload`, `.datom_validate_stored_rows`), present before this task;
+       left as they are.
   - **Escalation first: test coverage review on a more capable model**, including the break table
     checked against the tests that exist.
   - Roxygen for every help page in R9.5, then `devtools::document()`. Beside `endpoint` in

@@ -8,6 +8,17 @@
 #' metadata). The manifest and other metadata files live in git and are
 #' pulled along with any other committed changes.
 #'
+#' When the incoming commits conflict with this clone's only in
+#' `.datom/manifest.json` (two people wrote different tables), datom rebuilds
+#' that file from the tables' own files and finishes the merge. Any other
+#' conflict stops the pull with the files in conflict and the
+#' `git checkout MERGE_HEAD -- ...` command for each conflicted table or set;
+#' every later datom command stops the same way until the merge is finished. A
+#' merge datom did not start (of a local branch, say) is never finished unasked:
+#' finish it with `finish_merge = TRUE`, or end it with `git merge --abort`. If
+#' your own changed files are in the way of the incoming commits, the pull stops
+#' and gives the `git stash -u` steps.
+#'
 #' Requires developer role (readers have no git access).
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].

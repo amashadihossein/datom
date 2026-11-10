@@ -581,7 +581,7 @@
 #' The metadata-only route. It rewrites none of the table's files: it publishes
 #' the table's committed version -- snapshot, `version_history.json` and
 #' `metadata.json`, then the manifest -- when storage lacks it. It makes no
-#' commit. The case it is for: a write whose push succeeded and whose storage
+#' commit. The case it is for: a write whose push succeeded and whose metadata
 #' upload failed, so GitHub has the new version and readers still see the old.
 #'
 #' Heal runs here with **two lists**: the table is one the route publishes, and

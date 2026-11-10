@@ -20,7 +20,7 @@ when storage already held it.
 The metadata-only route. It rewrites none of the table's files: it publishes
 the table's committed version -- snapshot, \code{version_history.json} and
 \code{metadata.json}, then the manifest -- when storage lacks it. It makes no
-commit. The case it is for: a write whose push succeeded and whose storage
+commit. The case it is for: a write whose push succeeded and whose metadata
 upload failed, so GitHub has the new version and readers still see the old.
 }
 \details{

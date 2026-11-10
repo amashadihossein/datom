@@ -1028,6 +1028,16 @@
 #' name. A `name` argument that disagrees with the set's own name stops it too.
 #' A plain list of member records carries neither, so neither is checked.
 #'
+#' @section If a write stops partway:
+#' If `datom_write_set()` stops partway, for example on a dropped connection,
+#' run the same call again: it finishes that version rather than saving it
+#' twice. The set's payload goes into storage before anything is committed, so
+#' one that stops before its commit can leave a payload no version names. If
+#' another table or set has unfinished work, the write stops before changing
+#' anything, names it, and says to run `datom_validate(fix = TRUE)`, which
+#' finishes every table and set. As for tables (see [datom_write()]), datom's own
+#' files are not edited by hand.
+#'
 #' @param conn A `datom_conn` object from [datom_get_conn()], scoped to the
 #'   product repo (developer role).
 #' @param members A list of member records from [datom_member()], each pinning one
