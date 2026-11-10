@@ -282,6 +282,10 @@ test_that("after taking the remote copy of a conflicted artifact as the message 
   expect_identical(mc_rows_read(fx, "lb"), 4L)
 })
 
+# A file the test wrote with writeLines(), as committed. On Windows writeLines()
+# writes \r\n, and git keeps the bytes it was given.
+mc_text <- function(x) gsub("\r\n", "\n", x, fixed = TRUE)
+
 test_that("a user's own file, resolved and added, goes into the merge datom finishes", {
   fx <- local_interrupt_project()
   mc_write(fx$conn, "dm")
@@ -304,7 +308,7 @@ test_that("a user's own file, resolved and added, goes into the merge datom fini
   mc_write(b$conn, "lb", 5L, "b")
 
   expect_false(mc_merging(b$repo))
-  expect_identical(.datom_git_head_file(b$repo, "app.R"), "resolved\n")
+  expect_identical(mc_text(.datom_git_head_file(b$repo, "app.R")), "resolved\n")
   expect_identical(snapshot_remote(fx)[[1L]], mc_head(b$repo))
 })
 
@@ -409,7 +413,7 @@ test_that("datom_pull(conn, finish_merge = TRUE) finishes a user's merge of a lo
   expect_match(run$notes, "row of \"dm\"", fixed = TRUE)
   expect_false(mc_merging(fx$repo))
   expect_identical(mc_head_parents(fx$repo), 2L)
-  expect_identical(.datom_git_head_file(fx$repo, "app.R"), "feature\n")
+  expect_identical(mc_text(.datom_git_head_file(fx$repo, "app.R")), "feature\n")
   expect_identical(mc_manifest(fx$repo)$artifacts$dm$current_version, v2$metadata_sha)
 })
 
