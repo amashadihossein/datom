@@ -81,7 +81,19 @@ names the repair (D5 reversed; task 9's entry below). The test coverage review f
 commit. Task 10 (documentation) done the same day, after the owner settled its two open points
 (its entry below lists six differences from the plan). Task 11 (end to end on both backends,
 `devtools::check()` clean, learnings harvested, #158 filed) done the same day. **The spec is
-complete; the PR into `dev` is the last step.**
+complete; the PR into `dev` is the last step.** PR [#159](https://github.com/amashadihossein/datom/pull/159)
+opened 2026-11-09. CI then failed four tests that pass here, fixed on 2026-11-10: two fixtures'
+`git2r::merge()` asked git for an identity CI's runners lack (`fff82d9`), and two tests compared a
+file written with `writeLines()` with `"...\n"`, which Windows writes as `\r\n` (`446c2f8`).
+
+**Review of PR #159, 2026-11-10**, by another agent, once CI was green: three documentation fixes,
+none blocking, each checked against the code and against 0.2.0 at `347a403`, all taken as proposed
+by the owner: `NEWS.md` says `datom_sync()` with `continue_on_error = TRUE` can stop partway, the
+rest "skipped" (R4.6; 0.2.0 always went on); `NEWS.md` says `datom_validate(fix = TRUE)` lets the
+repair's stops through as errors (0.2.0 caught every error into an alert and `fixed = FALSE`); the
+conventions' bullet on hand edits says a write of that artifact or the repair resets one and any
+other write stops on it (D14 principle 8). The last also rewords R9.1, with the owner's sentence
+from task 10, so the requirement matches the conventions it specifies (requirements status line).
 
 **Test coverage review before task 10, 2026-11-09**, on Claude Opus 5.5, of `347a403..25043b3`:
 every task's commit record and probe harness read, and the break table checked against the test

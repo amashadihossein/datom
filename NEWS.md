@@ -39,6 +39,13 @@
   commit a datom write that stopped before its own commit (#155,
   `?datom_repo_commit`).
 
+* **Breaking:** `datom_sync()` with `continue_on_error = TRUE` no longer always
+  gets through every file. It stops after a table whose write failed once it
+  had changed the clone (written its files, or committed), or whose write held
+  back the manifest; the tables after it come back `"skipped"`, and the message
+  says what to run before the same call, with the same preview, finishes them
+  (#155, `?datom_sync`).
+
 * **Breaking:** a merge datom did not start (of a local branch, say) stops every
   datom command until you run `datom_pull(conn, finish_merge = TRUE)` or
   `git merge --abort` (#155, `?datom_pull`).
@@ -50,7 +57,11 @@
   already holds a project refuses before touching the git repo
   (`datom_init_folder_taken`; with `create_repo = TRUE` it no longer creates a
   GitHub repo first), and after a stop past its push it names the repair
-  (`datom_init_manifest_failed`) (#155, `?datom_init_repo`).
+  (`datom_init_manifest_failed`). `datom_validate(fix = TRUE)` now lets the
+  repair's stops through as errors (a merge in progress, a failed fetch, a
+  refused push, a set payload storage will not take) instead of turning them
+  into an alert and `fixed = FALSE`; a failure publishing one artifact still
+  gives `fixed = FALSE` (#155, `?datom_init_repo`, `?datom_validate`).
 
 * `datom_validate(fix = TRUE)` always runs the repair, which now puts back
   datom's files an interrupted write left uncommitted, pulls, pushes commits

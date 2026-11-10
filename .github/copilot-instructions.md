@@ -310,7 +310,8 @@ Added by #155 (spec `interrupted-commands`).
   what a reader sees.
 - datom's own files (an artifact's `metadata.json`, `version_history.json` and
   `set.json`, and `.datom/manifest.json`) are written only by datom commands. A hand
-  edit is not supported: the next command treats it as an unfinished write and resets it.
+  edit is not supported: a write of that artifact, or `datom_validate(fix = TRUE)`,
+  treats it as an unfinished write and resets it; any other write stops on it.
 
 ## Engineering Notes (gotchas & pitfalls)
 

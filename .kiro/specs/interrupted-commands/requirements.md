@@ -80,6 +80,11 @@ staging and committing leaves its files staged).
 the repair as the way out, spelled so it works for someone with no connection yet (R6 rewritten,
 S5). Starting fresh was considered and is not possible once init has pushed: it would mean deleting
 a GitHub repo, which needs a token scope most users lack, or one the user supplied.
+**Amended 2026-11-09** by the owner: R9.1's conventions text gains, in task 10, "Every publish
+pushes first, so storage never names a version GitHub lacks" in its order bullet, and, from the
+review of PR #159, its last bullet says a hand edit is reset by a write of that artifact or
+`datom_validate(fix = TRUE)` and stops any other write (D14 principle 8), where it said the next
+command resets it.
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -614,6 +619,7 @@ and what to do).
    - Order: the data file first (never overwriting a stored one), then the clone's
      files, commit, push, then metadata and manifest to storage. A version exists once
      GitHub has it; it is published once its metadata and manifest are in storage.
+     Every publish pushes first, so storage never names a version GitHub lacks.
    - No state of its own: a command works out how far an earlier run got from git and
      storage, never from a separate record.
    - Unfinished work found before its commit is reset; found after it, finished. A
@@ -625,7 +631,8 @@ and what to do).
      what a reader sees.
    - datom's own files (an artifact's metadata.json, version_history.json and set.json,
      and .datom/manifest.json) are written only by datom commands. A hand edit is not
-     supported: the next command treats it as an unfinished write and resets it.
+     supported: a write of that artifact, or datom_validate(fix = TRUE), treats it as an
+     unfinished write and resets it; any other write stops on it.
    ```
 
 2. `dev/datom_specification.md`: "Write Ordering & Resilience" is rewritten (its claims that re-runs
