@@ -126,7 +126,7 @@ datom_pull <- function(conn, finish_merge = FALSE) {
 #'    commit, never published (each such artifact gets a warning: that write is
 #'    not run again); the clone is pulled;
 #' 2. a set's payload missing from storage is restored from the clone
-#'    ([.datom_restore_set_payload()]), before anything publishes the set's
+#'    (`.datom_restore_set_payload()`), before anything publishes the set's
 #'    documents: a set's data file first. One that cannot be restored stops the
 #'    repair before anything is published;
 #' 3. heal's publish: a committed version storage lacks is pushed and

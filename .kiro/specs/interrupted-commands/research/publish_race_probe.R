@@ -61,6 +61,22 @@ main <- function() {
   cat("GitHub's latest dm:", substr(ns$.datom_compute_metadata_sha(github_meta), 1, 8),
       "| storage's current dm:", substr(ns$.datom_compute_metadata_sha(stored_meta), 1, 8),
       "| a reader gets first value:", got, "\n")
+
+  # Added 2026-11-09 (task 11): the next command corrects it (design DD4). A
+  # write of another table in B's up-to-date clone stops and names the fix;
+  # the fix then publishes GitHub's latest.
+  lb <- datom_example_data("lb")
+  other <- tryCatch(
+    { suppressMessages(datom_write(b, data = lb, name = "lb")); "went ahead" },
+    datom_unfinished_work = function(e) "STOPPED [datom_unfinished_work], naming datom_validate(fix = TRUE)"
+  )
+  cat("B's write of another table:", other, "\n")
+  suppressWarnings(suppressMessages(datom_validate(b, fix = TRUE)))
+  stored_meta <- ns$.datom_storage_read_json(a, "dm/.metadata/metadata.json")
+  got <- suppressMessages(datom_read(reader, "dm"))[[1]][1]
+  cat("after datom_validate(fix = TRUE): storage's current dm:",
+      substr(ns$.datom_compute_metadata_sha(stored_meta), 1, 8),
+      "| a reader gets first value:", got, "\n")
   invisible(NULL)
 }
 main()

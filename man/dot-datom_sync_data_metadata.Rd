@@ -33,7 +33,7 @@ files an interrupted write left uncommitted are put back to the last
 commit, never published (each such artifact gets a warning: that write is
 not run again); the clone is pulled;
 \item a set's payload missing from storage is restored from the clone
-(\code{\link[=.datom_restore_set_payload]{.datom_restore_set_payload()}}), before anything publishes the set's
+(\code{.datom_restore_set_payload()}), before anything publishes the set's
 documents: a set's data file first. One that cannot be restored stops the
 repair before anything is published;
 \item heal's publish: a committed version storage lacks is pushed and

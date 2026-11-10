@@ -46,7 +46,7 @@ main <- function() {
     # The planned sync's one heal.
     heal_once <- function(rewrite) {
       healed <- ns$.datom_heal(conn, artifact = tables, rewrite = rewrite)
-      ns$.datom_pull_before_write(conn, reset = healed$reset)
+      ns$.datom_pull_before_write(conn)
       suppressMessages(ns$.datom_heal_publish(conn, artifact = tables))
     }
     broken <- switch(step,

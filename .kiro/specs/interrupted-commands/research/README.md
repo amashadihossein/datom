@@ -227,6 +227,14 @@ Added 2026-11-07 in task 7:
   are retargeted here.
 - `init_rerun_probe.R`: what `datom_init_repo()` leaves after a break at its commit, its push and
   its manifest upload, and what a re-run and the repair then do (written for task 9's cold start).
+
+**Rerun 2026-11-09 for task 11** (every probe but the real-S3 one; results in `../tasks.md`, task
+11). Two changed: `publish_race_probe.R` now also shows the correction by the next command (a
+write of another table in the up-to-date clone stops naming `datom_validate(fix = TRUE)`, and the
+fix publishes GitHub's latest), and `sync_batch_probe.R` calls `.datom_pull_before_write(conn)`
+without the `reset` argument the purity audit removed. `merge_completion_probe.R` no longer
+reaches its subject, since the pull now resolves the manifest-only conflict itself (task 5) and
+leaves no `MERGE_HEAD`; it stays as the record of the git2r steps that resolution uses.
 - `task9_guard_probes.R`: the harness for task 9 (the storage connection inside the handler after
   the push, the way out the stop names, the rollback before the push) and its review fix (the
   folder check before anything touches the remote, its repair line). Runs `test-init-interrupted.R`

@@ -283,7 +283,7 @@ A wording fix from the same reviewer, of `1421262`: design section 6 overstated 
 reports after a repair break; narrowed, with a new section 12 row for a missing current snapshot.
 Checking that snapshot in `datom_validate()` was left out of this spec (no route in it can cause the
 gap; it belongs with the other storage-completeness checks validate lacks) and goes to a follow-up
-issue, drafted in `draft-issue-validate-completeness.md` and not yet filed.
+issue, filed as [#158](https://github.com/amashadihossein/datom/issues/158) on 2026-11-09 in task 11.
 
 A further review by the same reviewer, of `ac54763`, evaluated with the owner one point at a time.
 Point 1 was confirmed by a real write (2026-10-30): no datom command puts `{name}/.metadata/` in a
@@ -534,9 +534,8 @@ was done on 2026-11-09 and its gaps filled, recorded in "Where things stand"):
   2. R9.5 asks for a lot of user-facing help across about ten pages. Lean: one short paragraph
      per page, saying what the user sees and what to do, with the mechanism left to the spec, per
      the communication rules; confirm the length the owner wants before writing ten of them.
-- **FYI:** the draft follow-up issue `draft-issue-validate-completeness.md` (storage-completeness
-  checks `datom_validate()` lacks, design section 12) is still not filed; filing it belongs to the
-  spec completion in task 11, not to task 10. #157 (decimals in custom metadata) is filed.
+- **FYI:** the follow-up issue on the storage-completeness checks `datom_validate()` lacks
+  (design section 12) was filed in task 11 as [#158](https://github.com/amashadihossein/datom/issues/158). #157 (decimals in custom metadata) is filed.
 
 **Starting task 9 cold** (written 2026-11-07; task 8 closed the same day; task 9 done 2026-11-08, reshaped
 by the owner, so the open points below are the record): first confirm in "Where
@@ -1613,6 +1612,36 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     where the row says.
 
 - [ ] **11. End to end, and spec completion**
+  - **In progress 2026-11-09.** Done so far:
+    - Every probe in `research/` rerun except the real-S3 one. `write_steps_probe.R` and
+      `set_steps_probe.R`: every break fired, every re-run reads v2, `datom_validate()` valid (sets:
+      v2 after the fix too). `sync_and_manifest_probe.R`: the re-scan says `unpushed`, the re-sync
+      succeeds, a reader reads. `other_command_probe.R`: after `dm` broke at its commit or its push,
+      `lb`'s write stops (`datom_unfinished_work`), nothing moved on GitHub or in storage.
+      `two_writers_probe.R`: the second write finishes the merge itself, a reader reads both.
+      `stale_preview_probe.R`: "already up to date", one version. `init_rerun_probe.R`: a break at
+      the commit or the push leaves nothing and the re-run succeeds; after a break at the manifest
+      the re-run refuses and `datom_validate(fix = TRUE)` uploads the manifest.
+      `publish_race_probe.R` gains the correction by the next command: the race still leaves
+      storage on v2 with GitHub at v3; a write of another table in the up-to-date clone stops
+      naming the fix, and the fix publishes v3. `sync_batch_probe.R` needed one call updated
+      (`.datom_pull_before_write()` lost its `reset` argument in the audit); its output is the
+      unhealed plan's, as recorded. `merge_completion_probe.R` no longer reaches its subject: the
+      pull now resolves the manifest-only conflict itself (task 5), so no `MERGE_HEAD` is left for
+      it to finish; `two_writers_probe.R` shows the result. The git2r and git fact probes are
+      unchanged. `s3_conditional_probe.R` passed 11 of 11 offline (`DATOM_PROBE_FAKE_S3=1`) on all
+      three paws pairs; the real-S3 run is the owner's.
+    - `dev/e2e-solo-local.R`: SUCCESS (real GitHub repo created and deleted).
+    - `devtools::check()`: one warning, two `[link]`s this spec added to internal functions with no
+      help page (`@noRd`); made plain code; then 0 errors, 0 warnings, 0 notes.
+    - Harvest: `dev/engineering-notes.md` gains "Interrupted commands: the facts the recovery code
+      relies on" (git2r, storage, identity, tests); `dev/datom_pathways.md` gains the card "Given a
+      command that stopped partway, finish it or stop", and the write-entry and set-write cards
+      follow the new order (pathway impact: yes). The follow-up issue on `datom_validate()`'s
+      storage-completeness checks filed as
+      [#158](https://github.com/amashadihossein/datom/issues/158); the draft file removed.
+    - Left: `dev/e2e-solo-s3.R` and `research/s3_conditional_probe.R` against real S3 (the owner's
+      credentials), then `dev/README.md`'s Completed Phases row and the PR into `dev`.
   - Rerun every probe in `research/`, as updated in tasks 2-4b, and record that every break fired and
     each now shows the job finished (or, for `publish_race_probe.R`, corrected by the next command).
   - `dev/e2e-solo-local.R`, and `dev/e2e-solo-s3.R` against real S3 with the owner's credentials.

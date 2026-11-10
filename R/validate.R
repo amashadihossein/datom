@@ -591,7 +591,7 @@ datom_validate <- function(conn, fix = FALSE) {
 #' handles both kinds.
 #'
 #' @param stored_rows The stored manifest's rows, or `NULL` to skip the
-#'   manifest mismatch check ([.datom_validate_stored_rows()]).
+#'   manifest mismatch check (`.datom_validate_stored_rows()`).
 #' @noRd
 .datom_validate_one_table <- function(conn, name, stored_rows = NULL) {
   repo_path <- conn$path
