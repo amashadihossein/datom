@@ -5,13 +5,20 @@
   fail. A project such a write has already broken is not rescued: a re-run or
   `datom_validate(fix = TRUE)` can still leave its readers failing (#155).
 
-* **A command that stops partway finishes when you run it again.**
-  `datom_write()`, `datom_write_set()`, `datom_sync()` and
-  `datom_validate(fix = TRUE)`, stopped by a dropped connection or Ctrl-C at
-  any step, finish the version on a re-run instead of saving it twice or
-  leaving reads failing. The data file now goes into storage first, so a write
-  stopped before its commit can leave a data file no version names (#155,
-  "If a write stops partway" in `?datom_write`).
+* **A command that stops partway now finishes when you run it again.** Before,
+  a `datom_write()` that broke between its push and its upload left a version
+  whose reads failed for good, and nothing could repair it. Now
+  `datom_write()`, `datom_write_set()`, `datom_sync()`,
+  `datom_validate(fix = TRUE)` and `datom_init_repo()` can stop at any step,
+  on a dropped connection or Ctrl-C, and the same call, or the fix its message
+  names, finishes the job; each step is tested that way. Every write first
+  pulls teammates' commits and finishes its own unfinished version. When two
+  people's writes clash only in the project's manifest, datom rebuilds it and
+  finishes the merge itself. Readers never see a partly written version, and
+  where datom cannot be sure, it stops before changing anything and says what
+  to run. The data file now goes into storage first, so a write stopped before
+  its commit can leave a data file no version names (#155, "If a write stops
+  partway" in `?datom_write`).
 
 * **Breaking:** `datom_write()` refuses a missing value (`NA`), `NaN` or `Inf`
   anywhere in custom metadata: none of them reads back as written, so lookups
@@ -20,9 +27,9 @@
 * **Breaking:** datom's own files (`metadata.json`, `version_history.json`,
   `set.json`, `.datom/manifest.json`) are no longer edited by hand. A write of
   that table or set undoes such an edit as unfinished work, other writes stop
-  on it, and `datom_write(conn, name =)` no
-  longer commits one: it publishes what is committed, and stops on an
-  uncommitted change. Change custom metadata with
+  on it, and `datom_write(conn, name =)` no longer commits one: it publishes
+  what is committed, and stops on an uncommitted change. Change custom
+  metadata with
   `datom_write(conn, data, name, metadata = )` (#155).
 
 * **Breaking:** a write and `datom_sync()` now stop, changing nothing, when
@@ -34,9 +41,7 @@
 
 * **Breaking:** a merge datom did not start (of a local branch, say) stops every
   datom command until you run `datom_pull(conn, finish_merge = TRUE)` or
-  `git merge --abort`. A conflict only in `.datom/manifest.json`, the usual one
-  when two people write different tables, is now resolved by datom (#155,
-  `?datom_pull`).
+  `git merge --abort` (#155, `?datom_pull`).
 
 * **Breaking, for scripts that match messages:** the stops for another table or
   set's unfinished work share one class, `datom_unfinished_work` (a blocked
