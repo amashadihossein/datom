@@ -79,8 +79,9 @@ same day, reshaped by the owner: no re-run logic for `datom_init_repo()`; its st
 names the repair (D5 reversed; task 9's entry below). The test coverage review flagged before task
 10 ran on 2026-11-09 (below); the owner had its four gaps filled before any documentation, in one
 commit. Task 10 (documentation) done the same day, after the owner settled its two open points
-(its entry below lists six differences from the plan). **Next: task 11 (end to end and spec
-completion), after task 10's checkpoint.**
+(its entry below lists six differences from the plan). Task 11 (end to end on both backends,
+`devtools::check()` clean, learnings harvested, #158 filed) done the same day. **The spec is
+complete; the PR into `dev` is the last step.**
 
 **Test coverage review before task 10, 2026-11-09**, on Claude Opus 5.5, of `347a403..25043b3`:
 every task's commit record and probe harness read, and the break table checked against the test
@@ -1611,8 +1612,16 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   - Acceptance: R9.1-R9.7 done; every residual row in design section 12 is guarded or documented
     where the row says.
 
-- [ ] **11. End to end, and spec completion**
-  - **In progress 2026-11-09.** Done so far:
+- [x] **11. End to end, and spec completion**
+  - **Done 2026-11-09.** Against real S3, run by the owner the same day: `dev/e2e-solo-s3.R`
+    `SOLO_E2E_S3_RESULT: SUCCESS` (GitHub repo and S3 prefix created and torn down), and
+    `research/s3_conditional_probe.R` 11 of 11 checks on all three paws pairs (installed 0.9.0 /
+    0.8.8, minimum 0.8.0 / 0.8.0, current 0.11.0 / 0.9.0). `dev/check-spec.R` reports only the
+    format failures it is known to give on this spec's layout (numbered requirement items, tasks from
+    1 with lettered 4a/4b, which it also reads as a reference to a "Task 4"; the datom-sets encoder
+    rules; cited names this spec renamed or deleted, kept in the task records as history, and the
+    class `datom_conn`). Spec completion: `dev/README.md` moves the spec to Completed Phases; the
+    PR into `dev` follows. Earlier the same day:
     - Every probe in `research/` rerun except the real-S3 one. `write_steps_probe.R` and
       `set_steps_probe.R`: every break fired, every re-run reads v2, `datom_validate()` valid (sets:
       v2 after the fix too). `sync_and_manifest_probe.R`: the re-scan says `unpushed`, the re-sync
@@ -1640,8 +1649,7 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
       follow the new order (pathway impact: yes). The follow-up issue on `datom_validate()`'s
       storage-completeness checks filed as
       [#158](https://github.com/amashadihossein/datom/issues/158); the draft file removed.
-    - Left: `dev/e2e-solo-s3.R` and `research/s3_conditional_probe.R` against real S3 (the owner's
-      credentials), then `dev/README.md`'s Completed Phases row and the PR into `dev`.
+
   - Rerun every probe in `research/`, as updated in tasks 2-4b, and record that every break fired and
     each now shows the job finished (or, for `publish_race_probe.R`, corrected by the next command).
   - `dev/e2e-solo-local.R`, and `dev/e2e-solo-s3.R` against real S3 with the owner's credentials.
