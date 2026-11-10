@@ -345,7 +345,9 @@ ru_open_other_merge <- function(fx) {
   git2r::checkout(repo, home)
   writeLines("main", file.path(fx$repo, "main.R"))
   git_commit_files(fx$repo, "main.R", "Main work", push = FALSE)
-  res <- git2r::merge(repo, "feature", commit_on_success = FALSE)
+  # git2r::merge() asks git for an identity unless given one, and CI has none.
+  res <- git2r::merge(repo, "feature", commit_on_success = FALSE,
+                      merger = .datom_git_signature(repo))
   force(res)
   expect_true(fs::file_exists(fs::path(repo$path, "MERGE_HEAD")))
 }
