@@ -17,8 +17,9 @@
 #     `jsonlite` writes a NULL element as `{}` -- a `document_sha` left
 #     unpopulated would satisfy a names-only check while carrying an empty object.
 #   * a payload whose `data_sha` is already in history must not be re-uploaded,
-#     proved with a backdated mtime. Byte comparison cannot tell "not
-#     re-uploaded" from "re-uploaded identical bytes".
+#     proved by counting calls to the upload. Byte comparison cannot tell "not
+#     re-uploaded" from "re-uploaded identical bytes", and since the upload
+#     never replaces a stored file, neither can a backdated mtime.
 
 
 # --- fixture ------------------------------------------------------------------
@@ -350,7 +351,7 @@ test_that("a set write respects the repo's declared writer floor", {
   fx <- local_set_project()
   members <- sw_one_member(fx)
 
-  fx$conn$min_writer_version <- "99.0.0"
+  write_writer_floor(fx$repo_dir, "99.0.0")
 
   expect_error(
     datom_write_set(fx$conn, members, name = "product-a"),
@@ -965,45 +966,88 @@ test_that("document_sha hashes the bytes actually stored", {
 
 # === one data_sha, one byte spelling ==========================================
 
+# The resolver stores the payload itself (only if absent), so each case is
+# checked for what it records AND for whether it called the upload.
+resolver_tmp_payload <- function(env = parent.frame()) {
+  tmp <- withr::local_tempfile(fileext = ".json", .local_envir = env)
+  writeLines('{"members": []}', tmp)
+  tmp
+}
+
 test_that(".datom_resolve_document_sha reuses a recorded hash instead of the fresh one (AC29b)", {
   # The defect this prevents passes every per-chunk test: recomputing the hash
   # from freshly emitted bytes while reusing the stored object records a hash of
   # bytes nobody stored, and it surfaces later as a refused read of a valid
   # version.
+  upload <- mock_upload_absent()
   local_mocked_bindings(
     .datom_lookup_history_document_sha =
-      function(conn, name, data_sha) "doc_reused"
+      function(conn, name, data_sha) "doc_reused",
+    .datom_storage_upload_absent = upload$fn
   )
 
   res <- .datom_resolve_document_sha(
-    mock_datom_conn(list()), "set-a", "sha_a", "doc_new", "full", NULL
+    mock_datom_conn(list()), "set-a", "sha_a", resolver_tmp_payload(), "full", NULL
   )
 
   expect_identical(res$document_sha, "doc_reused")
-  expect_false(res$upload)
+  expect_identical(res$outcome, "history")
+  expect_length(upload$keys(), 0L)
 })
 
-test_that(".datom_resolve_document_sha uploads fresh bytes for content never stored", {
+test_that(".datom_resolve_document_sha uploads fresh bytes for content never stored, handing the upload the hash it records", {
+  upload <- mock_upload_absent("uploaded")
   local_mocked_bindings(
-    .datom_lookup_history_document_sha = function(conn, name, data_sha) NULL
+    .datom_lookup_history_document_sha = function(conn, name, data_sha) NULL,
+    .datom_storage_upload_absent = upload$fn
   )
+  tmp <- resolver_tmp_payload()
+  data_sha <- strrep("a", 64L)
 
   res <- .datom_resolve_document_sha(
-    mock_datom_conn(list()), "set-a", "sha_a", "doc_new", "full", NULL
+    mock_datom_conn(list()), "set-a", data_sha, tmp, "full", NULL
   )
 
-  expect_identical(res$document_sha, "doc_new")
-  expect_true(res$upload)
+  expect_identical(res$document_sha, digest::digest(file = tmp, algo = "sha256"))
+  expect_identical(res$outcome, "uploaded")
+  expect_identical(upload$keys(), .datom_artifact_payload_key("set-a", data_sha, "set"))
+  # One hash per write: the upload is given the hash recorded, not left to
+  # hash the file again.
+  expect_identical(upload$shas(), res$document_sha)
+})
+
+test_that(".datom_resolve_document_sha records the stored payload's hash when the payload is already stored", {
+  # An earlier broken run, or a colleague, stored this content first, perhaps
+  # in another spelling.
+  upload <- mock_upload_absent("exists")
+  local_mocked_bindings(
+    .datom_lookup_history_document_sha = function(conn, name, data_sha) NULL,
+    .datom_storage_upload_absent = upload$fn,
+    .datom_storage_object_sha256 = function(conn, key) "doc_stored"
+  )
+  tmp <- resolver_tmp_payload()
+
+  res <- .datom_resolve_document_sha(
+    mock_datom_conn(list()), "set-a", strrep("a", 64L), tmp, "full", NULL
+  )
+
+  expect_identical(res$document_sha, "doc_stored")
+  expect_identical(res$outcome, "exists")
+  expect_length(upload$keys(), 1L)
 })
 
 test_that(".datom_resolve_document_sha carries the current hash forward on a metadata-only change", {
+  upload <- mock_upload_absent()
+  local_mocked_bindings(.datom_storage_upload_absent = upload$fn)
+
   res <- .datom_resolve_document_sha(
-    mock_datom_conn(list()), "set-a", "sha_a", "doc_new", "metadata_only",
+    mock_datom_conn(list()), "set-a", "sha_a", resolver_tmp_payload(), "metadata_only",
     list(data_sha = "sha_a", document_sha = "doc_current")
   )
 
   expect_identical(res$document_sha, "doc_current")
-  expect_false(res$upload)
+  expect_identical(res$outcome, "carried")
+  expect_length(upload$keys(), 0L)
 })
 
 test_that("the history scan finds the newest entry that recorded a document_sha", {
@@ -1035,9 +1079,10 @@ test_that("the history scan finds the newest entry that recorded a document_sha"
 })
 
 test_that("re-writing content already in history does not touch the stored payload (AC29b)", {
-  # Proved with a backdated mtime: a re-upload goes through fs::file_copy(
-  # overwrite = TRUE) and would reset it. Byte comparison cannot distinguish
-  # "not re-uploaded" from "re-uploaded identical bytes".
+  # Proved by counting calls to the payload upload. The upload never replaces a
+  # stored file, so a backdated mtime would survive an attempted upload too, and
+  # byte comparison cannot distinguish "not re-uploaded" from "re-uploaded
+  # identical bytes".
   fx <- local_set_project()
   v_dm <- sw_table(fx, "dm")
   v_lb <- sw_table(fx, "lb")
@@ -1048,17 +1093,12 @@ test_that("re-writing content already in history does not touch the stored paylo
 
   sw_write(fx, c(only_dm, list(sw_member(fx, "lb", v_lb))))
 
-  stored <- sw_stored_payload_path(fx, first$data_sha)
-  backdated <- as.POSIXct("2020-01-01 00:00:00", tz = "UTC")
-  fs::file_touch(stored, modification_time = backdated)
-
+  upload <- mock_upload_absent(NULL)
+  local_mocked_bindings(.datom_storage_upload_absent = upload$fn)
   again <- sw_write(fx, only_dm)
 
   expect_identical(again$data_sha, first$data_sha)
-  expect_equal(
-    as.numeric(fs::file_info(stored)$modification_time),
-    as.numeric(backdated)
-  )
+  expect_identical(upload$keys(), character())
   # The recorded hash is carried forward rather than recomputed.
   expect_identical(sw_clone_metadata(fx)$document_sha, recorded_document_sha)
 })
@@ -1123,24 +1163,31 @@ test_that("the git payload stays one file, modified in place, so a diff is membe
   )
 })
 
-test_that("nothing reaches storage when the git push fails", {
-  # Git push is the serialization point, and the ordering is what makes the reuse
-  # decision safe against a concurrent writer.
+test_that("only the payload reaches storage when the git push fails", {
+  # The payload goes first, so a re-run can finish the write; it is
+  # content-addressed and named by nothing until the write publishes. The files
+  # readers follow wait for the push, so two people's writes still meet in git
+  # before readers see either.
   fx <- local_set_project()
   members <- sw_one_member(fx)
 
   local_mocked_bindings(
-    .datom_git_push = function(path, pat = NULL, pull_first = TRUE) {
-      stop("push refused")
-    }
+    .datom_git_push = function(...) stop("push refused")
   )
 
   expect_error(datom_write_set(fx$conn, members, name = "product-a"),
                "push refused")
 
+  data_sha <- sw_clone_metadata(fx)$data_sha
+  expect_true(fs::file_exists(sw_stored_payload_path(fx, data_sha)))
   expect_false(.datom_storage_exists(
     fx$conn, .datom_artifact_meta_key(fx$set_name, "metadata")
   ))
+  expect_false(.datom_storage_exists(
+    fx$conn, .datom_artifact_meta_key(fx$set_name, "version_history")
+  ))
+  # The member table's write published a manifest; it must not name the set.
+  expect_false(fx$set_name %in% names(sw_stored_manifest(fx)$artifacts))
 })
 
 
@@ -1286,6 +1333,10 @@ test_that("the kind comes from the STORAGE document, not the manifest row (AC4)"
   }
   strip_dm(fs::path(fx$repo_dir, ".datom", "manifest.json"))
   strip_dm(.datom_local_path(fx$conn, ".metadata/manifest.json"))
+  # Committed, as a pull would deliver it: left uncommitted, heal's reset puts
+  # the row back (the write is writing "dm") and its publish republishes it, so
+  # the two copies agree again and the test could not tell them apart.
+  git_commit_files(fx$repo_dir, ".datom/manifest.json", "A manifest that lags")
 
   # Still refused, because the storage document still says "dm" is a table.
   err <- expect_error(

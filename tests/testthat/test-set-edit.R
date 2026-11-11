@@ -384,6 +384,11 @@ test_that("a member whose artifact is gone is reported and left, and still write
     m$artifacts$ghost <- NULL
     jsonlite::write_json(m, path, auto_unbox = TRUE, pretty = TRUE)
   })
+  # Committed, as the removal would be: an uncommitted change to the manifest is
+  # an unfinished write, which stops the set write below before it starts.
+  repo <- git2r::repository(fx$repo_dir)
+  git2r::add(repo, ".datom/manifest.json")
+  git2r::commit(repo, "Remove ghost from the manifest")
 
   msg <- se_messages(out <- datom_update_members(x, fx$conn))
 

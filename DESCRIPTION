@@ -30,7 +30,7 @@ Imports:
     glue,
     httr2,
     jsonlite,
-    paws.storage,
+    paws.storage (>= 0.8.0),
     purrr,
     rlang,
     utils,

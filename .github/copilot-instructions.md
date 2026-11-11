@@ -291,6 +291,28 @@ For per-artifact metadata the four rules are **absolute**: additive only, foreve
   recovery nobody is told about becomes a permanent invisible fallback, which is the failure the
   schema check exists to remove.
 
+## Commands that change state: a re-run finishes the job
+
+Added by #155 (spec `interrupted-commands`).
+
+- Order: the data file first (never overwriting a stored one), then the clone's
+  files, commit, push, then metadata and manifest to storage. A version exists once
+  GitHub has it; it is published once its metadata and manifest are in storage.
+  Every publish pushes first, so storage never names a version GitHub lacks.
+- No state of its own: a command works out how far an earlier run got from git and
+  storage, never from a separate record.
+- Unfinished work found before its commit is reset; found after it, finished. A
+  write does this only for what it is writing; another artifact's unfinished work
+  stops it with a message naming `datom_validate(fix = TRUE)`, which does it for all.
+- Act only when certain: a check that is unsure stops the command with a way out.
+- Every step is safe to repeat, and every refusal check runs before the first step.
+- Each such command has a test that breaks it at each step, re-runs it, and checks
+  what a reader sees.
+- datom's own files (an artifact's `metadata.json`, `version_history.json` and
+  `set.json`, and `.datom/manifest.json`) are written only by datom commands. A hand
+  edit is not supported: a write of that artifact, or `datom_validate(fix = TRUE)`,
+  treats it as an unfinished write and resets it; any other write stops on it.
+
 ## Engineering Notes (gotchas & pitfalls)
 
 Implementation gotchas, edge cases, and hard-won pitfalls live in **`dev/engineering-notes.md`**.

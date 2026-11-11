@@ -191,27 +191,14 @@
 }
 
 
-#' Rebuild One Artifact's Manifest Row from Its Own Documents
+#' Rebuild One Artifact's Manifest Row from Its Own Documents in Storage
 #'
-#' Every field on the row is copied from `metadata.json`, counted from
-#' `version_history.json`, or -- for a set's member count -- read from the payload.
-#' The row's shape has to match what `.datom_update_manifest_entry()` writes,
-#' field for field, or a rebuilt repo answers differently from a healthy one -- so
-#' the two are pinned against each other by a test rather than by matching
-#' comments.
+#' Reads the artifact's `metadata.json` and `version_history.json` from storage,
+#' and for a set its payload, then builds the row with [.datom_manifest_row()].
 #'
-#' `last_updated` is the one field with no recorded source: the writer stamps the
-#' wall clock at the moment it rewrites the row, and that moment is not in any
-#' document. The version's own `created_at` is used instead, which is the closest
-#' true statement available -- when this artifact's current state was written.
-#'
-#' **A set's row is built from different fields, and costs a third read.** A set
-#' carries `member_count` where a table carries `size_bytes`, and that count lives
-#' in the payload rather than in either document read here -- hence
-#' [.datom_rebuild_member_count()]. Putting a `size_bytes` on a set row instead
-#' would be worse than leaving the count out: the default is `0`, which has length
-#' 1 and therefore survives `purrr::compact()`, so the row would state that the
-#' artifact is zero bytes.
+#' **A set's row costs a third read.** A set carries `member_count` where a
+#' table carries `size_bytes`, and that count lives in the payload rather than in
+#' either document -- hence [.datom_rebuild_member_count()].
 #'
 #' @param conn A `datom_conn` object.
 #' @param name Artifact name.
@@ -233,6 +220,54 @@
     error = function(e) NULL
   )
 
+  # A payload that cannot be read leaves the count out rather than guessing at
+  # it: a row already tolerates carrying no count, whereas a manufactured one
+  # would be a wrong statement rather than a missing one.
+  member_count <- if (identical(meta$kind %||% "table", "set")) {
+    .datom_rebuild_member_count(conn, name, meta$data_sha)
+  }
+
+  .datom_manifest_row(meta, history, member_count = member_count)
+}
+
+
+#' Build One Artifact's Manifest Row From Its Documents
+#'
+#' The row-building half of a rebuild, shared by the two places datom builds a
+#' row from an artifact's own documents rather than from a write: a reader's
+#' rebuild from storage ([.datom_rebuild_manifest_entry()]), and the rebuild of a
+#' manifest a merge left in conflict, from the clone
+#' ([.datom_resolve_manifest_conflict()]). One builder, so the two cannot drift.
+#'
+#' Every field on the row is copied from `metadata.json`, counted from
+#' `version_history.json`, or -- for a set's member count -- passed in by the
+#' caller, who read it from the payload. The row's shape has to match what
+#' `.datom_update_manifest_entry()` writes, field for field, or a rebuilt repo
+#' answers differently from a healthy one -- so the two are pinned against each
+#' other by a test rather than by matching comments.
+#'
+#' `last_updated` is the one field with no recorded source: the writer stamps the
+#' wall clock at the moment it rewrites the row, and that moment is not in any
+#' document. The version's own `created_at` is used instead, which is the closest
+#' true statement available -- when this artifact's current state was written.
+#'
+#' **A set's row is built from different fields.** A set carries `member_count`
+#' where a table carries `size_bytes`. Putting a `size_bytes` on a set row instead
+#' would be worse than leaving the count out: the default is `0`, which has length
+#' 1 and therefore survives `purrr::compact()`, so the row would state that the
+#' artifact is zero bytes.
+#'
+#' @param meta The artifact's parsed `metadata.json`.
+#' @param history Its parsed `version_history.json`, or `NULL`.
+#' @param member_count For a set, how many members its current payload holds, or
+#'   `NULL` when that could not be read (the row then carries no count).
+#' @param version The version the row names. By default the one the history
+#'   records for `metadata.json` ([.datom_recorded_current_version()]), never a
+#'   recomputed one; see that function for why.
+#' @return A named list: one manifest artifact row.
+#' @keywords internal
+.datom_manifest_row <- function(meta, history, member_count = NULL,
+                                version = .datom_recorded_current_version(meta, history)) {
   # Read from the document, which now declares it. The fallback covers every
   # artifact written before it did -- all of them tables, since sets did not
   # exist -- and is the same assumption the v1 manifest upgrade makes about an
@@ -243,18 +278,14 @@
 
   entry <- list(
     kind = kind,
-    current_version = .datom_recorded_current_version(meta, history),
+    current_version = version,
     current_data_sha = meta$data_sha,
     last_updated = meta$created_at
   )
 
-  # The one row field that is not in either document read above, and the reason a
-  # set costs a third read. A payload that cannot be read leaves the count out
-  # rather than guessing at it: `purrr::compact()` below drops the NULL, and a row
-  # already tolerates carrying no count, whereas a manufactured one would be a
-  # wrong statement rather than a missing one.
+  # A NULL count leaves the field out: `purrr::compact()` below drops it.
   if (identical(kind, "set")) {
-    entry$member_count <- .datom_rebuild_member_count(conn, name, meta$data_sha)
+    entry$member_count <- member_count
   } else {
     # as.numeric, not as.integer: an artifact over 2 GB overflows R's integer
     # limit and the NA then poisons the summary total.
@@ -318,20 +349,7 @@
     if (is.list(prior)) prior$project_name %||% conn$project_name else conn$project_name
   )
   manifest$artifacts <- artifacts
-
-  tables <- .datom_artifacts_of_kind(artifacts, "table")
-  sets <- .datom_artifacts_of_kind(artifacts, "set")
-
-  manifest$summary <- list(
-    total_tables = length(tables),
-    total_size_bytes = sum(purrr::map_dbl(
-      tables, ~ as.numeric(.x$size_bytes %||% 0L)
-    )),
-    total_versions = sum(purrr::map_int(
-      tables, ~ as.integer(.x$version_count %||% 0L)
-    )),
-    total_sets = length(sets)
-  )
+  manifest$summary <- .datom_manifest_summary(artifacts)
 
   if (is.list(prior) && !is.null(prior$updated_at)) {
     manifest$updated_at <- prior$updated_at

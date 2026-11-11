@@ -8,7 +8,7 @@
   conn,
   name,
   data_sha,
-  new_document_sha,
+  tmp_path,
   change_type,
   current
 )
@@ -20,14 +20,16 @@
 
 \item{data_sha}{Canonical content hash (the storage address).}
 
-\item{new_document_sha}{SHA-256 of the payload bytes just written to the clone.}
+\item{tmp_path}{The freshly built payload file.}
 
 \item{change_type}{\code{"metadata_only"} or \code{"full"} (never \code{"none"}).}
 
 \item{current}{The current metadata (from \code{\link[=.datom_has_changes]{.datom_has_changes()}}), or NULL.}
 }
 \value{
-List with \code{document_sha} (character or NULL) and \code{upload} (logical).
+List with \code{document_sha} (character, or NULL when a metadata-only
+change carries none) and \code{outcome}, which says where it came from:
+\code{"carried"}, \code{"history"}, \code{"uploaded"} or \code{"exists"}.
 }
 \description{
 The set analogue of \code{\link[=.datom_resolve_parquet_sha]{.datom_resolve_parquet_sha()}}, kept beside it so the two
@@ -44,6 +46,13 @@ easily than tables do: for a table it takes an \code{arrow} upgrade, while for a
 an ordinary tag-value reorder is enough, because several payload spellings
 share one \code{data_sha}.
 
+Like the parquet decision it \strong{uploads}, and it runs before anything in the
+clone changes: the set write builds its payload in a temporary file, calls
+this, and only then writes \code{set.json}. So a version a clone records already
+has its payload stored, and a write that breaks at any later step leaves a
+version a re-run can finish. (When the upload came after the push, a break
+between the two left a pushed version with no stored payload.)
+
 Cases, mirroring the parquet ones:
 \itemize{
 \item \code{metadata_only} -- the \code{data_sha} is unchanged, so the payload object already
@@ -52,8 +61,16 @@ upload. Structurally unreachable for a set today (a set's hashed fields are
 \code{data_sha}, \code{hash_algo} and \code{kind}, so unchanged content means an unchanged
 version), and handled anyway rather than assumed away.
 \item \code{full} where a prior version already recorded a \code{document_sha} for this exact
-\code{data_sha} -- reuse it and do \strong{not} re-upload.
-\item \code{full} otherwise -- upload these bytes and record their hash.
+\code{data_sha} (a revert, or a re-run after a break) -- reuse it and do \strong{not}
+upload.
+\item \code{full} otherwise -- upload through \code{\link[=.datom_store_data_file]{.datom_store_data_file()}}, which never
+replaces a stored payload: \code{"uploaded"} records these bytes' hash,
+\code{"exists"} the stored payload's, which may be another spelling of the same
+content.
 }
+
+In every case but \code{"uploaded"} the recorded hash can be another spelling's,
+so the set write compares it with the fresh bytes and puts the stored
+payload in \code{set.json} when they differ (see \code{\link[=datom_write_set]{datom_write_set()}}).
 }
 \keyword{internal}

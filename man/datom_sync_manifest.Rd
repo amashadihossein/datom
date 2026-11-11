@@ -23,8 +23,20 @@ ordinary repo.}
 }
 \value{
 On an ordinary repo, a data frame with columns: name, file, format,
-original_file_sha, status (one of \code{"new"}, \code{"changed"}, \code{"unchanged"},
-\code{"unsupported_format"}).
+original_file_sha, status, one of:
+\itemize{
+\item \code{"new"} -- no table of that name has been saved;
+\item \code{"changed"} -- the file differs from the one last synced;
+\item \code{"unpushed"} -- the file matches, but the version saved from it is in
+commits this clone has not pushed (a sync that stopped at its push, for
+example), so readers cannot see it yet. \code{\link[=datom_sync]{datom_sync()}} pushes and
+publishes it without reading the file again;
+\item \code{"unchanged"} -- the file matches, and the version saved from it has been
+pushed. It is published too, unless an earlier sync stopped after its
+push; the next \code{\link[=datom_sync]{datom_sync()}} then publishes it;
+\item \code{"unsupported_format"} -- the format is outside datom's ingestion
+allowlist.
+}
 
 On a product repo, a data frame with columns \code{project}, \code{name}, \code{kind},
 \code{version_from} (\code{NA} for a new artifact), \code{version_to} (\code{NA} for a member that
@@ -35,12 +47,21 @@ full 64-character strings.
 \description{
 Looks at the files in the project's \verb{input_files/} folder and returns one
 row per file, saying whether it is new, changed, unchanged since it was last
-synced, or in a format datom cannot read. Nothing is written. Review the
-result, drop any rows you do not want, then pass it to \code{\link[=datom_sync]{datom_sync()}}.
+synced, saved but not yet pushed, or in a format datom cannot read. Nothing
+is written. Review the result, drop any rows you do not want, then pass it to
+\code{\link[=datom_sync]{datom_sync()}}.
 }
 \details{
 A file counts as changed when its bytes differ from the file last synced
-under that name.
+under that name, as recorded in the clone's last commit. A sync that stopped
+before committing a table therefore leaves it \code{changed}, and the next
+\code{\link[=datom_sync]{datom_sync()}} saves it again.
+
+The scan reads this clone only: no network, no storage. It cannot see what
+readers see, so a table pushed to GitHub but not yet \strong{published} (readers
+get a version once its metadata and the project's manifest in storage name
+it) shows \code{unchanged}, and the next \code{\link[=datom_sync]{datom_sync()}}, or a write of that table,
+publishes it.
 
 Files whose format is outside datom's ingestion allowlist (flat tabular
 formats only) are flagged \code{"unsupported_format"} up front, without blocking

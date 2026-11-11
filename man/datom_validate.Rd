@@ -9,13 +9,37 @@ datom_validate(conn, fix = FALSE)
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
-\item{fix}{If \code{TRUE}, attempts to fix inconsistencies by syncing data-side
-metadata (manifest + per-artifact metadata) to storage, and by restoring a
-\strong{set's} payload when storage has lost it -- git holds \code{{name}/set.json},
-so those bytes are recoverable. A restore happens only when the stored
-object is absent and only when the clone's bytes hash to the
-\code{document_sha} already recorded; a stored payload is never overwritten and
-its recorded hash is never recomputed.
+\item{fix}{If \code{TRUE}, runs the repair after the checks, whether or not they
+found anything (the repair also finishes what they cannot see). In order:
+\itemize{
+\item datom's files that an interrupted write left uncommitted are put back to
+the last commit, never published, with a warning naming each artifact
+(run that write again to save it);
+\item the clone is pulled;
+\item a \strong{set's} payload storage has lost is restored from the clone -- git
+holds \code{{name}/set.json}, so those bytes are recoverable. A restore
+happens only when the stored object is absent and only when the clone's
+bytes hash to the \code{document_sha} already recorded; a stored payload is
+never overwritten and its recorded hash is never recomputed;
+\item any commit the git remote lacks is pushed;
+\item every artifact's documents are published from the clone (its version
+snapshot, history, then \code{metadata.json}), then the manifest, and the
+manifest only if every artifact was published.
+}
+
+A stored version this clone has never seen is replaced by the clone's,
+and an artifact the stored manifest names but the clone lacks loses its
+row; each gets a warning. So a repair run while a teammate is writing can
+replace the version they published seconds earlier, until their table's
+next write. If the stored manifest cannot be read, every artifact and the
+manifest are published from the clone, with a warning saying so. The
+repair reports, per artifact, what it reset, pushed and published.
+
+A merge in progress, a failed fetch, a refused push or a set payload
+storage will not take stops the repair with an error before anything is
+published, each message naming its way out. A failure while publishing one
+artifact does not stop it: the others are published, the manifest is not,
+and \code{fixed} is \code{FALSE}.
 
 A missing \strong{table} payload (\code{data_missing_s3}) cannot be repaired: the
 parquet bytes are never in the clone. Those tables are named in a warning
@@ -28,7 +52,8 @@ A list with:
 \item{repo_files}{Data frame of repo-level file checks.}
 \item{tables}{Data frame of per-artifact checks, one row per artifact of
 either kind, with a \code{kind} column. Named \code{tables} for compatibility.}
-\item{fixed}{Logical — \code{TRUE} if \code{fix = TRUE} was applied.}
+\item{fixed}{Logical — \code{TRUE} if \code{fix = TRUE} ran the repair and every
+artifact was published.}
 }
 }
 \description{
@@ -56,9 +81,16 @@ can verify it.
 
 Statuses reported in the \code{tables} frame: \code{metadata_missing_s3},
 \code{history_missing_s3}, \code{data_missing_s3}, \code{members_unresolvable},
-\code{document_sha_missing}, and \code{kind_unsupported} for an artifact whose metadata
+\code{document_sha_missing}, \code{kind_unsupported} for an artifact whose metadata
 declares a kind this version of datom does not know -- reported rather than
-fatal, with that row's payload left unchecked.
+fatal, with that row's payload left unchecked -- and \code{manifest_mismatch_s3}.
+
+\code{manifest_mismatch_s3} means the stored manifest names a different version
+of the artifact from the one its stored \code{metadata.json} and history
+describe, so a read and \code{\link[=datom_list]{datom_list()}} can disagree. Two writes of the same
+table publishing at once can leave it, and so can a write that stopped just
+before its manifest upload. It compares storage with itself (no git read),
+and \code{fix = TRUE}, or the artifact's next write, clears it.
 }
 
 \examples{

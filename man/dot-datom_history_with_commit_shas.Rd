@@ -29,8 +29,8 @@ made no commit passes \code{NULL} and every entry is derived.}
 }
 \description{
 Returns \code{history} with a \code{commit_sha} on every entry whose producing commit is
-known, and unchanged entries where it is not. Called by each of the three
-functions that upload \code{version_history.json}.
+known, and unchanged entries where it is not. Called by the function that
+uploads \code{version_history.json}, \code{\link[=.datom_push_metadata_s3]{.datom_push_metadata_s3()}}.
 }
 \details{
 Two sources, in this order:

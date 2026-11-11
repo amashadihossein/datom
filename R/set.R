@@ -2,8 +2,8 @@
 #
 # A set is a reference layer, not a data layer. Its payload is a JSON document of
 # pointers at existing artifact versions plus text labels, and everything else --
-# version history, content addressing, change detection, the git-gates-storage
-# ordering -- is the same machinery a table write uses.
+# version history, content addressing, change detection, the order of the
+# write -- is the same machinery a table write uses.
 #
 # THE WRITE CANONICALIZES; THE READ NEVER DOES. Every "same fact, two spellings"
 # decision is made once, on the way in. The read parses, normalizes
@@ -37,12 +37,13 @@
 #      file and history would have to be read by listing filenames, which is
 #      hand-maintaining what git already maintains.
 #
-#   4. NEVER RE-EMIT A PAYLOAD FOR A `data_sha` ALREADY IN HISTORY. Reuse the
-#      stored object and carry its recorded `document_sha` forward. Recomputing
-#      the hash from freshly emitted bytes while reusing the stored object records
-#      a hash of bytes nobody stored, and every per-chunk test passes -- it
-#      surfaces later as a refused read of a valid version. See
-#      `.datom_resolve_document_sha()`.
+#   4. NEVER RE-EMIT A PAYLOAD FOR A `data_sha` ALREADY STORED. Reuse the
+#      stored object, carry its recorded `document_sha` forward, and give the
+#      clone's `set.json` the stored bytes when the fresh ones are spelled
+#      differently. Recomputing the hash from freshly emitted bytes while reusing
+#      the stored object records a hash of bytes nobody stored, and every
+#      per-chunk test passes -- it surfaces later as a refused read of a valid
+#      version. See `.datom_resolve_document_sha()`.
 #
 #   5. `document_sha` IS POPULATED BEFORE THE METADATA DOCUMENT IS WRITTEN.
 #      `jsonlite` does not omit a NULL element, it writes `{}`, so a document
@@ -80,12 +81,11 @@
 #'    it is the precondition the self-reference refusal depends on -- that refusal
 #'    needs the set's own identity, and this is where it is established.
 #'
-#' **Read from `project.yaml`, not from the connection.** Only
-#' `min_writer_version` rides on a `datom_conn`; `mode` and `set` are read here,
-#' at the one place that needs them, so nothing has to be threaded through
-#' connection construction for two fields with one consumer. If a later caller
-#' wants them on the conn it is a move with one call site to update, rather than a
-#' decision to reopen.
+#' **Read from `project.yaml`, not from the connection.** No field that
+#' authorises a write rides on a `datom_conn`: `mode` and `set` are read here,
+#' and `min_writer_version` by the writer-floor check, each from the file as it
+#' is at write time, because a hand edit or a pull can replace it after the
+#' connection was built.
 #'
 #' **`datom_init_repo(mode = "product", set = <name>)` is what declares both
 #' fields**, so the supported route into this check is a repo created that way. It
@@ -280,10 +280,10 @@
 #'   first write has no directory to discover.
 #' @param include_paths The caller's character vector, or `NULL`.
 #' @return Absolute paths in the clone, or `NULL`. **Absolute**, because
-#'   [.datom_commit_and_mirror()] relativises what it is given against `conn$path`,
-#'   and `fs::path_rel()` on an already-relative path resolves it against the
-#'   working directory instead -- which aborts with "files do not exist" pointing
-#'   somewhere the caller never named.
+#'   [.datom_commit_and_publish()] relativises what it is given against
+#'   `conn$path`, and `fs::path_rel()` on an already-relative path resolves it
+#'   against the working directory instead -- which aborts with "files do not
+#'   exist" pointing somewhere the caller never named.
 #' @keywords internal
 .datom_check_include_paths <- function(conn, name, include_paths) {
   if (is.null(include_paths)) return(NULL)
@@ -882,6 +882,22 @@
 }
 
 
+#' Write a Set Payload to a File
+#'
+#' The one place that decides how a payload is spelled in bytes. The bytes it
+#' writes are the ones stored at `{name}/{data_sha}.json` and kept in the
+#' clone's `set.json`, and `document_sha` is their hash.
+#'
+#' @param payload The tidied, validated and ordered payload.
+#' @param path File to write.
+#' @return Invisible `path`.
+#' @keywords internal
+.datom_write_set_payload <- function(payload, path) {
+  jsonlite::write_json(payload, path, auto_unbox = TRUE, pretty = TRUE)
+  invisible(path)
+}
+
+
 # --- the write verb ------------------------------------------------------------
 
 #' Save a Set as a New Version
@@ -1011,6 +1027,16 @@
 #' check alone would miss that, since two product repos may declare the same set
 #' name. A `name` argument that disagrees with the set's own name stops it too.
 #' A plain list of member records carries neither, so neither is checked.
+#'
+#' @section If a write stops partway:
+#' If `datom_write_set()` stops partway, for example on a dropped connection,
+#' run the same call again: it finishes that version rather than saving it
+#' twice. The set's payload goes into storage before anything is committed, so
+#' one that stops before its commit can leave a payload no version names. If
+#' another table or set has unfinished work, the write stops before changing
+#' anything, names it, and says to run `datom_validate(fix = TRUE)`, which
+#' finishes every table and set. As for tables (see [datom_write()]), datom's own
+#' files are not edited by hand.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()], scoped to the
 #'   product repo (developer role).
@@ -1201,6 +1227,16 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   data_sha <- meta$data_sha
   metadata_sha <- .datom_compute_metadata_sha(meta)
 
+  # The merge check, heal's reset, the pull, then heal's publish: after every
+  # check above, each of which needs no storage state heal can change, and
+  # before change detection, which reads the stored metadata heal may just have
+  # published. Heal acts on this set only; another artifact's unfinished work
+  # stops the write here, before anything is pushed or published.
+  # `include_paths` are the caller's files and are never reset.
+  .datom_heal(conn, artifact = name)
+  .datom_pull_before_write(conn)
+  .datom_heal_publish(conn, artifact = name)
+
   chg <- .datom_has_changes(conn, name, data_sha, metadata_sha)
   change_type <- chg$change_type
 
@@ -1241,19 +1277,16 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
     )))
   }
 
-  # The git copy at its stable path, and the bytes every other hash refers to.
-  # Written before the metadata document so `document_sha` can describe real
-  # bytes, and it is the same file that gets uploaded, so the git and storage
-  # copies cannot hold two spellings of one `data_sha`.
-  set_dir <- fs::path(conn$path, name)
-  fs::dir_create(set_dir)
-  payload_path <- fs::path(set_dir, "set.json")
-  jsonlite::write_json(payload, payload_path, auto_unbox = TRUE, pretty = TRUE)
-
-  new_document_sha <- digest::digest(file = payload_path, algo = "sha256")
+  # The payload first: built in a temporary file and stored (only if absent)
+  # before anything in the clone changes, so a write that breaks at any later
+  # step leaves a version a re-run can finish. Every refusal check above runs
+  # before this upload, so a refused write stores nothing.
+  payload_tmp <- tempfile(fileext = ".json")
+  on.exit(unlink(payload_tmp), add = TRUE)
+  .datom_write_set_payload(payload, payload_tmp)
 
   document_decision <- .datom_resolve_document_sha(
-    conn, name, data_sha, new_document_sha, change_type, chg$current
+    conn, name, data_sha, payload_tmp, change_type, chg$current
   )
   meta$document_sha <- document_decision$document_sha
 
@@ -1273,6 +1306,25 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
       class = "datom_set_document_sha_missing"
     )
   }
+
+  # One spelling in git and storage. Several spellings share one `data_sha`, so
+  # when the recorded hash is a stored payload's (reused from the history, or
+  # found already stored) the fresh bytes can differ from it; the stored payload
+  # then becomes the clone's `set.json`. Otherwise git would hold bytes that do
+  # not match the recorded hash while storage holds bytes that do.
+  if (!identical(document_decision$outcome, "uploaded") &&
+      !identical(digest::digest(file = payload_tmp, algo = "sha256"),
+                 meta$document_sha)) {
+    .datom_storage_download(
+      conn, .datom_artifact_payload_key(name, data_sha, "set"), payload_tmp
+    )
+  }
+
+  # The git copy at its stable path, the same bytes as the stored payload.
+  set_dir <- fs::path(conn$path, name)
+  fs::dir_create(set_dir)
+  payload_path <- fs::path(set_dir, "set.json")
+  fs::file_copy(payload_tmp, payload_path, overwrite = TRUE)
 
   # Keep any top-level field the existing document holds that this build cannot
   # place -- the document above was rebuilt from scratch, which would delete it.
@@ -1310,18 +1362,10 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # files. A second commit for them would leave two versions of "what produced
   # this set" and no way to say which one the set pins. `NULL` drops out of
   # `c()`, so a write with no extra paths is byte-for-byte the previous one.
-  commit_sha <- .datom_commit_and_mirror(
-    conn, name, meta, metadata_sha,
+  commit_sha <- .datom_commit_and_publish(
+    conn, name,
     git_paths = c(write_result$git_paths, payload_path, include_paths),
-    message = messages$commit,
-    upload = if (isTRUE(document_decision$upload)) {
-      list(
-        path = payload_path,
-        key = .datom_artifact_payload_key(name, data_sha, "set")
-      )
-    } else {
-      NULL
-    }
+    message = messages$commit
   )
 
   n_members <- length(payload$members)

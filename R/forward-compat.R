@@ -230,12 +230,49 @@
 #' Treating a malformed floor as no floor would turn a typo in a policy field
 #' into a silently disabled policy.
 #'
+#' **Read from the clone's `.datom/project.yaml` on every call**, never from a
+#' copy taken when the connection was made: every write now pulls before its own
+#' work, and a floor raised in a commit that pull brings in has to bind the write
+#' it arrived in. The parse is gated like every other read of this file (its
+#' declared format first). A file that exists but cannot be read or parsed stops
+#' the write: a floor that cannot be read is not the same as no floor. No clone,
+#' or a clone with no `project.yaml`, has no declaration to read and passes; a
+#' write without a clone is refused by the role check, and a connection cannot
+#' be made from a clone without the file.
+#'
 #' @param conn A `datom_conn` object.
 #' @return Invisibly `NULL`. Aborts when the running build is older than the
 #'   declared floor.
 #' @keywords internal
 .datom_check_writer_floor <- function(conn) {
-  declared <- conn$min_writer_version
+  if (is.null(conn$path) || !nzchar(conn$path)) return(invisible(NULL))
+
+  yaml_path <- fs::path(conn$path, ".datom", "project.yaml")
+  if (!fs::file_exists(yaml_path)) return(invisible(NULL))
+
+  cfg <- tryCatch(yaml::read_yaml(yaml_path), error = function(e) e)
+  if (inherits(cfg, "error") || !(is.null(cfg) || is.list(cfg))) {
+    reason <- if (inherits(cfg, "error")) {
+      conditionMessage(cfg)
+    } else {
+      "It does not hold a set of named fields."
+    }
+    cli::cli_abort(
+      c(
+        "Cannot read {.file .datom/project.yaml}, so datom cannot check which \\
+         versions of datom this repo accepts writes from.",
+        "x" = "{reason}",
+        "i" = "datom changed nothing.",
+        "i" = "Restore the file from git ({.code git checkout -- .datom/project.yaml}) \\
+               or correct it, then re-run."
+      ),
+      class = "datom_project_config_unreadable"
+    )
+  }
+
+  .datom_check_project_schema(cfg, source = yaml_path, operation = "write")
+
+  declared <- cfg$min_writer_version
   if (is.null(declared)) return(invisible(NULL))
 
   usable <- length(declared) == 1L && !is.na(declared) &&
@@ -320,11 +357,15 @@
   unknown <- setdiff(keys, known)
   if (length(unknown) == 0L) return(invisible(NULL))
 
+  # The evidence in full, so a wrong inference can be reported: the document,
+  # the names, and the build that could not place them.
+  installed <- as.character(utils::packageVersion("datom"))
   cli::cli_abort(
     c(
       "{.val {source}} carries {length(unknown)} field{?s} this build of datom \\
        cannot place.",
       "x" = "Unrecognised: {.field {unknown}}.",
+      "x" = "Installed datom is {installed}.",
       "i" = "A newer datom wrote this document, and this build would rewrite it \\
              without accounting for what it cannot place.",
       .datom_upgrade_bullets(),
@@ -373,8 +414,10 @@
 #' the sequence again afterwards. See `.datom_sync_metadata()`.
 #'
 #' @param conn A `datom_conn` object.
-#' @param artifact Name of the single artifact this write touches, or `NULL` to
-#'   check every artifact present in the clone.
+#' @param artifact Names of the artifacts this write touches (one for a table or
+#'   set write; every table in the preview for [datom_sync()], whose one heal may
+#'   publish any of them), or `NULL` to check every artifact present in the
+#'   clone.
 #' @return Invisibly `NULL`. Aborts on any refusal.
 #' @keywords internal
 .datom_check_write_entry <- function(conn, artifact = NULL) {
@@ -393,11 +436,13 @@
   # on the same file moments later with the parser's own error.
   if (read$ok) {
     if (!("artifacts" %in% names(read$manifest))) {
+      installed <- as.character(utils::packageVersion("datom"))
       cli::cli_abort(
         c(
           "Cannot find an artifact list in {.file .datom/manifest.json}.",
           "x" = "The document declares schema v{read$declared} and holds no \\
                  artifact list this build can reach.",
+          "x" = "Installed datom is {installed}.",
           "i" = "A newer datom may have restructured it. Writing now would \\
                  replace it with a shape this build invented.",
           .datom_upgrade_bullets(),

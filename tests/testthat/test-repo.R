@@ -118,10 +118,13 @@ test_that("datom_repo_set_data_store() refuses a config format it cannot read", 
   # -- which is not contrived here, because this is the storage-migration verb,
   # called exactly when somebody is reorganising storage by hand.
   #
-  # No git repo and no push stub are needed: the refusal happens before the merge,
-  # so nothing reaches the commit.
+  # No push stub is needed: the refusal happens before the merge, so nothing
+  # reaches the commit. The folder is a git repo because the verb's merge check
+  # and staged-file stop run first, before it reads the file.
+  skip_if_no_git2r()
   withr::with_tempdir({
     repo_path <- fs::dir_create("repo")
+    git2r::init(repo_path)
     write_project_yaml(repo_path, schema_version = .datom_project_schema + 1L)
     yaml_path <- fs::path(repo_path, ".datom", "project.yaml")
     before <- readLines(yaml_path, warn = FALSE)
@@ -164,7 +167,7 @@ test_that("datom_repo_set_data_store() rewrites storage.data with local store", 
     conn      <- make_dev_conn(repo_path)
 
     # Stub push so it doesn't need a real remote
-    mockery::stub(datom_repo_set_data_store, ".datom_git_push", invisible(TRUE))
+    mockery::stub(datom_repo_set_data_store, ".datom_push_naming_unpublished", invisible(character()))
 
     sha <- datom_repo_set_data_store(conn, new_store)
 
@@ -218,7 +221,7 @@ test_that("datom_repo_set_data_store() storage.governance is untouched", {
     new_store <- datom_store_local(new_dir, validate = FALSE)
     conn      <- make_dev_conn(repo_path, gov_root = "gov-bucket")
 
-    mockery::stub(datom_repo_set_data_store, ".datom_git_push", invisible(TRUE))
+    mockery::stub(datom_repo_set_data_store, ".datom_push_naming_unpublished", invisible(character()))
 
     datom_repo_set_data_store(conn, new_store)
 
@@ -257,7 +260,7 @@ test_that("datom_repo_set_data_store() sets correct fields for s3 store", {
     )
     conn <- make_dev_conn(repo_path)
 
-    mockery::stub(datom_repo_set_data_store, ".datom_git_push", invisible(TRUE))
+    mockery::stub(datom_repo_set_data_store, ".datom_push_naming_unpublished", invisible(character()))
 
     datom_repo_set_data_store(conn, new_store)
 
@@ -287,7 +290,7 @@ test_that("datom_repo_set_data_store() local store has no region field", {
     new_store <- datom_store_local(new_dir, validate = FALSE)
     conn      <- make_dev_conn(repo_path)
 
-    mockery::stub(datom_repo_set_data_store, ".datom_git_push", invisible(TRUE))
+    mockery::stub(datom_repo_set_data_store, ".datom_push_naming_unpublished", invisible(character()))
 
     datom_repo_set_data_store(conn, new_store)
 
@@ -311,7 +314,7 @@ test_that("datom_repo_set_data_store() uses custom commit message when provided"
     new_store <- datom_store_local(new_dir, validate = FALSE)
     conn      <- make_dev_conn(repo_path)
 
-    mockery::stub(datom_repo_set_data_store, ".datom_git_push", invisible(TRUE))
+    mockery::stub(datom_repo_set_data_store, ".datom_push_naming_unpublished", invisible(character()))
 
     datom_repo_set_data_store(conn, new_store, message = "migrate to new backend")
 
@@ -336,7 +339,7 @@ test_that("datom_repo_set_data_store() returns SHA invisibly", {
     new_store <- datom_store_local(new_dir, validate = FALSE)
     conn      <- make_dev_conn(repo_path)
 
-    mockery::stub(datom_repo_set_data_store, ".datom_git_push", invisible(TRUE))
+    mockery::stub(datom_repo_set_data_store, ".datom_push_naming_unpublished", invisible(character()))
 
     result <- withVisible(datom_repo_set_data_store(conn, new_store))
     expect_false(result$visible)
@@ -675,7 +678,7 @@ test_that("datom_repo_attach_governance() writes git copy + storage mirror", {
     gov_store  <- datom_store_local(fs::dir_create("gov-store"),
                                     prefix = "org-gov", validate = FALSE)
 
-    mockery::stub(datom_repo_attach_governance, ".datom_git_push", invisible(TRUE))
+    mockery::stub(datom_repo_attach_governance, ".datom_push_naming_unpublished", invisible(character()))
 
     sha <- datom_repo_attach_governance(
       conn, "https://example.com/gov.git", gov_store
@@ -711,7 +714,7 @@ test_that("datom_repo_attach_governance() uses default commit message", {
     conn      <- make_attach_conn(repo_path, fs::dir_create("data-store"))
     gov_store <- datom_store_local(fs::dir_create("gov-store"), validate = FALSE)
 
-    mockery::stub(datom_repo_attach_governance, ".datom_git_push", invisible(TRUE))
+    mockery::stub(datom_repo_attach_governance, ".datom_push_naming_unpublished", invisible(character()))
 
     datom_repo_attach_governance(conn, "https://example.com/gov.git", gov_store)
 
@@ -734,7 +737,7 @@ test_that("datom_repo_attach_governance() warns but succeeds when mirror fails",
     conn      <- make_attach_conn(repo_path, fs::dir_create("data-store"))
     gov_store <- datom_store_local(fs::dir_create("gov-store"), validate = FALSE)
 
-    mockery::stub(datom_repo_attach_governance, ".datom_git_push", invisible(TRUE))
+    mockery::stub(datom_repo_attach_governance, ".datom_push_naming_unpublished", invisible(character()))
     mockery::stub(
       datom_repo_attach_governance,
       ".datom_storage_write_governance_json",
@@ -765,7 +768,7 @@ test_that("datom_repo_attach_governance() returns SHA invisibly", {
     conn      <- make_attach_conn(repo_path, fs::dir_create("data-store"))
     gov_store <- datom_store_local(fs::dir_create("gov-store"), validate = FALSE)
 
-    mockery::stub(datom_repo_attach_governance, ".datom_git_push", invisible(TRUE))
+    mockery::stub(datom_repo_attach_governance, ".datom_push_naming_unpublished", invisible(character()))
 
     result <- withVisible(
       datom_repo_attach_governance(conn, "https://example.com/gov.git", gov_store)

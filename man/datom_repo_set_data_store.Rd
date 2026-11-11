@@ -36,6 +36,14 @@ For governed projects the authoritative address is \code{ref.json} in the gov
 repo -- this function updates only the local data clone so that
 \code{datom_get_conn()} stays consistent after migration. It is called by
 \code{datomanager::gov_migrate_data()} after the ref switch, never before.
+
+Its push does not publish: when the commits it pushes hold a datom version
+(a write whose own push failed), it names the table or set, which readers
+cannot see until \code{datom_validate(fix = TRUE)}, or a write of it, publishes it.
+
+It stops before changing anything while a merge datom did not start is in
+progress, and when one of datom's own files for a table or set is already
+staged (a write stopped partway), since the commit would take it.
 }
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a

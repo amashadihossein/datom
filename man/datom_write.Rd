@@ -14,22 +14,30 @@ datom_write(
   .source_lineage = NULL,
   .table_type = "derived",
   .original_file_sha = NULL,
-  .original_format = NULL
+  .original_format = NULL,
+  .healed = FALSE
 )
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
-\item{data}{Data frame to write. If NULL with name, does metadata-only sync.}
+\item{data}{Data frame to write. If \code{NULL} with \code{name}, publishes what is
+committed for that table (its metadata and history, then the manifest),
+pushing first when GitHub lacks the commit; it commits nothing, and stops
+on an uncommitted change to that table's datom files. To change custom
+metadata, write the data again with \verb{metadata =}.}
 
-\item{name}{Table name. If NULL with NULL data, mirrors the clone's
-storage-side documents for \strong{every} artifact of either kind: the manifest,
-and each artifact's metadata, version history and versioned snapshots. On
-that route a \strong{set} whose stored payload is missing also has it restored
-from the clone -- see \code{\link[=datom_validate]{datom_validate()}}, which shares the mechanism, for
-the conditions on that.}
+\item{name}{Table name. If NULL with NULL data, runs the repair of
+\code{datom_validate(fix = TRUE)} after asking: it puts back datom's files an
+interrupted write left uncommitted, pulls, puts back a \strong{set}'s missing
+payload, may push commits the git remote lacks, and publishes every
+artifact of either kind from the clone (its current version snapshot,
+history and metadata), then the manifest. See \code{\link[=datom_validate]{datom_validate()}} for the
+details.}
 
-\item{metadata}{Optional list of custom metadata.}
+\item{metadata}{Optional named list of custom metadata. A missing value
+(\code{NA}), \code{NaN} or \code{Inf} anywhere in it is refused, because it cannot be
+read back as written: leave the field out instead.}
 
 \item{message}{Optional commit message.}
 
@@ -54,6 +62,10 @@ imported self-entry path, set by \code{\link[=datom_sync]{datom_sync()}}. Unused
 
 \item{.original_format}{Internal. Original file format
 (set by \code{datom_sync()}); NULL for derived.}
+
+\item{.healed}{Internal. \code{TRUE} when the caller has already run the merge
+check, heal's reset, the pull and heal's publish for this call, so a sync
+heals and pulls once rather than once per table.}
 }
 \value{
 List with deployment details.
@@ -65,6 +77,29 @@ the project's GitHub repository. If nothing has changed since the last
 version, nothing is saved. To bring in files rather than data frames, use
 \code{\link[=datom_sync]{datom_sync()}}.
 }
+\section{If a write stops partway}{
+
+If \code{datom_write()} stops partway, for example on a dropped connection or
+Ctrl-C, run the same call again: it finishes that version rather than saving
+it twice. Every write first pulls what teammates have pushed; when two clones
+disagree only in the project's manifest, datom rebuilds that file and finishes
+the merge itself. If GitHub cannot be reached, another table or set has
+unfinished work, or a merge is in progress, the write stops before changing
+anything and says what to run (for another artifact's unfinished work,
+\code{datom_validate(fix = TRUE)}, which finishes every table and set).
+
+The data file goes into storage before anything is committed, so a write
+that stops before its commit can leave a data file that no version names: it
+costs space, and for sensitive data the bytes are in the bucket. datom's own
+files (each table's \code{metadata.json} and \code{version_history.json}, a set's
+\code{set.json}, and \code{.datom/manifest.json}) are written only by datom commands;
+an edit by hand is treated as an unfinished write: a write of that table
+undoes it, and other writes stop on it. Commit your own
+files with \code{\link[=datom_repo_commit]{datom_repo_commit()}} rather than a plain \verb{git commit}, which can
+capture a datom write halfway through. Two R sessions writing through one
+clone at the same time are not supported.
+}
+
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
 # local directory for object storage.

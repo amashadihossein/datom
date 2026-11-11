@@ -2,7 +2,7 @@
 % Please edit documentation in R/manifest-rebuild.R
 \name{.datom_rebuild_manifest_entry}
 \alias{.datom_rebuild_manifest_entry}
-\title{Rebuild One Artifact's Manifest Row from Its Own Documents}
+\title{Rebuild One Artifact's Manifest Row from Its Own Documents in Storage}
 \usage{
 .datom_rebuild_manifest_entry(conn, name)
 }
@@ -15,25 +15,12 @@
 A named list: one manifest artifact row.
 }
 \description{
-Every field on the row is copied from \code{metadata.json}, counted from
-\code{version_history.json}, or -- for a set's member count -- read from the payload.
-The row's shape has to match what \code{.datom_update_manifest_entry()} writes,
-field for field, or a rebuilt repo answers differently from a healthy one -- so
-the two are pinned against each other by a test rather than by matching
-comments.
+Reads the artifact's \code{metadata.json} and \code{version_history.json} from storage,
+and for a set its payload, then builds the row with \code{\link[=.datom_manifest_row]{.datom_manifest_row()}}.
 }
 \details{
-\code{last_updated} is the one field with no recorded source: the writer stamps the
-wall clock at the moment it rewrites the row, and that moment is not in any
-document. The version's own \code{created_at} is used instead, which is the closest
-true statement available -- when this artifact's current state was written.
-
-\strong{A set's row is built from different fields, and costs a third read.} A set
-carries \code{member_count} where a table carries \code{size_bytes}, and that count lives
-in the payload rather than in either document read here -- hence
-\code{\link[=.datom_rebuild_member_count]{.datom_rebuild_member_count()}}. Putting a \code{size_bytes} on a set row instead
-would be worse than leaving the count out: the default is \code{0}, which has length
-1 and therefore survives \code{purrr::compact()}, so the row would state that the
-artifact is zero bytes.
+\strong{A set's row costs a third read.} A set carries \code{member_count} where a
+table carries \code{size_bytes}, and that count lives in the payload rather than in
+either document -- hence \code{\link[=.datom_rebuild_member_count]{.datom_rebuild_member_count()}}.
 }
 \keyword{internal}

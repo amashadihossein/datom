@@ -16,7 +16,20 @@ The data component provides bucket, prefix, region, and credentials.}
 \item{project_name}{Project name. Required for readers (no local repo).
 Ignored when \code{path} is provided (read from yaml).}
 
-\item{endpoint}{Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.}
+\item{endpoint}{Optional S3 endpoint URL (e.g., for S3 access points or an
+S3-compatible service). NULL for default. A data file is uploaded only if
+nothing is stored at its key (S3's conditional write, \code{If-None-Match}),
+with a whole-file SHA-256 checksum. On an S3-compatible service:
+\itemize{
+\item one that rejects either header (400 or 501) stops every write at its
+first step, the data file upload, with the service's own error, and
+nothing changes. paws alone can cause this: from \code{paws.common} 0.9.0
+every upload carries a checksum by default, metadata uploads included;
+\item one that ignores conditional writes lets two writers storing the same
+new content at the same moment both upload. The second file replaces
+the first, and reads of one of the two versions are then refused by the
+hash check.
+}}
 }
 \value{
 A \code{datom_conn} object.

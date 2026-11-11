@@ -16,9 +16,8 @@ determined -- no upstream tracking ref yet, or the comparison failed.
 is exactly the state of a branch that has never been pushed.
 }
 \description{
-The ahead half of the count \code{.datom_check_git_current()} already computes for
-its behind half: \code{git2r::ahead_behind()} element \verb{[[1]]} is ahead, \verb{[[2]]} is
-behind. No new git machinery.
+The ahead half of \code{git2r::ahead_behind()}: element \verb{[[1]]} is ahead, \verb{[[2]]}
+is behind.
 }
 \details{
 \strong{Does not fetch.} The comparison is against the cached remote-tracking ref,

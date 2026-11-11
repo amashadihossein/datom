@@ -28,6 +28,11 @@ This is the other half of \code{\link[=datom_repo_commit]{datom_repo_commit()}}\
 attempt} -- and since \code{paths = NULL} is add-all, a caller who merely wanted to
 push would risk committing whatever work in progress the tree happened to
 hold.
+
+\strong{It pushes, and does not publish.} When the commits it pushes hold a datom
+version (a write whose own push failed), it names the table or set, which
+readers cannot see until \code{datom_validate(fix = TRUE)}, or a write of it,
+publishes it. A write of any other table or set stops until then.
 }
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a

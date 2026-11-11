@@ -257,7 +257,7 @@ test_that("datom_validate returns valid when everything consistent", {
     # Table with metadata
     fs::dir_create("customers")
     jsonlite::write_json(
-      list(data_sha = "abc123"),
+      list(data_sha = "abc123", hash_algo = "datom-cv1"),
       "customers/metadata.json", auto_unbox = TRUE
     )
     jsonlite::write_json(list(), "customers/version_history.json",
@@ -308,7 +308,7 @@ test_that("datom_validate detects table metadata missing from S3", {
 
     fs::dir_create("orders")
     jsonlite::write_json(
-      list(data_sha = "d123"),
+      list(data_sha = "d123", hash_algo = "datom-cv1"),
       "orders/metadata.json", auto_unbox = TRUE
     )
 
@@ -336,7 +336,7 @@ test_that("datom_validate detects data parquet missing from S3", {
 
     fs::dir_create("tbl")
     jsonlite::write_json(
-      list(data_sha = "abc"),
+      list(data_sha = "abc", hash_algo = "datom-cv1"),
       "tbl/metadata.json", auto_unbox = TRUE
     )
     jsonlite::write_json(list(), "tbl/version_history.json", auto_unbox = TRUE)
@@ -442,7 +442,7 @@ test_that("datom_validate with fix = TRUE names tables it cannot repair", {
                          ".datom/manifest.json", auto_unbox = TRUE)
     fs::dir_create("dm")
     jsonlite::write_json(
-      list(name = "dm", data_sha = strrep("a", 64)),
+      list(name = "dm", data_sha = strrep("a", 64), hash_algo = "datom-cv1"),
       "dm/metadata.json",
       auto_unbox = TRUE
     )
@@ -539,7 +539,7 @@ test_that("datom_validate handles multiple tables with mixed status", {
       # A realistic 64-hex digest: the payload-key builder validates data_sha
       # (6-64 lowercase hex), so a short stub like "d1" is rejected and the
       # table would report data_missing_s3 instead of ok.
-      list(data_sha = strrep("d1", 32L)),
+      list(data_sha = strrep("d1", 32L), hash_algo = "datom-cv1"),
       "good_tbl/metadata.json", auto_unbox = TRUE
     )
     jsonlite::write_json(list(), "good_tbl/version_history.json",
@@ -548,7 +548,7 @@ test_that("datom_validate handles multiple tables with mixed status", {
     # Bad table — nothing on S3
     fs::dir_create("bad_tbl")
     jsonlite::write_json(
-      list(data_sha = strrep("d2", 32L)),
+      list(data_sha = strrep("d2", 32L), hash_algo = "datom-cv1"),
       "bad_tbl/metadata.json", auto_unbox = TRUE
     )
 
@@ -566,7 +566,9 @@ test_that("datom_validate handles multiple tables with mixed status", {
   })
 })
 
-test_that("datom_validate handles fix failure gracefully", {
+test_that("a stop inside the repair comes through datom_validate(fix = TRUE) unchanged", {
+  # As it does from datom_write(conn): each stop names its own way out, and a
+  # script should halt on it rather than read `fixed`.
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -579,14 +581,14 @@ test_that("datom_validate handles fix failure gracefully", {
     local_mocked_bindings(
       .datom_storage_exists = function(conn, s3_key) FALSE,
       .datom_sync_data_metadata = function(conn, .confirm = TRUE) {
-        stop("Sync failed")
+        cli::cli_abort("A merge is in progress.", class = "datom_merge_conflict")
       }
     )
 
-    result <- datom_validate(conn, fix = TRUE)
-
-    expect_false(result$fixed)
-    expect_false(result$valid)
+    expect_error(
+      suppressMessages(datom_validate(conn, fix = TRUE)),
+      class = "datom_merge_conflict"
+    )
   })
 })
 

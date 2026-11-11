@@ -23,6 +23,14 @@
 #' `datom_get_conn()` stays consistent after migration. It is called by
 #' `datomanager::gov_migrate_data()` after the ref switch, never before.
 #'
+#' Its push does not publish: when the commits it pushes hold a datom version
+#' (a write whose own push failed), it names the table or set, which readers
+#' cannot see until `datom_validate(fix = TRUE)`, or a write of it, publishes it.
+#'
+#' It stops before changing anything while a merge datom did not start is in
+#' progress, and when one of datom's own files for a table or set is already
+#' staged (a write stopped partway), since the commit would take it.
+#'
 #' @param conn A `datom_conn` object with `role = "developer"` and a local
 #'   repo path (`conn$path`).
 #' @param new_store A `datom_store_s3` or `datom_store_local` component
@@ -84,6 +92,12 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
     cli::cli_abort("No {.file .datom/project.yaml} found at {.path {conn$path}}.")
   }
 
+  # Before anything reads or rewrites the file, so either stop changes nothing.
+  # Ahead of the read too: with `project.yaml` itself conflicted, the read would
+  # fail on the conflict markers with a parser error instead of the merge
+  # message.
+  .datom_check_before_commit(conn, ".datom/project.yaml")
+
   # --- Read full yaml (read-modify-write: never reconstruct from conn) --------
   # Checked before the merge below, and NOT covered by the connection-time gate:
   # this verb edits, commits and pushes the file, so a shape this build cannot
@@ -137,7 +151,7 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
     message = commit_msg
   )
 
-  .datom_git_push(conn$path, pat = conn$github_pat)
+  .datom_push_naming_unpublished(conn)
 
   cli::cli_alert_success(
     "Updated {.file .datom/project.yaml} data store pointer for {.val {conn$project_name}}."
@@ -321,6 +335,14 @@ datom_repo_delete <- function(conn, confirm, force_gov_attached = FALSE) {
 #' Routing this write through datom upholds the two-repos invariant: the
 #' governance layer never mutates the data repo directly.
 #'
+#' Its push does not publish: when the commits it pushes hold a datom version
+#' (a write whose own push failed), it names the table or set, which readers
+#' cannot see until `datom_validate(fix = TRUE)`, or a write of it, publishes it.
+#'
+#' It stops before changing anything while a merge datom did not start is in
+#' progress, and when one of datom's own files for a table or set is already
+#' staged (a write stopped partway), since the commit would take it.
+#'
 #' @param conn A `datom_conn` object with `role = "developer"` and a local
 #'   data clone (`conn$path`).
 #' @param gov_repo_url HTTPS clone URL of the governance git repository to
@@ -398,6 +420,9 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
 
   project_name <- conn$project_name
 
+  # Before governance.json is written, so either stop changes nothing.
+  .datom_check_before_commit(conn, ".datom/governance.json")
+
   # --- Build + write governance.json (git canonical) -------------------------
   gov_json <- .datom_create_governance_json(
     gov_repo_url = gov_repo_url,
@@ -412,7 +437,7 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
     files   = ".datom/governance.json",
     message = commit_msg
   )
-  .datom_git_push(conn$path, pat = conn$github_pat)
+  .datom_push_naming_unpublished(conn)
 
   # --- Mirror to data storage (warn-and-continue on failure) -----------------
   tryCatch(
@@ -446,7 +471,9 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
 # A machine moment (inside datom_write() / datom_write_set()) stages an explicit
 # file list and never add-all, because it fires at a time datom chose and the
 # tree may hold a human's work in progress. A human moment is the opposite: the
-# caller asked for it, so `paths = NULL` means what `git add .` means.
+# caller asked for it, so `paths = NULL` means what `git add .` means -- except
+# that a commit taking datom's own uncommitted files stops instead
+# (`.datom_check_before_commit()`).
 
 
 #' Connection Requirements Shared by the Two Git-Mutation Verbs
@@ -522,9 +549,8 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
 
 #' Commits on This Branch the Remote Does Not Have
 #'
-#' The ahead half of the count `.datom_check_git_current()` already computes for
-#' its behind half: `git2r::ahead_behind()` element `[[1]]` is ahead, `[[2]]` is
-#' behind. No new git machinery.
+#' The ahead half of `git2r::ahead_behind()`: element `[[1]]` is ahead, `[[2]]`
+#' is behind.
 #'
 #' **Does not fetch.** The comparison is against the cached remote-tracking ref,
 #' so a stale ref can only cause an unnecessary push -- and a push pulls first
@@ -579,13 +605,20 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
 #' inside [datom_write()] stages an explicit file list, because it fires at a
 #' moment datom chose and must never sweep up work in progress.
 #'
-#' One consequence of add-all worth knowing rather than discovering: if an
-#' earlier datom write failed after writing local metadata but before committing,
-#' those datom files are dirty and this verb will stage them. That is left
-#' intentional -- silently excluding datom's own paths would make the argument
-#' lie about its contract, and the state is exactly what [datom_validate()]
-#' reports and `datom_validate(fix = TRUE)` repairs. It also moves git *ahead* of
-#' storage, which is the safe direction.
+#' **It never commits a datom write that stopped before its own commit.** Such a
+#' write leaves datom's files for its table or set (`metadata.json`,
+#' `version_history.json`, `set.json`, and its row in `.datom/manifest.json`)
+#' changed but uncommitted. When the commit would take any of them -- with
+#' `paths = NULL`, a path naming one or a folder holding one, or one already
+#' staged with `git add` -- it stops before staging anything, naming the table or
+#' set: re-run that write to finish it, or run `datom_validate(fix = TRUE)` to
+#' discard the changes. A commit of other paths goes ahead. A plain `git commit`
+#' from a terminal has no such check, so commit your own files with this verb.
+#'
+#' **It pushes, and does not publish.** When the commits it pushes hold a datom
+#' version (a write whose own push failed), it names the table or set, which
+#' readers cannot see until `datom_validate(fix = TRUE)`, or a write of it,
+#' publishes it.
 #'
 #' **Commit is idempotent, push is convergent, and neither implies the other.**
 #' A clean tree produces no commit and is not an error, so "commit everything"
@@ -661,16 +694,16 @@ datom_repo_commit <- function(conn, message, paths = NULL, push = TRUE) {
   # `.datom_git_branch()` and is reached only from `.datom_git_push()`, so with
   # `push = FALSE` nothing would check it.
   #
-  # Do NOT delete this as duplication of `.datom_check_git_current()`. That
-  # function does reach `.datom_git_branch()`, but only after four early returns
-  # -- no remote, the fetch failed, no upstream, and local SHA identical to
-  # upstream -- so it guards a detached HEAD only when you are already out of
-  # sync with the remote. A detached HEAD while up to date is the ordinary shape
-  # of the mistake and passes straight through. This is also why the guard earns
-  # a line at a low rate: a commit onto a detached HEAD succeeds, prints a SHA,
-  # and becomes unreachable the moment you switch branches -- and with
+  # Do NOT delete this as duplication of the push's own check: a detached HEAD
+  # while up to date is the ordinary shape of the mistake, and nothing else on
+  # this path looks at the branch before the commit. The guard earns its line at
+  # a low rate because a commit onto a detached HEAD succeeds, prints a SHA, and
+  # becomes unreachable the moment you switch branches -- and with
   # `push = FALSE` there is no later push failure to reveal it.
   branch_name <- .datom_git_branch(conn$path)
+
+  # Before anything is staged, so either stop changes nothing.
+  .datom_check_before_commit(conn, paths)
 
   # Nothing-to-do is detected here rather than read off the helper's return
   # value. `.datom_git_commit()` returns HEAD's SHA when nothing ends up staged
@@ -711,7 +744,7 @@ datom_repo_commit <- function(conn, message, paths = NULL, push = TRUE) {
     ahead <- if (created) NA_integer_ else .datom_git_ahead(conn$path)
 
     if (created || is.na(ahead) || ahead > 0L) {
-      .datom_git_push(conn$path, pat = conn$github_pat)
+      .datom_push_naming_unpublished(conn)
     } else {
       cli::cli_alert_info(
         "Remote already has every commit on {.val {branch_name}}."
@@ -738,6 +771,11 @@ datom_repo_commit <- function(conn, message, paths = NULL, push = TRUE) {
 #' attempt* -- and since `paths = NULL` is add-all, a caller who merely wanted to
 #' push would risk committing whatever work in progress the tree happened to
 #' hold.
+#'
+#' **It pushes, and does not publish.** When the commits it pushes hold a datom
+#' version (a write whose own push failed), it names the table or set, which
+#' readers cannot see until `datom_validate(fix = TRUE)`, or a write of it,
+#' publishes it. A write of any other table or set stops until then.
 #'
 #' @param conn A `datom_conn` object with `role = "developer"` and a local repo
 #'   path (`conn$path`).
@@ -794,7 +832,7 @@ datom_repo_push <- function(conn) {
     return(invisible(TRUE))
   }
 
-  .datom_git_push(conn$path, pat = conn$github_pat)
+  .datom_push_naming_unpublished(conn)
 
   # Deliberately no commit count in the message: the push pulls first, so a merge
   # can add a commit between the count above and what actually went out, and a

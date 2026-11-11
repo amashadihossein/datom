@@ -81,6 +81,159 @@ test_that(".datom_local_upload() errors on missing source file", {
   )
 })
 
+# --- .datom_local_upload_absent ----------------------------------------------
+
+# A store, a source file with known bytes, and the path the key lands at.
+local_absent_fixture <- function(bytes = "new bytes", env = parent.frame()) {
+  store_dir <- withr::local_tempdir(.local_envir = env)
+  src <- fs::path(withr::local_tempdir(.local_envir = env), "data.parquet")
+  writeBin(charToRaw(bytes), src)
+  conn <- make_local_conn(store_dir, "proj")
+  list(
+    conn = conn,
+    src = src,
+    key = "dm/abc.parquet",
+    dest = as.character(.datom_local_path(conn, "dm/abc.parquet"))
+  )
+}
+
+store_bytes <- function(path, bytes) {
+  fs::dir_create(fs::path_dir(path))
+  writeBin(charToRaw(bytes), path)
+}
+
+read_bytes <- function(path) rawToChar(readBin(path, "raw", fs::file_size(path)))
+
+# Every file in the key's folder, dotfiles included (`fs::dir_ls()` hides them
+# by default, and the temporary name starts with a dot).
+files_beside <- function(dest) {
+  as.character(fs::path_file(fs::dir_ls(fs::path_dir(dest), all = TRUE)))
+}
+
+test_that(".datom_local_upload_absent() uploads to an absent key, leaving no temporary file", {
+  f <- local_absent_fixture()
+
+  expect_identical(.datom_local_upload_absent(f$conn, f$src, f$key), "uploaded")
+  expect_identical(read_bytes(f$dest), "new bytes")
+  expect_identical(files_beside(f$dest), "abc.parquet")
+})
+
+test_that(".datom_local_upload_absent() never replaces a stored file (P2)", {
+  f <- local_absent_fixture()
+  store_bytes(f$dest, "stored bytes")
+
+  expect_identical(.datom_local_upload_absent(f$conn, f$src, f$key), "exists")
+  expect_identical(read_bytes(f$dest), "stored bytes")
+  expect_identical(files_beside(f$dest), "abc.parquet")
+})
+
+test_that(".datom_local_upload_absent() checks for a stored file before copying anything", {
+  f <- local_absent_fixture()
+  store_bytes(f$dest, "stored bytes")
+  copy <- mockery::mock(NULL)
+  mockery::stub(.datom_local_upload_absent, "fs::file_copy", copy)
+
+  expect_identical(.datom_local_upload_absent(f$conn, f$src, f$key), "exists")
+  mockery::expect_called(copy, 0)
+})
+
+test_that(".datom_local_upload_absent() leaves a file stored between its check and its link intact", {
+  f <- local_absent_fixture()
+  # Another writer stores the key after the existence check, just before the link.
+  link_after_other_writer <- function(from, to) {
+    store_bytes(to, "other writer")
+    base::file.link(from, to)
+  }
+  mockery::stub(.datom_local_upload_absent, "file.link", link_after_other_writer)
+
+  expect_identical(.datom_local_upload_absent(f$conn, f$src, f$key), "exists")
+  expect_identical(read_bytes(f$dest), "other writer")
+  expect_identical(files_beside(f$dest), "abc.parquet")
+})
+
+test_that(".datom_local_upload_absent() falls back to a move where hard links are unsupported", {
+  f <- local_absent_fixture()
+  mockery::stub(.datom_local_upload_absent, "file.link", function(from, to) FALSE)
+
+  expect_identical(.datom_local_upload_absent(f$conn, f$src, f$key), "uploaded")
+  expect_identical(read_bytes(f$dest), "new bytes")
+  expect_identical(files_beside(f$dest), "abc.parquet")
+})
+
+test_that(".datom_local_upload_absent() leaves nothing at the key when the copy fails partway", {
+  f <- local_absent_fixture()
+  half_copy <- function(path, new_path, ...) {
+    writeBin(charToRaw("new by"), new_path)
+    stop("disk full")
+  }
+  mockery::stub(.datom_local_upload_absent, "fs::file_copy", half_copy)
+
+  expect_error(.datom_local_upload_absent(f$conn, f$src, f$key), "disk full")
+  expect_false(fs::file_exists(f$dest))
+  expect_identical(files_beside(f$dest), character(0))
+})
+
+test_that(".datom_local_upload_absent() copies under a temporary name beside the key", {
+  f <- local_absent_fixture()
+  seen <- NULL
+  record_link <- function(from, to) {
+    seen <<- from
+    base::file.link(from, to)
+  }
+  mockery::stub(.datom_local_upload_absent, "file.link", record_link)
+
+  .datom_local_upload_absent(f$conn, f$src, f$key)
+
+  expect_true(.datom_is_temp_key(seen))
+  expect_identical(fs::path_dir(seen), fs::path_dir(f$dest))
+})
+
+test_that(".datom_local_upload_absent() errors on a missing source file", {
+  f <- local_absent_fixture()
+
+  expect_error(
+    .datom_local_upload_absent(f$conn, "/nonexistent/file.parquet", f$key),
+    "File not found"
+  )
+  expect_false(fs::file_exists(f$dest))
+})
+
+# --- .datom_is_temp_key -------------------------------------------------------
+
+test_that(".datom_is_temp_key() recognises a local upload's temporary names only", {
+  expect_identical(
+    .datom_is_temp_key(c(
+      "dm/.abc.parquet.1a2b3c.tmp",
+      "proj/datom/dm/.abc.json.ff01.tmp",
+      "dm/abc.parquet",
+      "dm/abc.tmp",
+      "proj/datom/.metadata/manifest.json",
+      "dm/.metadata/metadata.json",
+      ".metadata/manifest.json"
+    )),
+    c(TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE)
+  )
+  expect_identical(.datom_is_temp_key(character(0)), logical(0))
+})
+
+# --- .datom_local_object_sha256 -----------------------------------------------
+
+test_that(".datom_local_object_sha256() hashes the stored file", {
+  f <- local_absent_fixture()
+  store_bytes(f$dest, "stored bytes")
+
+  expect_identical(
+    .datom_local_object_sha256(f$conn, f$key),
+    digest::digest(charToRaw("stored bytes"), algo = "sha256", serialize = FALSE)
+  )
+})
+
+test_that(".datom_local_object_sha256() errors on a missing file", {
+  f <- local_absent_fixture()
+
+  expect_error(.datom_local_object_sha256(f$conn, f$key), "File not found")
+})
+
 # --- .datom_local_download ----------------------------------------------------
 
 test_that(".datom_local_download() copies file from store", {
@@ -383,4 +536,29 @@ test_that(".datom_storage_write_json() dispatches to local backend", {
   expect_true(fs::file_exists(dest))
   parsed <- jsonlite::fromJSON(dest)
   expect_equal(parsed$a, 1)
+})
+
+test_that(".datom_storage_upload_absent() dispatches to local backend", {
+  store_dir <- withr::local_tempdir()
+  conn <- make_local_conn(store_dir, "proj")
+
+  src <- fs::path(withr::local_tempdir(), "data.txt")
+  writeLines("dispatch test", src)
+
+  expect_identical(.datom_storage_upload_absent(conn, src, "t1/file.txt"), "uploaded")
+  expect_identical(.datom_storage_upload_absent(conn, src, "t1/file.txt"), "exists")
+})
+
+test_that(".datom_storage_object_sha256() dispatches to local backend", {
+  store_dir <- withr::local_tempdir()
+  conn <- make_local_conn(store_dir, "proj")
+
+  store_file <- fs::path(store_dir, "proj", "datom", "t1", "file.txt")
+  fs::dir_create(fs::path_dir(store_file))
+  writeLines("hash me", store_file)
+
+  expect_identical(
+    .datom_storage_object_sha256(conn, "t1/file.txt"),
+    digest::digest(file = as.character(store_file), algo = "sha256")
+  )
 })

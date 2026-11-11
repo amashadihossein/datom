@@ -1089,16 +1089,16 @@ Flexible write operations:
 
 | data | name | Behavior |
 |------|------|----------|
-| provided | provided | Normal write: commit → push → S3 sync |
-| NULL | provided | Metadata-only sync for single table (e.g., after editing dispatch.json) |
-| NULL | NULL | Data-side metadata resync (internal `.datom_sync_data_metadata()`; was `datom_sync_dispatch()` pre-lift-out) |
+| provided | provided | Normal write: data file → clone files → commit → push → publish (see "Write Ordering & Resilience") |
+| NULL | provided | Publishes what is committed for one table (snapshot, history, `metadata.json`, then the manifest), pushing first when GitHub lacks the commit; commits nothing. datom's own files are not hand-edited: an uncommitted change to the table's files stops it. Custom metadata is changed with `datom_write(conn, data, name, metadata = )` |
+| NULL | NULL | The repair, after a prompt (internal `.datom_sync_data_metadata()`, shared with `datom_validate(fix = TRUE)`; was `datom_sync_dispatch()` pre-lift-out) |
 
 For normal writes:
 - **Hash gate first**: `.datom_canonical_hash(data)` runs before any mutation, so an unhashable column aborts (naming every offender at once) with nothing written to git, storage, or the manifest.
 - Change detection via metadata_sha comparison (byte-order-sorted fields)
 - Handles: no-op (`none`), metadata-only update, or full update with storage upload
-- **`parquet_sha` decision** (`.datom_resolve_parquet_sha()`): `metadata_only` carries the current `parquet_sha` forward and skips the upload; `full` whose `data_sha` already has a recorded `parquet_sha` in history reuses it and does **not** re-upload (a fresh serialization can differ byte-for-byte and would break that version's integrity pin); `full` otherwise uploads and records the new hash.
-- The parquet upload stays **after** the git push. Git push is the serialization point that makes the reuse decision safe against concurrent writers; this ordering is load-bearing and must not be refactored.
+- **`parquet_sha` decision** (`.datom_resolve_parquet_sha()`): `metadata_only` carries the current `parquet_sha` forward and skips the upload; `full` whose `data_sha` already has a recorded `parquet_sha` in history reuses it and does **not** re-upload (a fresh serialization can differ byte-for-byte and would break that version's integrity pin); `full` otherwise uploads only if nothing is stored at the address (`.datom_storage_upload_absent()`) and records the hash of the bytes actually stored: the fresh bytes' when it uploaded, the stored file's when an earlier broken run had already stored one ("exists").
+- The data file upload comes **first**, before any file in the clone changes (#155). It is content-addressed and never overwrites a stored file, so a write that stops anywhere leaves at worst a data file no version names. Until #155 it came after the push, and a break between the two left a pushed version whose reads failed for good, which no re-run could repair.
 - `parents`: list of `list(source, table, version, data_sha)` entries recording immediate parent lineage. Records are produced by `datom_parent(conn, table, version)` — one conn per parent project — which resolves `data_sha` and `source_lineage` from the parent's own store. `datom_parent(conn, table, x = , tags = )` takes the version from a set instead: `version` and `x` are mutually exclusive, `table` may name several tables, the result is always a list, and each name resolves exactly as `datom_fetch_member()` resolves it (ambiguous stops listing candidates, narrowed by `tags`; a set-kind member stops, since a set is never a parent). `NULL` if lineage not recorded. `datom_sync()` never passes `parents` — imported tables always have `parents: null`.
 - `source_lineage`: derived by `datom_write()` as the deduplicated union of the parents' captured `source_lineage` fields; there is no `source_lineage` argument to supply. For `datom_sync()`, auto-computed as a single self-entry (project, table, data_sha of the imported file).
 
@@ -1882,30 +1882,63 @@ class DataProduct:
 
 ### Write Ordering & Resilience
 
-**Strict ordering: local → git → S3.** Every write path follows this sequence:
+Rewritten for #155 (spec `.kiro/specs/interrupted-commands/`). The earlier text claimed that re-runs
+were idempotent and re-uploads safe. Neither held: a write broken between its push and its data
+upload left a pushed version whose reads failed for good, and a re-run skipped the upload because
+the clone's history already named the hash.
 
-1. Write metadata files to local disk
-2. Git commit + push (must succeed before proceeding)
-3. Upload data and metadata to S3
+**The order of a write**, tables and sets alike:
 
-**Git gates S3.** If git commit or push fails, S3 writes are aborted entirely. This ensures S3 never contains data that git doesn't know about. The user is instructed to fix the git issue and re-run.
+1. The data file (a table's parquet, a set's payload) goes into storage only if nothing is stored at
+   its key: `.datom_storage_upload_absent()` (S3 `IfNoneMatch = "*"` with `ChecksumSHA256`; locally a
+   temporary copy hard-linked into place). The version records the hash of the bytes actually
+   stored.
+2. The clone's files: `metadata.json`, `version_history.json` (a set's `set.json` too) and the
+   manifest row.
+3. Commit.
+4. Push, which pulls first.
+5. Publish, through the one publish path `.datom_publish_artifacts()`: the version snapshot, the
+   history, then `metadata.json` last.
+6. The manifest, last, and only if every artifact's documents went up.
 
-**Idempotent re-runs.** If a write fails partway through:
-- `.datom_has_changes()` checks S3 (the final destination). If S3 is stale, changes are re-detected.
-- `.datom_git_commit()` returns HEAD SHA when files are already committed (no-op on re-run).
-- S3 uploads are content-addressed (parquet) or unconditional overwrites (metadata JSON), so re-uploading is safe.
-- `datom_sync_dispatch()` is the escape hatch: a full local → S3 push that's always safe to run.
+A version **exists** once GitHub has its commit, and is **published** once its metadata and the
+manifest in storage name it; readers see published versions only. A data file no commit names is
+invisible to readers. **The pointer goes last at every level**: the file a reader or a re-run treats
+as "current" is uploaded after everything it points at. **Every publish pushes first**, so storage
+never names a version GitHub lacks.
 
-**Key functions and their ordering:**
+**No state of its own.** A command works out how far an earlier run got from git and storage, never
+from a separate record (see "Integrity state tracking" under Deferred).
 
-| Function | Order | Git failure behavior |
-|----------|-------|---------------------|
-| `datom_write()` | local → git → S3 | Hard error, S3 untouched |
-| `.datom_sync_metadata()` | local → git → S3 | Hard error, S3 untouched |
-| `datom_sync()` (per-table) | via `datom_write()` | Per above |
-| `datom_sync()` (manifest) | local → git → S3 | Warning, S3 skipped |
-| `datom_sync_dispatch()` | local → S3 only | N/A (recovery tool) |
-| `datom_init_repo()` | local → git only | Cleanup on failure |
+**Heal** (`R/heal.R`), run in one place per route after the refusal checks and before change
+detection:
+
+- the merge check: a merge in progress stops the command, except that a conflict only in
+  `.datom/manifest.json` is rebuilt from the artifacts' own files and the merge finished;
+- heal's reset: datom's own files left uncommitted are put back to the last commit, for the
+  artifacts the command writes again; another artifact's stop the command, naming
+  `datom_validate(fix = TRUE)`;
+- the command's own pull (merge only when behind; confirmed caught up; a failed fetch stops);
+- heal's publish: a version of the command's own that is committed but not published is pushed and
+  published; another artifact's stops the command, and so does a stored version this clone's history
+  lacks.
+
+Unfinished work found before its commit is reset; found after it, finished. A write does this only
+for what it writes. Heal acts only when certain: a check that is unsure stops with a way out.
+
+| Command | A re-run after a break |
+|---|---|
+| `datom_write()`, `datom_write_set()` | Before the commit: reset, then written again. From the commit on: heal's publish finishes it, and the write reports `none` with no second commit |
+| `datom_write(conn, name =)` | Publishes what is committed for that table; commits nothing |
+| `datom_sync()` | Heals and pulls once for the batch, then writes each table; stops after a table whose failed write had changed the clone. The same call, with the same preview, finishes |
+| `datom_validate(fix = TRUE)`, `datom_write(conn)` | The repair: heal every artifact, pull, put back a set's missing payload, push, publish every artifact, then the manifest |
+| `datom_repo_commit()`, `datom_repo_attach_governance()`, `datom_repo_set_data_store()` | Never commit a datom write that stopped before its commit; with `datom_repo_push()`, name the datom versions they push without publishing |
+| `datom_init_repo()` | Before its push: rolled back, and a re-run starts afresh. After it: the stop names `datom_get_conn()` then `datom_validate(conn, fix = TRUE)` |
+
+The datom-sets spec's invariant I5 ("a set write that fails at git leaves no orphaned payload") no
+longer holds: the payload goes first, so a set write that stops before its commit can leave a payload
+no version names (#155, decision D1). The residual failure modes are listed in
+`dev/engineering-notes.md`.
 
 ### Change Detection
 
@@ -1914,18 +1947,27 @@ class DataProduct:
 - Enables efficient updates and deduplication
 - `original_file_sha` is recorded in both `version_history.json` and `metadata.json` (since `datom-cv1`). It is semantic, so a re-export of identical content under a new file SHA classifies as `metadata_only`: a new version is recorded, the provenance is updated, and the parquet is **not** re-uploaded.
 - Ingest-side skip (file level). `datom_sync_manifest()` compares each scanned file's `original_file_sha` against the single current value for that table in `.datom/manifest.json`; a match reports `unchanged` and `datom_sync()` never calls `.datom_import_file()`, so no parse, no `data_sha`, no upload, no commit. Because the manifest is committed to git, this also covers a second developer who pulls and re-scans the same file — they do not re-parse it. Limit: the comparison is latest-only, not a scan of every `original_file_sha` in `version_history.json`, so a rollback to a previously-onboarded file re-imports it. Extending this to a full-history lookup is tracked in #93.
-- Change detection reads from **S3** (the final destination), so incomplete round-trips are re-detected on re-run
+- Change detection reads the **stored** `metadata.json`, which a publish uploads last, so a version whose publish broke partway is never taken as published; since #155 heal's publish finishes such a version before change detection runs
 
 ### Conflict Resolution
 
-**Pull-before-push discipline**: Every write path pulls from remote before pushing. `.datom_git_push()` calls `.datom_git_pull()` as its first step (fetch + merge). This is the primary defense against diverged histories in multi-developer scenarios.
-
-**Stale state detection**: `datom_sync()` calls `.datom_check_git_current()` at entry, which compares local HEAD vs remote HEAD via `git2r::ahead_behind()`. If behind, sync aborts with an actionable error directing the user to run `datom_pull()`. This catches stale state before any local writes occur.
+**Pull before anything changes** (#155): every write command pulls at its start, before change
+detection and before the data file upload, and its push pulls again. No command writes to the git
+remote or to storage before it has pulled, except `datom_init_repo()`'s first push to a new, empty
+remote. A failed fetch stops the command before anything changes. (`.datom_check_git_current()`, which
+`datom_sync()` used to run, is deleted: the sync's own pull replaces it.)
 
 **Conflict handling**:
-- Auto-pull before push resolves most non-fast-forward situations silently
-- Merge conflicts (rare — requires two developers syncing the same table simultaneously) require manual resolution: `git status` → edit → `git add` → `git commit` → re-run sync
-- No automatic merge of concurrent updates
+- A conflict only in `.datom/manifest.json`, the usual one when two clones write different tables
+  (every write rewrites its `updated_at` and `summary`), is resolved by datom: it rebuilds the file
+  from the artifacts' own files and commits the merge.
+- Any other conflict stops the command with the files in conflict and, for each conflicted artifact,
+  `git checkout MERGE_HEAD -- ...` naming all its datom files; the user resolves their own files,
+  `git add`s them and re-runs. Every later datom command repeats the message until the merge is
+  finished.
+- A merge datom did not start (of a local branch, say) is never finished unasked: every command stops
+  until `datom_pull(conn, finish_merge = TRUE)` or `git merge --abort`.
+- No automatic merge of concurrent updates to the same artifact.
 
 ---
 
@@ -2399,7 +2441,7 @@ All `...` params forwarded to routed function — enables API calls, SQL queries
 - Table-level routing overrides (repo-level only for v1)
 - Managed migration via `datom_migrate()` (manual external copy for v1)
 - Queryable backends (Iceberg, S3 Tables)
-- **Integrity state tracking** (`.datom/state/` directory with per-operation JSON): The current write-ordering discipline (local → git → S3 with idempotent re-runs) provides structural resilience without explicit state files. State tracking could add value for debugging/audit at scale. Reference schema if revisited:
+- **Integrity state tracking** (`.datom/state/` directory with per-operation JSON): **decided against in #155.** A record of each write in progress would be one more file to keep right, and a crash can leave it wrong; the marks each step already leaves in git and storage (an uncommitted file, a commit GitHub lacks, a manifest row storage lacks) say how far an earlier run got, so a command works them out instead (see "Write Ordering & Resilience"). State tracking could still add value for debugging or audit at scale. Reference schema if revisited:
 
   ```json
   {

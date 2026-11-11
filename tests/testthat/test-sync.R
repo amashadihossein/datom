@@ -3,6 +3,25 @@
 
 # --- datom_sync_manifest() ----------------------------------------------------
 
+# Commit `.datom/manifest.json` in the current folder, making the folder a git
+# repo first if it is not one. The scan compares input files with the manifest
+# as last committed (R4.1), so a manifest it is meant to see has to be in HEAD.
+# Give `manifest` (a list) or `from` (a file to copy).
+commit_clone_manifest <- function(manifest = NULL, from = NULL) {
+  path <- getwd()
+  repo <- tryCatch(git2r::repository(path), error = function(e) git2r::init(path))
+  fs::dir_create(".datom")
+  if (is.null(from)) {
+    jsonlite::write_json(manifest, ".datom/manifest.json", auto_unbox = TRUE)
+  } else {
+    fs::file_copy(from, ".datom/manifest.json", overwrite = TRUE)
+  }
+  git2r::add(repo, ".datom/manifest.json")
+  sig <- .datom_git_signature(repo)
+  git2r::commit(repo, "manifest", author = sig, committer = sig)
+  invisible(repo)
+}
+
 test_that("rejects non-datom_conn", {
   expect_error(datom_sync_manifest("not_conn"), "datom_conn")
 })
@@ -193,6 +212,7 @@ test_that("scans files and marks all as new when no manifest exists", {
 })
 
 test_that("detects unchanged files via original_file_sha", {
+  skip_if_no_git2r()
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -209,8 +229,7 @@ test_that("detects unchanged files via original_file_sha", {
         customers = list(kind = "table", original_file_sha = original_file_sha)
       )
     )
-    fs::dir_create(".datom")
-    jsonlite::write_json(manifest, ".datom/manifest.json", auto_unbox = TRUE)
+    commit_clone_manifest(manifest)
 
     result <- datom_sync_manifest(conn)
 
@@ -220,6 +239,7 @@ test_that("detects unchanged files via original_file_sha", {
 })
 
 test_that("detects changed files when SHA differs", {
+  skip_if_no_git2r()
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -235,8 +255,7 @@ test_that("detects changed files when SHA differs", {
         customers = list(kind = "table", original_file_sha = "old_sha_that_differs")
       )
     )
-    fs::dir_create(".datom")
-    jsonlite::write_json(manifest, ".datom/manifest.json", auto_unbox = TRUE)
+    commit_clone_manifest(manifest)
 
     result <- datom_sync_manifest(conn)
 
@@ -246,6 +265,7 @@ test_that("detects changed files when SHA differs", {
 })
 
 test_that("mixes new, changed, and unchanged statuses", {
+  skip_if_no_git2r()
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -264,8 +284,7 @@ test_that("mixes new, changed, and unchanged statuses", {
         existing_diff = list(kind = "table", original_file_sha = "old_sha")
       )
     )
-    fs::dir_create(".datom")
-    jsonlite::write_json(manifest, ".datom/manifest.json", auto_unbox = TRUE)
+    commit_clone_manifest(manifest)
 
     result <- datom_sync_manifest(conn)
 
@@ -360,6 +379,23 @@ test_that("returns empty when pattern matches nothing", {
 
 # --- datom_sync() --------------------------------------------------------------
 
+# For datom_sync() tests on a mock connection over a plain folder (no git, no
+# store): stubs its calls into the clone and the remote -- heal's two halves and
+# the pull between them, and the look at the clone around each table's write.
+# Its behaviour on a real project is pinned in test-sync-heal.R.
+local_sync_on_folder <- function(env = parent.frame()) {
+  local_mocked_bindings(
+    .datom_heal = function(...) invisible(list(reset = character())),
+    .datom_pull_before_write = function(...) invisible(FALSE),
+    .datom_heal_publish = function(...) {
+      invisible(list(published = character(), pushed = FALSE))
+    },
+    .datom_clone_head = function(path) NA_character_,
+    .datom_write_left_changes = function(...) FALSE,
+    .env = env
+  )
+}
+
 test_that("datom_sync rejects non-datom_conn", {
   expect_error(datom_sync("not_conn", data.frame()), "datom_conn")
 })
@@ -408,10 +444,8 @@ test_that("datom_sync skips unchanged and returns early when nothing actionable"
       stringsAsFactors = FALSE
     )
 
-    local_mocked_bindings(
-      .datom_check_rio = function() invisible(TRUE),
-      .datom_check_git_current = function(...) invisible(TRUE)
-    )
+    local_sync_on_folder()
+    local_mocked_bindings(.datom_check_rio = function() invisible(TRUE))
 
     result <- datom_sync(conn, manifest)
 
@@ -441,9 +475,9 @@ test_that("datom_sync processes new files via datom_write", {
 
     write_called <- FALSE
 
+    local_sync_on_folder()
     local_mocked_bindings(
       .datom_check_rio = function() invisible(TRUE),
-      .datom_check_git_current = function(...) invisible(TRUE),
       .datom_import_file = function(file, format) data.frame(id = 1),
       datom_write = function(conn, data, name, message, ...) {
         write_called <<- TRUE
@@ -486,9 +520,9 @@ test_that("datom_sync skips unchanged rows and processes changed ones", {
 
     written_names <- character()
 
+    local_sync_on_folder()
     local_mocked_bindings(
       .datom_check_rio = function() invisible(TRUE),
-      .datom_check_git_current = function(...) invisible(TRUE),
       .datom_import_file = function(file, format) data.frame(x = 1),
       datom_write = function(conn, data, name, message, ...) {
         written_names <<- c(written_names, name)
@@ -529,9 +563,9 @@ test_that("datom_sync continues on error when continue_on_error = TRUE", {
 
     call_count <- 0L
 
+    local_sync_on_folder()
     local_mocked_bindings(
       .datom_check_rio = function() invisible(TRUE),
-      .datom_check_git_current = function(...) invisible(TRUE),
       .datom_import_file = function(file, format) {
         call_count <<- call_count + 1L
         if (grepl("bad", file)) stop("Import failed for bad file")
@@ -571,9 +605,9 @@ test_that("datom_sync stops on first error when continue_on_error = FALSE", {
       stringsAsFactors = FALSE
     )
 
+    local_sync_on_folder()
     local_mocked_bindings(
       .datom_check_rio = function() invisible(TRUE),
-      .datom_check_git_current = function(...) invisible(TRUE),
       .datom_import_file = function(file, format) {
         if (grepl("bad", file)) stop("Import failed")
         data.frame(x = 1)
@@ -607,9 +641,9 @@ test_that("datom_sync commit message includes status", {
 
     captured_msg <- NULL
 
+    local_sync_on_folder()
     local_mocked_bindings(
       .datom_check_rio = function() invisible(TRUE),
-      .datom_check_git_current = function(...) invisible(TRUE),
       .datom_import_file = function(file, format) data.frame(x = 1),
       datom_write = function(conn, data, name, message, ...) {
         captured_msg <<- message
@@ -639,9 +673,9 @@ test_that("datom_sync augments manifest with result and error columns", {
       stringsAsFactors = FALSE
     )
 
+    local_sync_on_folder()
     local_mocked_bindings(
       .datom_check_rio = function() invisible(TRUE),
-      .datom_check_git_current = function(...) invisible(TRUE),
       .datom_import_file = function(file, format) data.frame(x = 1),
       datom_write = function(conn, data, name, message, ...) {
         list(name = name, data_sha = "d", metadata_sha = "m",
@@ -764,8 +798,8 @@ test_that("Feature: datom-cv1, Property 16: datom_sync reports the allowlist rec
       stringsAsFactors = FALSE
     )
 
+    local_sync_on_folder()
     local_mocked_bindings(
-      .datom_check_git_current = function(...) invisible(TRUE),
       .datom_import_file = function(file, format) data.frame(x = 1),
       datom_write = function(...) list(version = "v1")
     )
@@ -947,7 +981,7 @@ test_that(".datom_sync_data_metadata requires interactive confirmation by defaul
 })
 
 # Helper: build a developer conn for data-only metadata sync (no gov needed)
-.setup_sync_metadata_conn <- function(project_name = "myproj") {
+.setup_sync_metadata_conn <- function(project_name = "myproj", env = parent.frame()) {
   fs::dir_create(".datom")
   jsonlite::write_json(list(schema_version = 2L, artifacts = list()),
                        ".datom/manifest.json", auto_unbox = TRUE)
@@ -956,35 +990,25 @@ test_that(".datom_sync_data_metadata requires interactive confirmation by defaul
   conn$role <- "developer"
   conn$path <- getwd()
   conn$project_name <- project_name
+  local_repair_on_folder(env = env)
   conn
 }
 
-test_that(".datom_sync_data_metadata syncs per-table metadata to storage", {
-  withr::with_tempdir({
-    conn <- .setup_sync_metadata_conn()
-
-    fs::dir_create("customers")
-    jsonlite::write_json(list(data_sha = "abc"), "customers/metadata.json",
-                         auto_unbox = TRUE)
-    jsonlite::write_json(list(versions = list()), "customers/version_history.json",
-                         auto_unbox = TRUE)
-
-    s3_keys_written <- character()
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        s3_keys_written <<- c(s3_keys_written, s3_key)
-        invisible(NULL)
-      }
-    )
-
-    result <- .datom_sync_data_metadata(conn, .confirm = FALSE)
-
-    expect_true("customers/.metadata/metadata.json" %in% s3_keys_written)
-    expect_true("customers/.metadata/version_history.json" %in% s3_keys_written)
-    expect_equal(result$tables$customers$action, "synced")
-  })
-})
+# The repair on a plain folder, which is not a git repo: its heal, pull and push
+# are stubbed, so these tests reach its publish. The repair on a real project,
+# heal and all, is tested in test-repair.R.
+local_repair_on_folder <- function(env = parent.frame()) {
+  local_mocked_bindings(
+    .datom_heal = function(...) invisible(list(reset = character())),
+    .datom_pull_before_write = function(...) invisible(FALSE),
+    .datom_pushed_artifacts = function(...) character(),
+    .datom_heal_publish = function(...) {
+      invisible(list(published = character(), pushed = FALSE))
+    },
+    .datom_git_ahead = function(...) 0L,
+    .env = env
+  )
+}
 
 test_that(".datom_sync_data_metadata syncs the manifest to data storage", {
   withr::with_tempdir({
@@ -1025,59 +1049,6 @@ test_that(".datom_sync_data_metadata ignores non-table directories", {
   })
 })
 
-test_that(".datom_sync_data_metadata handles per-table errors gracefully", {
-  withr::with_tempdir({
-    conn <- .setup_sync_metadata_conn()
-
-    fs::dir_create("good_tbl")
-    jsonlite::write_json(list(data_sha = "d1"), "good_tbl/metadata.json",
-                         auto_unbox = TRUE)
-    fs::dir_create("bad_tbl")
-    jsonlite::write_json(list(data_sha = "d2"), "bad_tbl/metadata.json",
-                         auto_unbox = TRUE)
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        if (grepl("bad_tbl", s3_key)) stop("storage upload failed")
-        invisible(NULL)
-      }
-    )
-
-    result <- .datom_sync_data_metadata(conn, .confirm = FALSE)
-
-    expect_equal(result$tables$good_tbl$action, "synced")
-    expect_equal(result$tables$bad_tbl$action, "error")
-    expect_match(result$tables$bad_tbl$error, "storage upload failed")
-  })
-})
-
-test_that(".datom_sync_data_metadata syncs metadata snapshots from .metadata dir", {
-  withr::with_tempdir({
-    conn <- .setup_sync_metadata_conn()
-
-    fs::dir_create("orders")
-    jsonlite::write_json(list(data_sha = "d1"), "orders/metadata.json",
-                         auto_unbox = TRUE)
-    fs::dir_create("orders/.metadata")
-    jsonlite::write_json(list(version = 1), "orders/.metadata/abc123.json",
-                         auto_unbox = TRUE)
-
-    s3_keys_written <- character()
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        s3_keys_written <<- c(s3_keys_written, s3_key)
-        invisible(NULL)
-      }
-    )
-
-    .datom_sync_data_metadata(conn, .confirm = FALSE)
-
-    expect_true("orders/.metadata/metadata.json" %in% s3_keys_written)
-    expect_true("orders/.metadata/abc123.json" %in% s3_keys_written)
-  })
-})
-
 test_that(".datom_sync_data_metadata returns correct summary structure", {
   withr::with_tempdir({
     conn <- .setup_sync_metadata_conn()
@@ -1096,75 +1067,6 @@ test_that(".datom_sync_data_metadata returns correct summary structure", {
   })
 })
 
-test_that(".datom_sync_data_metadata handles multiple tables", {
-  withr::with_tempdir({
-    conn <- .setup_sync_metadata_conn()
-
-    for (nm in c("alpha", "beta", "gamma")) {
-      fs::dir_create(nm)
-      jsonlite::write_json(list(data_sha = nm), paste0(nm, "/metadata.json"),
-                           auto_unbox = TRUE)
-    }
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(...) invisible(NULL)
-    )
-
-    result <- .datom_sync_data_metadata(conn, .confirm = FALSE)
-
-    expect_equal(length(result$tables), 3)
-    expect_true(all(purrr::map_chr(result$tables, "action") == "synced"))
-  })
-})
-
-
-# --- .datom_sync_one_artifact() ----------------------------------------------
-
-test_that(".datom_sync_one_artifact uploads metadata and version_history", {
-  withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$path <- getwd()
-
-    fs::dir_create("tbl")
-    jsonlite::write_json(list(x = 1), "tbl/metadata.json", auto_unbox = TRUE)
-    jsonlite::write_json(list(v = 1), "tbl/version_history.json",
-                         auto_unbox = TRUE)
-
-    s3_keys_written <- character()
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        s3_keys_written <<- c(s3_keys_written, s3_key)
-        invisible(NULL)
-      }
-    )
-
-    result <- .datom_sync_one_artifact(conn, "tbl")
-
-    expect_equal(result$action, "synced")
-    expect_true("tbl/.metadata/metadata.json" %in% result$s3_keys)
-    expect_true("tbl/.metadata/version_history.json" %in% result$s3_keys)
-  })
-})
-
-test_that(".datom_sync_one_artifact handles table with no version_history", {
-  withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$path <- getwd()
-
-    fs::dir_create("tbl")
-    jsonlite::write_json(list(x = 1), "tbl/metadata.json", auto_unbox = TRUE)
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
-    )
-
-    result <- .datom_sync_one_artifact(conn, "tbl")
-
-    expect_equal(length(result$s3_keys), 1)
-    expect_equal(result$s3_keys, "tbl/.metadata/metadata.json")
-  })
-})
 
 
 # --- datom_pull() --------------------------------------------------------------
@@ -1377,6 +1279,7 @@ test_that("datom_pull is data-repo-only and does not touch the gov repo", {
 # --- schema_version gate -------------------------------------------------------
 
 test_that("datom_sync_manifest rebuilds a local manifest declaring a newer schema", {
+  skip_if_no_git2r()
   # AMENDED from an abort. Developer-side entry point reading the git clone's
   # copy, in the reachable scenario: a collaborator writes with a newer datom and
   # this developer pulls.
@@ -1393,12 +1296,7 @@ test_that("datom_sync_manifest rebuilds a local manifest declaring a newer schem
 
     fs::dir_create("input_files")
     writeLines("id\n1", "input_files/dm.csv")
-    fs::dir_create(".datom")
-    jsonlite::write_json(
-      list(schema_version = 3L, artifacts = list()),
-      ".datom/manifest.json",
-      auto_unbox = TRUE
-    )
+    commit_clone_manifest(list(schema_version = 3L, artifacts = list()))
 
     mock_rebuildable_store(
       manifest = list(schema_version = 2L, artifacts = list()),
@@ -1419,6 +1317,7 @@ test_that("datom_sync_manifest rebuilds a local manifest declaring a newer schem
 })
 
 test_that("datom_sync_manifest tolerates a local manifest with no schema_version", {
+  skip_if_no_git2r()
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -1426,10 +1325,7 @@ test_that("datom_sync_manifest tolerates a local manifest with no schema_version
 
     fs::dir_create("input_files")
     writeLines("id\n1", "input_files/dm.csv")
-    fs::dir_create(".datom")
-    jsonlite::write_json(
-      list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE
-    )
+    commit_clone_manifest(list(tables = list()))
 
     result <- datom_sync_manifest(conn)
     expect_equal(nrow(result), 1)
@@ -1438,6 +1334,7 @@ test_that("datom_sync_manifest tolerates a local manifest with no schema_version
 })
 
 test_that("datom_sync_manifest sees entries in an old-format manifest in the clone", {
+  skip_if_no_git2r()
   # The same-named tolerance test above has an EMPTY tables block, so it passes
   # whether or not the reader found the block at all. This one carries a real
   # entry, so a reader that looked in the wrong place reports "new" instead of
@@ -1452,8 +1349,7 @@ test_that("datom_sync_manifest sees entries in an old-format manifest in the clo
 
     fs::dir_create("input_files")
     writeLines("id\n1", "input_files/dm.csv")
-    fs::dir_create(".datom")
-    fs::file_copy(fixture, ".datom/manifest.json")
+    commit_clone_manifest(from = fixture)
 
     result <- datom_sync_manifest(conn)
 
@@ -1775,9 +1671,9 @@ test_that("datom_sync's error column has no escape codes when colour is on", {
       stringsAsFactors = FALSE
     )
 
+    local_sync_on_folder()
     local_mocked_bindings(
       .datom_check_rio = function() invisible(TRUE),
-      .datom_check_git_current = function(...) invisible(TRUE),
       .datom_import_file = function(file, format) {
         cli::cli_abort(c(
           "Import failed.",
@@ -1803,10 +1699,11 @@ test_that("per-table metadata sync's stored error has no escape codes", {
     conn$path <- getwd()
 
     fs::dir_create(fs::path("dm"))
-    writeLines("{}", "dm/metadata.json")
+    writeLines('{"hash_algo": "datom-cv1"}', "dm/metadata.json")
 
+    local_repair_on_folder()
     local_mocked_bindings(
-      .datom_sync_one_artifact = function(conn, name) {
+      .datom_publish_documents = function(conn, name, commit_sha = NULL) {
         cli::cli_abort(c(
           "Upload failed.",
           "x" = "Key: {.val {name}}"
@@ -1908,6 +1805,7 @@ test_that(".datom_sync_data_metadata mirrors an old-shape clone in current shape
     before <- digest::digest(file = ".datom/manifest.json", algo = "sha256")
 
     mirrored <- NULL
+    local_repair_on_folder()
     local_mocked_bindings(
       .datom_storage_write_json = function(conn, s3_key, data) {
         if (identical(s3_key, ".metadata/manifest.json")) mirrored <<- data
@@ -2008,6 +1906,7 @@ test_that(".datom_sync_data_metadata says so when it mirrors a converted manifes
     conn$path <- getwd()
     fs::dir_create(".datom")
     fs::file_copy(fixture, ".datom/manifest.json")
+    local_repair_on_folder()
     local_mocked_bindings(
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
@@ -2033,6 +1932,7 @@ test_that(".datom_sync_data_metadata treats a manifest that vanished as absent, 
       list(schema_version = 2L, artifacts = list()),
       ".datom/manifest.json", auto_unbox = TRUE
     )
+    local_repair_on_folder()
     local_mocked_bindings(
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
       .datom_read_manifest = function(conn, scope = c("storage", "clone"),
