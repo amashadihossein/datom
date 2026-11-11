@@ -6,7 +6,12 @@
 # its own (see probe.R), so each listed loop must be lapply()/vapply() for a credential failure to
 # reach the caller as itself (design.md, section 5).
 #
-# Over-reports rather than under-reports: a call that reaches storage only on some branch counts.
+# The graph uses findGlobals(merge = TRUE): every global name a function mentions, so a function
+# passed by name (lapply(x, .datom_verify_one)) is an edge too. merge = FALSE's $functions holds only
+# names in call position and missed those (review 3, 2026-11-11). Over-reports rather than
+# under-reports: a call that reaches storage only on some branch counts, and so does a variable that
+# happens to share a function's name.
+#
 # Run from the datom repo root: Rscript .kiro/specs/s3-credential-function/research/condition-handling/purrr_loops.R
 main <- function() {
   suppressMessages(pkgload::load_all(".", quiet = TRUE, export_all = TRUE))
@@ -15,7 +20,7 @@ main <- function() {
   fns <- Filter(function(n) is.function(get(n, ns)), names_all)
 
   calls_of <- function(f) {
-    g <- tryCatch(codetools::findGlobals(f, merge = FALSE)$functions, error = function(e) character())
+    g <- tryCatch(codetools::findGlobals(f, merge = TRUE), error = function(e) character())
     intersect(g, fns)
   }
   direct_storage <- function(f) {
@@ -74,7 +79,6 @@ main <- function() {
   for (n in fns) walk_ast(body(get(n, ns)), n)
 
   out <- unique(do.call(rbind, hits))
-  out$reaches_storage_via <- "mapped function"
   print(out[order(out$function_name), c("function_name", "verb")], row.names = FALSE)
   cat("\n", nrow(out), "purrr loops whose mapped function can reach a storage request\n")
   cat(sum(reaches), "of", length(fns), "functions can reach a storage request\n")

@@ -3,13 +3,14 @@
 **Status (2026-11-10)**: ready for the owner's review, **not approved**. Drafted 2026-10-27, paused
 for [#155](https://github.com/amashadihossein/datom/issues/155), resumed once #155 merged into `dev`
 (PR #159). The "Not yet traced" list of the draft was finished with the owner on 2026-11-10; where
-each item landed is in section 13. Two reviews the same day (of `53b4a71` and of `030b07f`) were
-evaluated with the owner point by point and their outcomes are applied here; the record is
-section 14. The second moved the endpoint onto the store and added the location agreement check
-(section 6).
+each item landed is in section 13. Three reviews (of `53b4a71` and `030b07f` on 2026-11-10, of
+`55ce81f` on 2026-11-11) were evaluated with the owner point by point and their outcomes are applied
+here; the record is section 14. The second moved the endpoint onto the store and added the location
+agreement check; the third added one shape for a location record and a writer floor (section 6).
 
-Read first: `requirements.md` (approved 2026-10-27, amended three times on 2026-11-10). Decisions
-1-15 referred to here are recorded there; DD1 and the choices in section 8 are this document's.
+Read first: `requirements.md` (approved 2026-10-27, amended four times on 2026-11-10 and 11).
+Decisions 1-17 referred to here are recorded there; DD1 and the choices in section 8 are this
+document's.
 
 ## 1. The shape
 
@@ -53,7 +54,7 @@ each storage request -> .datom_s3_get_client(conn)
 | Connection | as today, but `cred_id` + `credentials` (and `gov_cred_id` + `gov_credentials`) instead of `client` / `gov_client`; `endpoint` and `gov_endpoint` | as today, with `client` / `gov_client`; `endpoint` and `gov_endpoint` |
 | Private memory (`.datom_cred_registry`) | per id: the current keys and their expiry (`POSIXct`, or `NULL` for keys that do not expire) | nothing |
 | `ref.json` (governance) | `current` gains an optional `endpoint` beside type, root, prefix, region | same |
-| `.datom/project.yaml` (data repo) | `storage.data` gains an optional `endpoint` beside type, root, prefix, region | same |
+| `.datom/project.yaml` (data repo) | `storage.data` gains an optional `endpoint` beside type, root, prefix, region (one shape, section 6); `min_writer_version` is set when an endpoint is recorded | same |
 
 No object, in either form, holds a paws client for a function-built store: one is built per request
 and goes out of scope with it. Today one `endpoint` (an argument of `datom_get_conn()`) applied to
@@ -88,18 +89,21 @@ code in its own file, recorded 2026-10-28). The S3 client builder stays with its
 | `R/conn.R` | `new_datom_conn()` | changed | Gains `cred_id`, `credentials`, `gov_cred_id`, `gov_credentials`, `gov_endpoint`; `client` optional |
 | `R/conn.R` | `.datom_build_init_conn()` | changed | Reads each component's own `endpoint`. Function-form component: carries its id and function, builds no client |
 | `R/conn.R` | `.datom_conn_for()` | changed | The governance view carries `gov_cred_id`, `gov_credentials` and `gov_endpoint` as its `cred_id`, `credentials` and `endpoint` |
-| `R/conn.R` | `.datom_get_conn_developer()`, `.datom_get_conn_reader()` | changed | The location from `ref.json` (bucket, prefix, region, endpoint) goes through `.datom_s3_check_address()` and `.datom_note_location_source()`; the credentials-only store rebuilt from it keeps the original store's id and function (it rebuilt from `store$data$access_key` and friends); the developer's cross-check of the store against `project.yaml` compares the endpoint too |
-| `R/conn.R` | `datom_init_repo()` | changed | Writes the store's `endpoint` into `project.yaml`'s `storage.data`; uses it for the namespace check and the manifest upload |
+| `R/conn.R` | `.datom_get_conn_developer()`, `.datom_get_conn_reader()` | changed | The location from `ref.json` (bucket, prefix, region, endpoint) goes through `.datom_s3_check_address()` and `.datom_note_location_source()`; the credentials-only store rebuilt from it keeps the original store's id and function (it rebuilt from `store$data$access_key` and friends); the developer's cross-check of the store against `project.yaml` uses `.datom_location_same()`, so it compares the endpoint and region too |
+| `R/conn.R` | `datom_init_repo()` | changed | Writes `project.yaml`'s `storage.data` with `.datom_location_record()` (it built the block by hand); writes `min_writer_version` when the store has an `endpoint` (R3.8); uses the store's endpoint for the namespace check and the manifest upload |
 | `R/conn.R` | `print.datom_conn()` | changed | Function form: "Credentials: from a function"; the governance endpoint when it differs |
-| `R/ref.R` | `.datom_create_ref()`, `.datom_parse_ref()` | changed | Write and read `current$endpoint` (decision 13) |
+| `R/ref.R` | `.datom_location_record(store)` | new | R3.9: the one record of a location (section 6), built from a store component; used by `.datom_create_ref()`, `datom_init_repo()` and `datom_repo_set_data_store()` |
+| `R/ref.R` | `.datom_location_same(a, b)` | new | R3.9: whether two records name the same location, a missing field and an empty one counting as equal; used by `.datom_check_location_agrees()` and at connect |
+| `R/ref.R` | `.datom_location_fields` | new | The known location field names (`type`, `root`, `prefix`, `region`, `endpoint`). Append-only, like the other vocabulary lists: the repoint removes exactly these and keeps every other key |
+| `R/ref.R` | `.datom_create_ref()`, `.datom_parse_ref()` | changed | `current` is `.datom_location_record()` (it dropped empty fields by hand); the parse reads `endpoint` (decision 13) |
 | `R/ref.R` | `.datom_resolve_data_location()` | changed | Returns the endpoint with the location. When `ref.json` and `project.yaml` disagree after its pull, **warns** instead of stopping (R3.6), and compares bucket, prefix, region and endpoint, not the bucket alone |
-| `R/ref.R` | `.datom_check_location_agrees(conn)` | new | R3.6: re-reads `ref.json` from governance storage and the clone's `project.yaml`; stops when either disagrees with the connection on bucket, prefix, region or endpoint (section 6). Replaces `.datom_check_ref_current()` |
+| `R/ref.R` | `.datom_check_location_agrees(conn)` | new | R3.6: re-reads `ref.json` from governance storage and the clone's `project.yaml`; stops when either disagrees with the connection, by `.datom_location_same()` (section 6). Replaces `.datom_check_ref_current()` |
 | `R/ref.R` | `.datom_note_location_source(location)` | new | R3.7: the message for a location from `ref.json` that is not standard AWS S3 (section 6) |
 | `R/ref.R` | `.datom_build_gov_resolve_conn()` | changed | Carries the governance store's id, function and endpoint |
 | `R/ref.R` | `.datom_check_data_reachable()` | changed | Gets its client through the accessor, **before** its handler. Today it returns early when `conn$client` is `NULL`, which a function-built connection always is, so the check would stop checking for every one of them (FM5). The early return stays only for a connection with no id whose client is not a paws client (the tests' fakes) |
 | `R/forward-compat.R` | `.datom_check_write_entry()` | changed | Calls `.datom_check_location_agrees(conn)` when governance is attached. Every write route already passes through it |
 | `R/read_write.R`, `R/set.R` | `datom_write()`, `datom_write_set()` | changed | Drop their `.datom_check_ref_current()` call, now in the entry check |
-| `R/repo.R` | `datom_repo_set_data_store()` | changed | Writes `endpoint` from `new_store` into `project.yaml`. It is the approval of R3.6, and does not call the entry check, so it is never blocked by it |
+| `R/repo.R` | `datom_repo_set_data_store()` | changed | Replaces `storage.data`'s location fields as a set: removes every name in `.datom_location_fields`, then adds `.datom_location_record(new_store)`, keeping any other key (it merged with `utils::modifyList()`, which kept stale fields). Raises `min_writer_version` to the running version when the new location has an `endpoint` and the floor is lower or absent; never lowers it (R3.8). It is the approval of R3.6, and does not call the entry check, so it is never blocked by it |
 | `R/heal.R` | `.datom_publish_artifacts()` | changed | Its loop uses `lapply()`, with `.datom_pass_credentials(e)` as the first line of its handler, so a credential failure stops at the first artifact rather than calling the function once per artifact |
 | `R/sync.R` | `datom_sync()` | changed | On a credential failure: says which tables were synced and which were not attempted, then passes the failure on (R4a.2) |
 | `R/utils-path.R` | `.datom_render_readme()`, `.datom_store_constructor_snippet()` | changed | The README snippet shows `credentials = <your function>` for a function-built store, and `endpoint =` when there is one |
@@ -259,8 +263,10 @@ and the copy get their client before their handler. Guard probe: deleting one ha
 must turn the test red for a command that reaches that handler.
 
 **The code-reading test (R5.7, decision 15).** The sweep sees only the code its test projects run.
-A second test reads datom's own functions (`codetools::findGlobals()` on the loaded namespace),
-marks every function that can reach `.datom_cred_call()`, and fails if a `purrr` loop's mapped
+A second test reads datom's own functions (`codetools::findGlobals(merge = TRUE)` on the loaded
+namespace, so a function passed by name, as in `lapply(x, .datom_verify_one)`, counts as called;
+`merge = FALSE`'s `$functions` holds only names in call position and would miss it), marks every
+function that can reach `.datom_cred_call()`, and fails if a `purrr` loop's mapped
 function, or the expression of a `tryCatch()` whose `error =` handler does not start with
 `.datom_pass_credentials()`, can reach one. It follows the method of `purrr_loops.R`, which takes
 about 0.7 seconds and is deterministic: it fails only on the commit that adds an unsafe loop or
@@ -345,6 +351,9 @@ permissions and history guard.
 - **Connecting warns instead of stopping** on a disagreement between `ref.json` and `project.yaml`,
   so the developer can connect and run the approve command. Today `.datom_resolve_data_location()`
   stops when the bucket disagrees after its pull, and compares nothing for a credentials-only store.
+  The connection then uses `ref.json`'s location, so a developer's reads follow `ref.json` as a
+  reader's do: a deliberate loosening of today's stop, accepted by the owner (review 3, point 2).
+  Reads change nothing; writes still stop.
 - **The check replaces `.datom_check_ref_current()`**, which compared `ref.json` with the connection
   only, and only on `datom_write()` with data and on `datom_write_set()`. The repair, the
   metadata-only and mirror-everything routes of `datom_write()`, and the publish `datom_sync()` makes
@@ -352,6 +361,53 @@ permissions and history guard.
 - **A proper move needs no approval**: it updates both records, and `datom_get_conn()` pulls the new
   `project.yaml`. Developers see the stop only when `ref.json` changed alone, or before they have
   reconnected after a move.
+
+### One shape for a location record (R3.9, decision 17)
+
+Three places record where data lives, and each built its record by hand, differently:
+`.datom_create_ref()` dropped empty fields, `datom_init_repo()` wrote `region` only for S3, and
+`datom_repo_set_data_store()` merged the new block over the old with `utils::modifyList()`, which
+keeps a field the new block omits (checked in R, 2026-11-11: a move off MinIO kept `endpoint`; a move
+from S3 to a local folder kept `region`). `project.yaml` would then disagree with `ref.json`, every
+write would stop, and running the approve command again would not fix it.
+
+| Field | S3 | Local folder |
+|---|---|---|
+| `type` | `"s3"` | `"local"` |
+| `root` | the bucket | the folder |
+| `prefix` | when not empty | when not empty |
+| `region` | always: AWS signatures name a region (AWS China and VPC endpoints need the real one; MinIO accepts `us-east-1`) | never |
+| `endpoint` | only when not standard AWS | never |
+
+- **One builder**, `.datom_location_record(store)`, makes every record: `ref.json`'s `current`,
+  `project.yaml`'s `storage.data`, and the record a store is compared as.
+- **Replaced as a set**: `datom_repo_set_data_store()` removes every name in `.datom_location_fields`
+  from `storage.data`, then adds the new record. Any other key, which a newer datom may have put
+  there, is kept, as datom keeps unknown fields elsewhere.
+- **One comparer**, `.datom_location_same(a, b)`, used by the write check and at connect. A missing
+  field and an empty one are equal (an absent prefix and `""`, through the existing
+  `.datom_normalize_prefix()`).
+
+### Older datom and the `endpoint` field: the writer floor (R3.8, decision 16)
+
+An older datom ignores `endpoint`: its `.datom_parse_ref()` returns root, prefix and region only,
+and `ref.json` has no format number to refuse on. For a location with an endpoint it therefore goes
+to standard AWS. Usually that fails there, but after a move to another service that kept the bucket
+name, the old copy kept until its sunset answers: an older reader reads it, with only the "Data was
+migrated from ..." warning, and an older writer writes there, since its write checks
+(`.datom_check_ref_current()` and the store-versus-`project.yaml` cross-check) compare bucket and
+prefix only.
+
+- **Writes are stopped by the existing writer floor**, `min_writer_version` in `project.yaml`, which
+  0.1.1 onward read on every write (`.datom_check_writer_floor()`). `datom_init_repo()` writes the
+  running version there when the store has an `endpoint`; `datom_repo_set_data_store()` raises it to
+  the running version when the new location has an `endpoint` and the floor is lower or absent, and
+  never lowers it.
+- **Only where an endpoint is recorded**: without one, old and new datom write to the same place,
+  so teammates on 0.2.0 keep writing plain-AWS repos (#155's D11 stands there). One condition per
+  site, which passes the owner's bar for code that only serves older datom.
+- **Not stopped**: 0.1.0, which does not read the floor; and older readers, accepted (R3.7's message
+  is for new readers).
 
 ### Readers are told when the location is not standard AWS (R3.7, decision 14)
 
@@ -415,7 +471,9 @@ Scripts are in `research/`; fake keys only, nothing sent to AWS.
 | An explicit address keeps the bucket in the hostname only with `s3_virtual_address = TRUE`; a region redirect uses paws's built-in table | Read `update_endpoint_for_s3_config()` and `s3_redirect_from_error()` in paws.common 0.8.8 (2026-11-10), and the first on paws's GitHub main | `Rscript -e 'print(paws.common:::update_endpoint_for_s3_config)'` |
 | A paws S3 client takes about 36 KB in memory and about 1 ms to build; paws builds every HTTP request afresh, so a client carries no connection between requests | Measured 2026-11-10 with `gc()` over 200 clients and a 50-build timing loop; read `issue()` and `request_aws()` in paws.common 0.8.8 | -- |
 | A handler listed beside `error =` that raises again is caught by it; the catch-all's first line passes the error on; `purrr` re-wraps (`map`, `walk`, `map_lgl`, `imap`, `keep`), `lapply()` does not; `expect_error(class = )` passes on a reworded error unless `inherit = FALSE`; an rlang error's message text includes its cause's; a function using a global fails in a fresh R | `research/condition-handling/probe.R` (purrr 1.2.1, rlang 1.1.7, testthat 3.3.2, 2026-11-10) | `Rscript research/condition-handling/probe.R` |
-| Exactly nine `purrr` loops in datom can reach a storage request (135 of 421 functions can) | `research/condition-handling/purrr_loops.R`, a walk of datom's call graph, 2026-11-10; about 0.7 s | `Rscript .kiro/specs/s3-credential-function/research/condition-handling/purrr_loops.R` from the repo root |
+| Exactly nine `purrr` loops in datom can reach a storage request (136 of 421 functions can) | `research/condition-handling/purrr_loops.R`, a walk of datom's call graph, 2026-11-10; re-run 2026-11-11 with `findGlobals(merge = TRUE)`, which also follows functions passed by name (135 functions before, the same nine loops); about 0.7 s | `Rscript .kiro/specs/s3-credential-function/research/condition-handling/purrr_loops.R` from the repo root |
+| `findGlobals(merge = FALSE)$functions` holds only names in call position: in `lapply(x, foo)`, `foo` is under `$variables` | Run 2026-11-11 | -- |
+| `utils::modifyList()` keeps a field the new block omits | Run 2026-11-11: `endpoint` survived a merge without it; so did `region` on a move to `type: local` | -- |
 | Regions whose S3 address is not under `amazonaws.com` | botocore 1.43's `endpoints.json` (in datom-py's environment) lists `aws-cn`, `aws-iso`, `aws-iso-b`, `aws-iso-e`, `aws-iso-f`, `aws-eusc` with their region patterns | -- |
 | S3 does not use paws's bearer-token variables (paws.common 0.8.6) | paws.storage builds S3 with the `s3` signer: `new_handlers("restxml", "s3")` | -- |
 | datom-py takes no endpoint and does not read `ref.json` | Read `src/datom/_s3.py` and grepped `src/datom/` (2026-11-10) | -- |
@@ -443,6 +501,8 @@ The table is R4b in `requirements.md`; this maps each guarded row to its test.
 | FM16 | The sweep on `datom_init_repo()`, like every other command |
 | FM17 | R5.8: each write route stops on each kind of disagreement; connecting warns; the approve command lets the next write through |
 | FM18 | R5.8: the message for a location from `ref.json` that is not standard AWS, and none otherwise |
+| FM19 | R5.9: the floor is written by init with an endpoint and not without, raised by a repoint onto one, never lowered |
+| (R3.9) | R5.9: moves off MinIO, from S3 to local, onto MinIO, each followed by a write; every location writer agrees with the others for the same store; an unknown `storage.data` key survives a repoint |
 
 ## 11. Correctness properties (what the tests pin)
 
@@ -467,6 +527,10 @@ The table is R4b in `requirements.md`; this maps each guarded row to its test.
     connection name the same location (R3.6).
 12. No `purrr` loop and no `tryCatch()` handler that lacks the pass-on line wraps code that can reach
     the credential function (R5.7).
+13. Every record of a location built for the same store compares equal, and a repoint leaves no
+    field of the old location behind (R3.9).
+14. A location with an endpoint carries a writer floor at or above the release that wrote it; one
+    without carries none added by this release (R3.8).
 
 ## 12. Model escalation (flag at plan time)
 
@@ -474,7 +538,7 @@ The table is R4b in `requirements.md`; this maps each guarded row to its test.
   storage call site, 31 error handlers in 16 files, 9 loops, and the location records in `ref.json`
   and `project.yaml`.
 - **Purity audit** after the accessor and handler changes: 19 call sites, 31 handlers, 9 loops.
-- **Test coverage review** before completion: the failure-mode table has 14 guarded rows, the sweep
+- **Test coverage review** before completion: the failure-mode table has 15 guarded rows, the sweep
   covers every exported function that reaches storage, and the code-reading test covers the rest.
 
 ## 13. The draft's "Not yet traced" list, resolved
@@ -531,3 +595,15 @@ rule where every session reads it.
 | 4a | "Keys passed directly work as in 0.2.0" no longer holds | Yes | R1.2 lists the four breaking changes; NEWS leads with them (R6.4); property 10 amended | Added: `AWS_ENDPOINT_URL*` is refused only when the store has no `endpoint`, which avoids blocking MinIO users who keep it set for other tools |
 | 4b | The helper's comment should say `error =` stays last | Yes | Section 3 | No |
 | -- | (the owner's, during the review) Preventing the pattern, not only catching it | -- | A code-reading test, the always-loaded rule, the engineering note, comments at each site (decision 15) | -- |
+
+### Review 3, of `55ce81f` (2026-11-11)
+
+Its points arrived already decided with the owner; each claim was verified before applying.
+
+| # | Finding | Verified | Outcome | Differs from the review |
+|---|---|---|---|---|
+| 1 | An older datom ignores `endpoint`; after a move that kept the bucket name it reads, and writes, the old copy | Yes, by reading: `.datom_parse_ref()` returns root, prefix and region; the older write checks compare bucket and prefix | A writer floor (R3.8, decision 16); reads unprotected, accepted; FM19 reworded | The review had the floor written on every new repo and every repoint. That reversed #155's D11 (mixed-version teams not guarded), so it went back to the owner, who took the floor only where an endpoint is recorded: one condition per site |
+| 2 | Connecting warns, so a developer's reads follow `ref.json` | Yes, as designed | Recorded as a deliberate loosening (section 6, decision 14) | No |
+| 3 | `datom_repo_set_data_store()` keeps stale location fields | Yes, in R: `utils::modifyList()` kept `endpoint`, and `region` on a move to local | One location shape, one builder, replacement as a set, one comparer (R3.9, decision 17) | No |
+| 4 | The call graph misses functions passed by name | Yes, in R: `findGlobals(merge = FALSE)$functions` lists only names in call position | `merge = TRUE` in the script and the test; re-run: the same nine loops, 136 functions | No |
+| -- | Scope: one spec | -- | Kept as one spec | -- |

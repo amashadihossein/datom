@@ -14,7 +14,10 @@ FM14, FM15, FM16, AC7, AC11 and decision 2 changed; decisions 10 and 11 added. A
 time, after a second design review evaluated with the owner (`design.md`, section 14): the endpoint
 moves to the store and into `ref.json` and `project.yaml`, and writes go only where governance and
 the data repo agree. R1.1-R1.3, R3.4, R5.6, R6.4, FM7, FM15, decision 10 and AC7 changed; R3.6,
-R3.7, R5.7, R5.8, FM17-FM19, decisions 12-15 and AC12-AC14 added.
+R3.7, R5.7, R5.8, FM17-FM19, decisions 12-15 and AC12-AC14 added. Amended a fourth time, after a
+third design review decided with the owner on 2026-11-11 (`design.md`, section 14, review 3): R3.6,
+R5.7, R6.5, FM19 and decision 14 changed; R3.8, R3.9, R5.9, decisions 16-17 and AC15-AC16 added.
+The spec stays one spec (owner, 2026-11-11).
 **Test baseline**: 6354 expectations, 0 failed, 0 skipped (`devtools::test()` on this branch after
 merging `dev` at `c539516`, 2026-11-10; 5142 on `347a403` before #155).
 **Reference contract**: datom-py's `.kiro/specs/s3-reader/requirements.md`, R3. Where R differs, the
@@ -176,7 +179,10 @@ handed in is specific to paws.
    a pushed commit to the data repo, which GitHub's permissions and history guard.
    - **Connecting does not stop on a disagreement**: `datom_get_conn()` warns instead, so the
      developer can connect and run the approve command. (Today it stops when the bucket disagrees
-     after its pull, and does not compare at all for a credentials-only store.)
+     after its pull, and does not compare at all for a credentials-only store.) The connection then
+     uses `ref.json`'s location, so a developer's reads follow `ref.json` as a reader's do. This is a
+     deliberate loosening of today's stop, accepted by the owner on 2026-11-11: reads change nothing,
+     and writes still stop.
    - The check replaces today's write-time comparison of `ref.json` with the connection, which ran
      only on `datom_write()` with data and on `datom_write_set()`.
 7. **A reader is told when the data is served from somewhere other than standard AWS**
@@ -186,6 +192,37 @@ handed in is specific to paws.
    in their own store. A forged `ref.json` can still feed readers forged data, as it can today by
    naming another AWS bucket: readers have no second record to check against. The help recommends
    tight write access to the governance store, with versioning and an audit log on it.
+8. **Older writers are refused where they would write to the wrong place** (decision 16, owner,
+   2026-11-11). An older datom ignores `endpoint` (its `.datom_parse_ref()` reads root, prefix and
+   region only, and its write checks compare bucket and prefix only), so for a location with an
+   endpoint it would write to standard AWS, into a same-named bucket if one answers (for example the
+   old copy, kept until its sunset, after a move to another service that kept the bucket name). So:
+   - `datom_init_repo()` writes `min_writer_version: <the running datom's version>` into
+     `project.yaml` when the store has an `endpoint`;
+   - `datom_repo_set_data_store()` raises `min_writer_version` to the running version when the new
+     location has an `endpoint` and the recorded floor is lower or absent. It never lowers it. Its
+     help says it now edits `min_writer_version` as well as `storage.data`;
+   - a location without an endpoint gets no floor: old and new datom write to the same place, so a
+     teammate still on 0.2.0 keeps writing (#155's D11 stands for those repos);
+   - 0.1.1 onward read the floor and refuse; 0.1.0 does not read it and cannot be stopped. The docs
+     say so.
+   - **Reads are not protected**: an older reader can read the old copy described above, with only
+     the "Data was migrated from ..." warning. Accepted; new readers get R3.7's message.
+9. **One shape for a data location** (decision 17, owner, 2026-11-11). Every record of where data
+   lives (`ref.json`'s `current`, `project.yaml`'s `storage.data`, and the store) holds:
+   - `type`, `root`, and `prefix`, left out when empty;
+   - for S3: `region`, always, since AWS signatures name a region (AWS China and VPC endpoints need
+     the real one; MinIO accepts `us-east-1`), and `endpoint` only when it is not standard AWS;
+   - for a local folder: no `region` and no `endpoint`.
+
+   One builder makes every record, and `datom_repo_set_data_store()` replaces the known location
+   fields as a set (keeping any other key a newer datom put in `storage.data`), so a move off
+   MinIO, or from S3 to a local folder, leaves no stale `endpoint` or `region` behind. (Today it
+   merges the new block over the old with `utils::modifyList()`, which keeps a field the new block
+   omits; `project.yaml` would then disagree with `ref.json`, every write would stop, and running
+   the approve command again would not fix it.) One comparer decides whether two records name the
+   same location, a missing field and an empty one counting as equal; the write check and connect
+   both use it.
 
 ### R4. No key is held where a saved session can write it (decision 3)
 
@@ -259,7 +296,7 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 | FM16 | Login expires during `datom_init_repo()` after its push (added 2026-11-10, reworded the same day) | The credential failure. Re-running `datom_init_repo()` after logging in refuses and names the repair (`datom_get_conn()`, then `datom_validate(conn, fix = TRUE)`) | test | yes |
 | FM17 | `ref.json` points somewhere `project.yaml` does not: a move not yet pulled, or a change made to governance alone (added 2026-11-10) | `datom_get_conn()` warns; every write stops before changing anything, naming the locations, reconnecting, and the approve command (R3.6) | test | yes |
 | FM18 | `ref.json` sends readers somewhere other than standard AWS (added 2026-11-10) | A message at connect saying where the data comes from (R3.7). A forged `ref.json` can still feed readers forged data | test | yes |
-| FM19 | An older datom meets a project whose `ref.json` or `project.yaml` records an `endpoint` (added 2026-11-10) | It ignores the field and sends requests to standard AWS, which fail there; upgrading fixes it | | yes |
+| FM19 | An older datom meets a project whose location records an `endpoint` (added 2026-11-10, reworded 2026-11-11) | It ignores the field and goes to standard AWS. Usually that fails there; but after a move to another service that kept the bucket name, the old copy kept until its sunset answers. **Writes**: refused by the writer floor (R3.8), on 0.1.1 onward; 0.1.0 cannot be stopped. **Reads**: an older reader reads the old copy with only the "Data was migrated" warning (accepted) | test (the floor is written and raised, R5.9) | yes |
 
 ### R5. Tests
 
@@ -280,12 +317,21 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
    reaches its check of a set's members. Added 2026-11-10.
 7. **A code-reading test** (decision 15) fails if any `purrr` loop, or any `tryCatch()` error handler
    not starting with the pass-on line, wraps code that can reach the credential function, worked out
-   from datom's own call graph. Skipped on CRAN and when `codetools` is not installed. Added
-   2026-11-10.
+   from datom's own call graph. The graph counts every global name a function mentions
+   (`codetools::findGlobals(merge = TRUE)`), so a function passed by name, as in
+   `lapply(x, .datom_verify_one)`, is followed too. Skipped on CRAN and when `codetools` is not
+   installed. Added 2026-11-10; the graph rule added 2026-11-11.
 8. Tests for R3.6 and R3.7: each write route stops when `ref.json`, `project.yaml` or the connection
    disagree on any of bucket, prefix, region or endpoint; `datom_get_conn()` warns rather than stops;
    the approve command lets the next write through; the reader message appears for a location from
    `ref.json` that is not standard AWS, and not otherwise. Added 2026-11-10.
+9. Tests for R3.8 and R3.9, added 2026-11-11:
+   - a move off MinIO, then a write; a move from S3 to a local folder, then a write; a move onto
+     MinIO, then a write: each write goes through after the approve command;
+   - for the same store, every writer of a location record (`ref.json`, `project.yaml` at init,
+     `project.yaml` after `datom_repo_set_data_store()`) produces a record the comparer calls equal;
+   - the floor: written by init with an endpoint and not without; raised by a repoint onto an
+     endpoint; never lowered; a key in `storage.data` this build does not know survives a repoint.
 
 ### R6. Documentation
 
@@ -300,7 +346,8 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 4. `NEWS.md`: the four breaking changes of R1.2 first, each with what to do instead; then the
    credential function, the endpoint on the store, and the agreement check before writes.
 5. `?datom_store_s3`: the `endpoint` argument (moved from `datom_get_conn()`, with its notes on
-   S3-compatible services); `?datom_repo_set_data_store`: its use as the approval of R3.6.
+   S3-compatible services); `?datom_repo_set_data_store`: its use as the approval of R3.6, that it
+   replaces the location fields as a set, and that it raises `min_writer_version` (R3.8).
 6. **The pattern rule, where every session reads it** (decision 15): a line in the "Don'ts" of
    `.github/copilot-instructions.md`, and the credential case added to "Two ways a condition's class
    silently disappears" in `dev/engineering-notes.md`.
@@ -409,12 +456,28 @@ Each is taken one at a time with the owner and recorded here.
     scripts and a product layer cannot answer one. For reads there is no cheap second record, so
     datom makes the location visible. In the owner's words the gain is mild, and worth it at this
     scope; the check closes a gap that exists today for a developer using the credentials-only store.
+    Amended 2026-11-11 (owner, review 3): connecting warns, so a developer's reads follow `ref.json`
+    like a reader's, a deliberate loosening of today's stop at connect.
 15. **The pattern rule is written down and checked. DECIDED (owner, 2026-11-10) (R5.7, R6.6).** The
     pass-on line and `lapply()` are the only safe forms around code that can reach the credential
     function. The rule goes into the always-loaded conventions and the engineering note, comments sit
     at each site, and a code-reading test (about a second of CI, deterministic) fails on a new loop or
     handler that breaks it. The design had broken the engineering note's rule while the note was
     only loaded on demand.
+16. **A writer floor only where an older datom would write to the wrong place. DECIDED (owner,
+    2026-11-11) (R3.8).** `min_writer_version` is written by `datom_init_repo()`, and raised by
+    `datom_repo_set_data_store()`, only when the location records an `endpoint`. This amends #155's
+    D11 (mixed-version teams not guarded) for those repos only. Set aside: a floor on every new repo
+    and every repoint, which the review first proposed; it would refuse teammates on 0.2.0 who write
+    plain-AWS repos correctly. The owner's rule for such choices: in the experimental phase, code
+    whose only job is to keep an older datom working is added only when it is very, very minimal or
+    has another benefit; here it is one condition per site. Reads stay unprotected, accepted.
+17. **One shape for a data location. DECIDED (owner, 2026-11-11) (R3.9).** In the owner's model,
+    governance changes `ref.json` first, the project owner carries the change into `project.yaml`
+    with `datom_repo_set_data_store()`, and nothing about the location may be ambiguous afterwards.
+    So one builder makes every location record, the repoint replaces it as a set, and one comparer
+    decides "same location". Set aside: the owner's first idea, an endpoint replacing the region,
+    because AWS signatures name a region.
 
 ## Parity with datom-py
 
@@ -449,8 +512,10 @@ PR (one repo per change). Points to carry over:
 | AC7 | `AWS_ENDPOINT_URL*` set with no `endpoint` on the store is refused; otherwise requests go only to the location's endpoint or the standard address; a region with no standard `amazonaws.com` address is refused when no `endpoint` is given and accepted with one; both refusals come at store construction, or at connect for a location from `ref.json` | R3.4 |
 | AC8 | A credential failure at each storage request of a write, in turn, followed by the same command re-run, leaves git and storage as one uninterrupted run would; a credential failure ends `datom_sync()`, which first says which tables it synced | R4a |
 | AC9 | Every failure mode in R4b marked guarded has its test, and every one marked documented appears in `?datom_store_s3` | R4b, R6.2 |
-| AC10 | Each test for AC1-AC9 and AC11-AC14 is recorded going red when its guard alone is removed | R5.3 |
+| AC10 | Each test for AC1-AC9 and AC11-AC16 is recorded going red when its guard alone is removed | R5.3 |
 | AC11 | For each command, a credential failure at its 1st, 2nd, 3rd... storage request reaches the caller as `datom_credentials_failed` itself, not as the cause of another error, with datom's message | R2.7 |
 | AC12 | With governance attached, every write route stops before changing anything when `ref.json`, `project.yaml` and the connection disagree on location; `datom_get_conn()` warns instead of stopping; after `datom_repo_set_data_store()` the write goes through | R3.6 |
 | AC13 | A location from `ref.json` that is not standard AWS S3 produces a message at connect; one from the caller's own store does not | R3.7 |
 | AC14 | The code-reading test passes on the finished code and fails when one pass-on line is removed or one `lapply()` turned back into `purrr::map()` | R5.7 |
+| AC15 | `min_writer_version` is written by init and raised by a repoint exactly when the location has an `endpoint`, and never lowered | R3.8 |
+| AC16 | After a move off MinIO, from S3 to a local folder, or onto MinIO, approved once, the next write goes through; every writer of a location record agrees with the others for the same store | R3.9 |
