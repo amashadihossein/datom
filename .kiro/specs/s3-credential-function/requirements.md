@@ -10,7 +10,11 @@ decisions are taken one at a time.
 (interrupted commands finish on a re-run) merged: R2.7 is new; R4.1, R4a.1, R4a.2, R4b (FM3, FM4,
 FM14-FM16) and AC8 changed; AC11 is new; decisions 7-9 added. Amended again the same day, after a
 design review evaluated with the owner (`design.md`, section 14): R2.5, R2.7, R3.4, R4.1, R5.6, FM12,
-FM14, FM15, FM16, AC7, AC11 and decision 2 changed; decisions 10 and 11 added.
+FM14, FM15, FM16, AC7, AC11 and decision 2 changed; decisions 10 and 11 added. Amended a third
+time, after a second design review evaluated with the owner (`design.md`, section 14): the endpoint
+moves to the store and into `ref.json` and `project.yaml`, and writes go only where governance and
+the data repo agree. R1.1-R1.3, R3.4, R5.6, R6.4, FM7, FM15, decision 10 and AC7 changed; R3.6,
+R3.7, R5.7, R5.8, FM17-FM19, decisions 12-15 and AC12-AC14 added.
 **Test baseline**: 6354 expectations, 0 failed, 0 skipped (`devtools::test()` on this branch after
 merging `dev` at `c539516`, 2026-11-10; 5142 on `347a403` before #155).
 **Reference contract**: datom-py's `.kiro/specs/s3-reader/requirements.md`, R3. Where R differs, the
@@ -62,14 +66,23 @@ handed in is specific to paws.
 
 ### R1. The store accepts a credential function
 
-1. `datom_store_s3()` gains `credentials`, a function, added after the existing arguments so
-   positional calls keep working. A store is built from **either** `credentials` **or**
-   `access_key` + `secret_key` (+ `session_token`), never both; giving both, or neither, stops with a
-   message naming the two forms.
-2. `access_key` / `secret_key` / `session_token` keep working exactly as in 0.2.0.
+1. `datom_store_s3()` gains `credentials`, a function, and `endpoint`, the server address of an
+   S3-compatible service (decision 12), both added after the existing arguments so positional calls
+   keep working. A store is built from **either** `credentials` **or** `access_key` + `secret_key`
+   (+ `session_token`), never both; giving both, or neither, stops with a message naming the two
+   forms. The data and the governance component each carry their own `endpoint`.
+2. `access_key` / `secret_key` / `session_token` keep working as in 0.2.0, **except** for four
+   breaking changes, all loud, all for users pointing datom somewhere other than standard AWS
+   (amended 2026-11-10, owner):
+   - `datom_get_conn(endpoint = )` is removed; pass `endpoint =` to the store (decision 12);
+   - `AWS_ENDPOINT_URL*` set with no `endpoint` on the store is refused (R3.4);
+   - a region with no standard AWS address, such as `cn-north-1`, needs `endpoint =` (decision 10);
+   - `endpoint_url` in `~/.aws/config` is ignored: requests go to standard AWS and fail there
+     (unknown key, no such bucket). datom never reads that file, so it cannot warn.
 3. `datom_store_s3_creds()` (the credentials-only component used with governance) gets the same
    `credentials` argument and the same either/or rule (decision 5), so single sign-on readers keep
-   the governance lookup of where the data lives.
+   the governance lookup of where the data lives. It gets **no** `endpoint`: everything about the
+   data's location, the endpoint included, comes from governance's `ref.json` (decision 13).
 
 ### R2. What the function returns (datom-py R3)
 
@@ -130,21 +143,49 @@ handed in is specific to paws.
    every source in 1, and with nothing configured anywhere.
 3. It holds for every S3 client datom builds: the data client, the governance client, the bucket
    check at construction, and the governance lookup of a project's data location.
-4. The server address a request goes to also depends only on datom's arguments (decision 2):
-   - if `AWS_ENDPOINT_URL_S3` or `AWS_ENDPOINT_URL` is set, building an S3 store or connection
-     stops with a message naming the variable and pointing at `datom_get_conn(endpoint = )`;
-   - every client datom builds is given the address explicitly: the `endpoint` the caller passed, or
-     the standard AWS address for the store's region, keeping today's bucket-address style. That
-     closes `endpoint_url` in `~/.aws/config` too, which datom cannot check without reading the file;
+4. The server address a request goes to depends only on the store's arguments and on datom's own
+   project documents, never on an ambient setting (decisions 2, 10, 12, 13; rewritten 2026-11-10):
+   - every client datom builds is given the address explicitly: the location's `endpoint`, or the
+     standard AWS address for its region, keeping today's bucket-address style. That closes
+     `endpoint_url` in `~/.aws/config` too, which datom cannot check without reading the file;
+   - the location is the store's (bucket, prefix, region, `endpoint`), or, with governance attached,
+     the one `ref.json` records (bucket, prefix, region and, from this release, `endpoint`), which
+     wins when it differs, as its bucket already does;
    - datom builds the standard address only for regions whose S3 address is
-     `s3.<region>.amazonaws.com`: AWS's standard regions and GovCloud (decision 10). For any other
-     region (China, the US government secret clouds, the EU Sovereign Cloud, a made-up region name),
-     a client built with no `endpoint` stops, naming the region and `datom_get_conn(endpoint = )`.
-     With an `endpoint`, any region is accepted. `datom_store_s3(validate = TRUE)` checks the bucket
-     at the address datom builds, so for such a region it stops and says to use `validate = FALSE`
-     and pass `endpoint =` at connect. (Until 2026-11-10 this item refused China regions at the store,
-     which blocked `endpoint =` as the way out.)
-5. Region already comes only from the store.
+     `s3.<region>.amazonaws.com`: AWS's standard regions and GovCloud (decision 10). Any other
+     region (China, the US government secret clouds, the EU Sovereign Cloud, a made-up name) needs an
+     `endpoint`; with one, any region is accepted;
+   - if `AWS_ENDPOINT_URL_S3` or `AWS_ENDPOINT_URL` is set while the location has no `endpoint`,
+     datom stops, naming the variable and `datom_store_s3(endpoint = )`. With an `endpoint` the
+     variable has no effect, so it is not refused (the AWS command line may need it);
+   - **where these checks run**: in `datom_store_s3()`, which knows the store's region and endpoint,
+     so a refusal comes at the line that built the store; and in `datom_get_conn()` for a location
+     taken from `ref.json`, the first point datom knows it. So no command that changes things meets
+     a refusal partway (an address refusal in `datom_init_repo()` after its push was the case found
+     in review).
+5. Region already comes only from the store, or from `ref.json`.
+6. **Writes go only where governance and the data repo agree** (decision 14, owner, 2026-11-10).
+   With governance attached, every command that writes to storage (every route of `datom_write()`,
+   `datom_write_set()`, `datom_sync()`, `datom_validate(fix = TRUE)`) first requires `ref.json`,
+   the clone's `.datom/project.yaml` and the connection to name the same location: bucket, prefix,
+   region and `endpoint`. Otherwise it stops before changing anything, naming the locations, with two
+   ways out: reconnect with `datom_get_conn()`, which pulls the data repo (a real move updates
+   `project.yaml` there too); or, if `ref.json` changed alone and the change is expected, approve it
+   once with `datom_repo_set_data_store(conn, <store for the new location>)`, which records it in
+   `project.yaml`. A change made to `ref.json` alone therefore cannot redirect a write; it also takes
+   a pushed commit to the data repo, which GitHub's permissions and history guard.
+   - **Connecting does not stop on a disagreement**: `datom_get_conn()` warns instead, so the
+     developer can connect and run the approve command. (Today it stops when the bucket disagrees
+     after its pull, and does not compare at all for a credentials-only store.)
+   - The check replaces today's write-time comparison of `ref.json` with the connection, which ran
+     only on `datom_write()` with data and on `datom_write_set()`.
+7. **A reader is told when the data is served from somewhere other than standard AWS**
+   (decision 14). At `datom_get_conn()`, when the location came from `ref.json` and is anything but
+   standard AWS S3 (an `endpoint`, a local folder, or any backend added later), datom says where the
+   data comes from and that it was set by governance. No message when the caller chose the location
+   in their own store. A forged `ref.json` can still feed readers forged data, as it can today by
+   naming another AWS bucket: readers have no second record to check against. The help recommends
+   tight write access to the governance store, with versioning and an audit log on it.
 
 ### R4. No key is held where a saved session can write it (decision 3)
 
@@ -206,7 +247,7 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 | FM4 | Login expires during `datom_sync()` | The sync stops and says which tables were synced and which were not attempted; re-running the same call finishes | test | yes |
 | FM5 | Code reaches a function-built connection's client directly, skipping renewal | Error at once (there is no `conn$client`). Code that tests for a client and skips when there is none would skip in silence, as the connect-time reachability check would have (found 2026-11-10) | test: no code under `R/` names the stored client outside the accessor and the connection builders | |
 | FM6 | paws starts searching the machine even when given keys with no expiry time | Would be silent | test (R5.2), the only alarm | |
-| FM7 | `AWS_ENDPOINT_URL*` set, or `endpoint_url` in `~/.aws/config` | Refused, or overridden by the explicit address | test | yes |
+| FM7 | `AWS_ENDPOINT_URL*` set with no `endpoint` on the store, or `endpoint_url` in `~/.aws/config` | Refused, naming the variable and `datom_store_s3(endpoint = )`; the config file's endpoint is overridden by the explicit address, so requests fail at AWS | test | yes |
 | FM8 | The function returns malformed or expired keys, or raises | `datom_credentials_invalid` / `datom_credentials_failed`, no value echoed | test | yes |
 | FM9 | Local clock wrong by more than the 15-minute margin | AWS refuses the request | | yes |
 | FM10 | Session saved (`.RData`, a cache) with a function-built store or connection | No key in the file; a fresh R calls the function again | test | yes |
@@ -214,8 +255,11 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 | FM12 | Connection sent to a fresh-process parallel worker | The worker calls the function once; on macOS the keychain may prompt per process. A function that uses the caller's global variables fails there with "object not found" (R4.1) | test | yes |
 | FM13 | Keys held in the user's own variables, or written literally inside the function | Saved with the session; outside datom's control | | yes |
 | FM14 | The function returns keys with 15 minutes or less left: keys that live that briefly (an assumed role at its 15-minute minimum), or a source that keeps handing back the same keys until just before they expire (a cache another tool refreshes late) (added 2026-11-10, widened the same day) | Works, but datom calls the function before every request while the keys it returns have 15 minutes or less left; a function that assumes a role on each call may be slowed or throttled by AWS | | yes |
-| FM15 | A datom error handler, or a `purrr` loop that reaches storage, added later without letting credential failures through (added 2026-11-10) | A misleading message, as in the examples in `design.md` section 5 | test (R2.7), for the commands it covers | |
+| FM15 | A datom error handler, or a `purrr` loop that reaches storage, added later without letting credential failures through (added 2026-11-10) | A misleading message, as in the examples in `design.md` section 5 | test: the code-reading test (R5.7) for every loop and handler, and the sweep (R5.6) for the commands it covers | |
 | FM16 | Login expires during `datom_init_repo()` after its push (added 2026-11-10, reworded the same day) | The credential failure. Re-running `datom_init_repo()` after logging in refuses and names the repair (`datom_get_conn()`, then `datom_validate(conn, fix = TRUE)`) | test | yes |
+| FM17 | `ref.json` points somewhere `project.yaml` does not: a move not yet pulled, or a change made to governance alone (added 2026-11-10) | `datom_get_conn()` warns; every write stops before changing anything, naming the locations, reconnecting, and the approve command (R3.6) | test | yes |
+| FM18 | `ref.json` sends readers somewhere other than standard AWS (added 2026-11-10) | A message at connect saying where the data comes from (R3.7). A forged `ref.json` can still feed readers forged data | test | yes |
+| FM19 | An older datom meets a project whose `ref.json` or `project.yaml` records an `endpoint` (added 2026-11-10) | It ignores the field and sends requests to standard AWS, which fail there; upgrading fixes it | | yes |
 
 ### R5. Tests
 
@@ -232,7 +276,16 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
    the cause of another error, and that no run returns normally after the failure fired (R2.7;
    rules in `design.md`, section 5); for the write
    commands it then re-runs the command and checks git and storage against an uninterrupted run
-   (R4a.1). Added 2026-11-10.
+   (R4a.1). Its test projects include a set with members, without which `datom_validate()` never
+   reaches its check of a set's members. Added 2026-11-10.
+7. **A code-reading test** (decision 15) fails if any `purrr` loop, or any `tryCatch()` error handler
+   not starting with the pass-on line, wraps code that can reach the credential function, worked out
+   from datom's own call graph. Skipped on CRAN and when `codetools` is not installed. Added
+   2026-11-10.
+8. Tests for R3.6 and R3.7: each write route stops when `ref.json`, `project.yaml` or the connection
+   disagree on any of bucket, prefix, region or endpoint; `datom_get_conn()` warns rather than stops;
+   the approve command lets the next write through; the reader message appears for a location from
+   `ref.json` that is not standard AWS, and not otherwise. Added 2026-11-10.
 
 ### R6. Documentation
 
@@ -244,7 +297,13 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 3. The trade-off between the two forms: keys passed directly are the easy route and the way out, and
    a saved session or cache can write them to disk; the function form keeps them out. Recommend
    never saving the workspace (`usethis::use_blank_slate()`).
-4. A `NEWS.md` line.
+4. `NEWS.md`: the four breaking changes of R1.2 first, each with what to do instead; then the
+   credential function, the endpoint on the store, and the agreement check before writes.
+5. `?datom_store_s3`: the `endpoint` argument (moved from `datom_get_conn()`, with its notes on
+   S3-compatible services); `?datom_repo_set_data_store`: its use as the approval of R3.6.
+6. **The pattern rule, where every session reads it** (decision 15): a line in the "Don'ts" of
+   `.github/copilot-instructions.md`, and the credential case added to "Two ways a condition's class
+   silently disappears" in `dev/engineering-notes.md`.
 
 ## Out of scope
 
@@ -275,8 +334,9 @@ Each is taken one at a time with the owner and recorded here.
 2. **The server address. DECIDED (owner, 2026-10-27): close it here (R3.4)**: refuse when
    `AWS_ENDPOINT_URL*` is set, always pass the address explicitly, and refuse China regions for now.
    A planted variable would otherwise send signed requests, and the data read back, to another
-   server. Cost: a user who points datom at MinIO through that variable must pass `endpoint =` to
-   `datom_get_conn()` instead. (The China refusal was replaced on 2026-11-10 by decision 10.)
+   server. Cost: a user who points datom at MinIO through that variable must pass `endpoint =`
+   instead. (Amended 2026-11-10: the China refusal was replaced by decision 10, the endpoint moved to
+   the store by decision 12, and the variable is refused only when the store has no `endpoint`.)
 3. **Keys reaching disk through a saved session (F7). DECIDED (owner, 2026-10-27).**
    - **Function form**: the current keys and the paws client live only in a private environment in
      datom's namespace, filed under a random id; the store and the connection hold the id, never a
@@ -313,16 +373,48 @@ Each is taken one at a time with the owner and recorded here.
    takes about 1 ms (both measured 2026-11-10).
 10. **Which regions datom builds an address for. DECIDED (owner, 2026-11-10) (R3.4).** Only those
     whose S3 address is `s3.<region>.amazonaws.com` (AWS's standard regions and GovCloud), from AWS's
-    own region patterns; any other needs `endpoint =`. The refusal sits where datom builds the
-    address, not in the store constructor, so `endpoint =` always works as the way out. In the
-    owner's words, US and EU are the primary focus; regions outside them may go unsupported, and this
-    rule keeps the standard ones that work today at no extra code. Set aside: refusing a list of
-    known odd regions, which gives a new odd group a wrong address and a confusing "could not
-    resolve host" error instead of a message.
+    own region patterns; any other needs `endpoint =`. In the owner's words, US and EU are the
+    primary focus; regions outside them may go unsupported, and this rule keeps the standard ones
+    that work today at no extra code. Set aside: refusing a list of known odd regions, which gives a
+    new odd group a wrong address and a confusing "could not resolve host" error instead of a
+    message. (Amended the same day, after the second review: the check first sat where datom builds
+    the address, because `endpoint =` was then an argument of `datom_get_conn()`; with the endpoint
+    on the store it runs when the store is built, and at connect for a location from `ref.json`.)
 11. **`datom_init_repo()` after its push has no exception. DECIDED (owner, 2026-11-10) (R2.7).** A
     credential failure there reaches the caller as everywhere else. Set aside: init's own stop with
     the failure as its cause, which would show "re-run the command" above "running
     `datom_init_repo()` again refuses", since R includes a cause's text in an error's message.
+12. **The endpoint belongs to the store. DECIDED (owner, 2026-11-10) (R1.1, R3.4).**
+    `datom_store_s3()` takes `endpoint =`, and `datom_get_conn()` loses its `endpoint` argument
+    outright, with no stub (owner: "experimental phase, don't like to carry baggage"; an old call
+    stops with R's "unused argument"). With the address in the store, every command reads it from
+    one place, `datom_init_repo()` and `datom_clone()` included, which had no way to take one; the
+    address checks run when the store is built; and data and governance can sit on different
+    services. Set aside: an init-only up-front address check with endpoint support deferred, which
+    would have been temporary code and left `datom_init_repo()` and `datom_clone()` unable to reach
+    MinIO meanwhile; keeping `datom_get_conn(endpoint = )` as an override or a fallback, which leaves
+    two places to set the address.
+13. **`ref.json` records the endpoint; the credentials-only store takes none. DECIDED (owner,
+    2026-11-10) (R1.3, R3.4).** So a move to another service is as seamless as a move to another
+    bucket, which is what `ref.json` is for. `.datom_create_ref()` writes `endpoint`, and
+    `.datom_parse_ref()` reads it. Set aside: the reader's own `endpoint =` on the credentials-only
+    store (a move to another service would need every reader to change it), and no endpoint for that
+    store at all. The security cost, a document in storage deciding where requests go, is already
+    paid for buckets today; decision 14 adds the second record for writes.
+14. **Writes need governance and the data repo to agree; readers are told about a non-AWS location.
+    DECIDED (owner, 2026-11-10) (R3.6, R3.7).** The owner asked for a "two factor mindset": a change
+    in one place must agree with another for it all to work. For writes, `project.yaml` in the data
+    repo is that second place, so a change to `ref.json` alone cannot send a developer's data
+    elsewhere. Approval is a one-time command (`datom_repo_set_data_store()`), not a question, since
+    scripts and a product layer cannot answer one. For reads there is no cheap second record, so
+    datom makes the location visible. In the owner's words the gain is mild, and worth it at this
+    scope; the check closes a gap that exists today for a developer using the credentials-only store.
+15. **The pattern rule is written down and checked. DECIDED (owner, 2026-11-10) (R5.7, R6.6).** The
+    pass-on line and `lapply()` are the only safe forms around code that can reach the credential
+    function. The rule goes into the always-loaded conventions and the engineering note, comments sit
+    at each site, and a code-reading test (about a second of CI, deterministic) fails on a new loop or
+    handler that breaks it. The design had broken the engineering note's rule while the note was
+    only loaded on demand.
 
 ## Parity with datom-py
 
@@ -332,7 +424,11 @@ PR (one repo per change). Points to carry over:
 | Point | R (this spec) | datom-py 0.1.0 today |
 |---|---|---|
 | Who renews | datom, before each request, 15 minutes early | botocore's refreshable credentials, through botocore internals (option A) |
-| `AWS_ENDPOINT_URL*` set | Refused, naming the variable | Silently ignored |
+| `AWS_ENDPOINT_URL*` set | Refused when the store has no `endpoint`, naming the variable | Silently ignored |
+| Where the endpoint is given | On the store; with governance, from `ref.json` | No endpoint argument; standard AWS only (read in `src/datom/_s3.py`, 2026-11-10) |
+| `ref.json`'s `endpoint` field | Read and followed | datom-py does not read `ref.json` (no governance lookup); nothing to carry until it does |
+| Location from `ref.json` not standard AWS | A message at connect | None |
+| Writes and the governance location | Must agree with `project.yaml` | Not applicable: datom-py never writes |
 | Configured endpoints otherwise | Address always passed explicitly | Ignored through a botocore setting |
 | Regions whose S3 address is not `s3.<region>.amazonaws.com` (China, government clouds, EU Sovereign Cloud) | Refused unless `endpoint =` is given | Resolved by botocore |
 | Saved store or connection holds keys | Function form: no, keys live in private memory under an id; keys form: yes, documented | Open (its pickling task) |
@@ -350,8 +446,11 @@ PR (one repo per change). Points to carry over:
 | AC4 | With wrong credentials planted in every ambient source, requests carry only the store's credentials, for both forms and every client | R3 |
 | AC5 | The function is not called at construction under `validate = FALSE`, and is called again near expiry | R2.3 |
 | AC6 | A function-built store and connection print, serialise and save (`.RData`) with no key or token, after requests too; in a fresh R the function is called again | R4 |
-| AC7 | `AWS_ENDPOINT_URL*` set is refused; otherwise requests go only to the given or standard address; a region with no standard `amazonaws.com` address is refused when no `endpoint` is given and accepted with one | R3.4 |
+| AC7 | `AWS_ENDPOINT_URL*` set with no `endpoint` on the store is refused; otherwise requests go only to the location's endpoint or the standard address; a region with no standard `amazonaws.com` address is refused when no `endpoint` is given and accepted with one; both refusals come at store construction, or at connect for a location from `ref.json` | R3.4 |
 | AC8 | A credential failure at each storage request of a write, in turn, followed by the same command re-run, leaves git and storage as one uninterrupted run would; a credential failure ends `datom_sync()`, which first says which tables it synced | R4a |
 | AC9 | Every failure mode in R4b marked guarded has its test, and every one marked documented appears in `?datom_store_s3` | R4b, R6.2 |
-| AC10 | Each test for AC1-AC9 and AC11 is recorded going red when its guard alone is removed | R5.3 |
+| AC10 | Each test for AC1-AC9 and AC11-AC14 is recorded going red when its guard alone is removed | R5.3 |
 | AC11 | For each command, a credential failure at its 1st, 2nd, 3rd... storage request reaches the caller as `datom_credentials_failed` itself, not as the cause of another error, with datom's message | R2.7 |
+| AC12 | With governance attached, every write route stops before changing anything when `ref.json`, `project.yaml` and the connection disagree on location; `datom_get_conn()` warns instead of stopping; after `datom_repo_set_data_store()` the write goes through | R3.6 |
+| AC13 | A location from `ref.json` that is not standard AWS S3 produces a message at connect; one from the caller's own store does not | R3.7 |
+| AC14 | The code-reading test passes on the finished code and fails when one pass-on line is removed or one `lapply()` turned back into `purrr::map()` | R5.7 |

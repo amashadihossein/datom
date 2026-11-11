@@ -14,3 +14,7 @@ of `Rscript` never fires. Findings and how to rerun them: `../design.md`, "Prove
   catch-all's first line, `purrr` loops against `lapply()`, `expect_error(class =)` with and without
   `inherit = FALSE`, an rlang error's message text, and a function using a global in a fresh R. Run
   with `Rscript condition-handling/probe.R` from this folder; it prints each result.
+- `condition-handling/purrr_loops.R` (added 2026-11-10): walks datom's call graph and lists every
+  `purrr` loop whose mapped function can reach a storage request (nine on `dev` at `c539516`). The
+  method the code-reading test of R5.7 follows. Run from the datom repo root:
+  `Rscript .kiro/specs/s3-credential-function/research/condition-handling/purrr_loops.R`.
