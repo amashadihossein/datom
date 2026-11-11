@@ -39,6 +39,42 @@ mock_datom_conn <- function(mock_client,
   )
 }
 
+#' A stand-in for the data-file upload, `.datom_storage_upload_absent()`, that
+#' records the keys it was given.
+#'
+#' Hand `$fn` to `local_mocked_bindings(.datom_storage_upload_absent = )`;
+#' `$keys()` returns the storage keys it was called with, in order. With
+#' `result = NULL` it passes each call through to the real upload, so a test on
+#' a real project can count uploads without faking storage.
+#'
+#' **Counting this function, not the plain `.datom_storage_upload()`, is what
+#' makes a "no upload" assertion mean anything** since data files stopped going
+#' through the plain upload: a counter left on the old function stays at zero
+#' whatever the write does. Nor can a backdated modification time stand in for
+#' a count any more, because this upload never touches a stored file.
+#'
+#' `$shas()` returns the `sha256` each call was given (`NA` where it was
+#' `NULL`), so a test can check that a caller hands the upload the hash it
+#' records rather than leaving the upload to hash the file again.
+#'
+#' @param result What the stand-in returns: `"uploaded"` (the default),
+#'   `"exists"`, or `NULL` to run the real upload.
+#' @return A list with `fn`, `keys` and `shas`.
+mock_upload_absent <- function(result = "uploaded") {
+  keys <- character()
+  shas <- character()
+  real <- get(".datom_storage_upload_absent", envir = asNamespace("datom"))
+  list(
+    fn = function(conn, local_path, key, sha256 = NULL) {
+      keys <<- c(keys, key)
+      shas <<- c(shas, if (is.null(sha256)) NA_character_ else sha256)
+      if (is.null(result)) real(conn, local_path, key, sha256 = sha256) else result
+    },
+    keys = function() keys,
+    shas = function() shas
+  )
+}
+
 #' Evaluate a connection-creating expression, muffling only the benign,
 #' well-understood conn-time warnings.
 #'
@@ -158,6 +194,29 @@ mock_rebuildable_store <- function(manifest,
   )
 
   invisible(NULL)
+}
+
+#' Declare the lowest datom version a fixture repo accepts writes from.
+#'
+#' The writer floor is read from the clone's `.datom/project.yaml` on every
+#' write, so a test sets it there, as a repo would, rather than on a connection.
+#' Other fields of an existing file are kept.
+#'
+#' @param repo_dir The clone's root.
+#' @param version The value of `min_writer_version`, written as given (a test of
+#'   an unusable value passes one).
+#' @return Invisibly the path written.
+write_writer_floor <- function(repo_dir, version) {
+  datom_dir <- fs::path(repo_dir, ".datom")
+  fs::dir_create(datom_dir)
+  path <- fs::path(datom_dir, "project.yaml")
+
+  existing <- if (fs::file_exists(path)) yaml::read_yaml(path) else list()
+  existing["min_writer_version"] <- list(version)
+
+  yaml::write_yaml(existing, path)
+
+  invisible(path)
 }
 
 #' Declare a fixture repo a product repo that owns one named set.

@@ -986,7 +986,8 @@ test_that(".datom_git_push pushes commits to remote", {
 
   result <- .datom_git_push(info$work_path)
 
-  expect_true(result)
+  # Nothing to pull in first, so the pull moved nothing.
+  expect_false(result)
   expect_invisible(.datom_git_push(info$work_path))
 
 
@@ -1022,8 +1023,9 @@ test_that(".datom_git_push fetches and merges upstream changes", {
   git2r::add(info$work_repo, "mine.txt")
   git2r::commit(info$work_repo, "My commit")
 
-  # Push should fetch, merge, then push
-  expect_no_error(.datom_git_push(info$work_path))
+  # Push should fetch, merge, then push, and say its pull brought commits in.
+  expect_no_error(pulled_in <- .datom_git_push(info$work_path))
+  expect_true(pulled_in)
 
   # Both commits should be in remote
   bare_log <- git2r::commits(info$bare_repo)
@@ -1067,15 +1069,21 @@ test_that(".datom_git_push aborts on non-git directory", {
   expect_error(.datom_git_push(dir), "Not a git repository")
 })
 
-test_that(".datom_git_push returns invisible TRUE", {
+test_that(".datom_git_push returns FALSE when its pull brought nothing in, and when it did not pull", {
+  # TRUE is reserved for a pull that moved HEAD (above): a write then checks the
+  # manifest it uploads against storage.
   info <- create_repo_with_remote()
 
   writeLines("more", fs::path(info$work_path, "extra.txt"))
   git2r::add(info$work_repo, "extra.txt")
   git2r::commit(info$work_repo, "Extra commit")
 
-  result <- .datom_git_push(info$work_path)
-  expect_true(result)
+  expect_false(.datom_git_push(info$work_path))
+
+  writeLines("again", fs::path(info$work_path, "extra.txt"))
+  git2r::add(info$work_repo, "extra.txt")
+  git2r::commit(info$work_repo, "Another commit")
+  expect_false(.datom_git_push(info$work_path, pull_first = FALSE))
 })
 
 
@@ -1142,9 +1150,15 @@ test_that(".datom_git_pull fetches and merges upstream changes", {
 test_that(".datom_git_pull is no-op when already up to date", {
   info <- create_repo_with_remote()
 
-  # Nothing upstream — should succeed silently
+  # Nothing upstream: no error, HEAD does not move, and no merge is attempted.
+  merges <- 0L
+  local_mocked_bindings(.datom_git_merge_upstream = function(...) {
+    merges <<- merges + 1L
+    stop("a pull that is level with the remote must not merge")
+  })
   expect_no_error(.datom_git_pull(info$work_path))
-  expect_true(.datom_git_pull(info$work_path))
+  expect_false(.datom_git_pull(info$work_path))
+  expect_identical(merges, 0L)
 })
 
 test_that(".datom_git_pull aborts on merge conflict", {
@@ -1185,17 +1199,23 @@ test_that(".datom_git_pull conflict message gives an actionable recourse", {
   git2r::add(info$work_repo, "README.md")
   git2r::commit(info$work_repo, "My conflicting edit")
 
-  err <- tryCatch(.datom_git_pull(info$work_path), error = function(e) e)
+  err <- expect_error(.datom_git_pull(info$work_path), class = "datom_merge_conflict")
   msg <- paste(cli::ansi_strip(conditionMessage(err)), collapse = " ")
 
-  # Names the tool that shows the damage and the resolution for datom's own
-  # generated files, which is the case an operator actually hits
-  expect_match(msg, "git status")
-  expect_match(msg, "--theirs")
-  expect_match(msg, "version_history.json")
+  # Names the conflicted file, says how to finish, and that nothing is
+  # published. README.md is the user's own file, so there is no datom file to
+  # take the remote copy of.
+  expect_match(msg, "README.md")
+  expect_match(msg, "Resolve your own files")
+  expect_match(msg, "re-run your write")
+  expect_match(msg, "Nothing was published")
+  expect_no_match(msg, "git checkout MERGE_HEAD")
+
+  # The merge is left in progress for the user to finish.
+  expect_true(fs::file_exists(fs::path(info$work_path, ".git", "MERGE_HEAD")))
 
   # Must NOT tell the caller to pull -- the pull is what produced this
-  expect_no_match(msg, "Pull latest changes")
+  expect_no_match(msg, "datom_pull")
 })
 
 test_that(".datom_git_pull aborts when no remote configured", {
@@ -1231,7 +1251,7 @@ test_that(".datom_git_push with pull_first=FALSE succeeds on empty remote", {
 test_that(".datom_git_push sets upstream tracking on first push (#74 F)", {
   # Mirrors datom_init_repo: init, add empty remote, first push. git2r::push()
   # does not set upstream, so without the fix branch_get_upstream() stays NULL
-  # and datom_pull()/.datom_check_git_current() would silently no-op.
+  # and datom_pull() would silently merge nothing.
   bare_dir <- withr::local_tempdir()
   git2r::init(bare_dir, bare = TRUE)
 
@@ -1276,13 +1296,14 @@ test_that(".datom_git_push upstream failure does not fail the push (#74 F)", {
     result <- .datom_git_push(info$work_path),
     "could not set upstream"
   )
-  expect_true(result)
+  expect_false(result)
 })
 
-test_that(".datom_git_pull succeeds with no identity when already up to date", {
+test_that(".datom_git_pull succeeds with no identity, up to date and when it merges", {
   skip_if_no_git2r()
-  # git2r asks for a merger signature even when there is nothing to merge, so
-  # a host with no git identity fails here unless datom passes one.
+  # git2r asks for a merger signature for every merge, so a host with no git
+  # identity fails at the merge unless datom passes one. Up to date, the pull
+  # does not merge at all.
   local_mock_git_global(global = list())
 
   bare_dir <- withr::local_tempdir()
@@ -1297,7 +1318,20 @@ test_that(".datom_git_pull succeeds with no identity when already up to date", {
   git2r::push(work_repo, name = "origin", refspec = test_head_refspec(work_repo),
               set_upstream = TRUE)
 
+  expect_false(.datom_git_pull(work_dir))
+
+  # A teammate (with their own identity, in their own clone) pushes; this host,
+  # with none, has to merge.
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(bare_dir, other_dir, progress = FALSE)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+  writeLines("upstream", fs::path(other_dir, "upstream.txt"))
+  git2r::add(other_repo, "upstream.txt")
+  git2r::commit(other_repo, "Upstream commit")
+  git2r::push(other_repo, name = "origin", refspec = test_head_refspec(other_repo))
+
   expect_true(.datom_git_pull(work_dir))
+  expect_true(fs::file_exists(fs::path(work_dir, "upstream.txt")))
 })
 
 test_that(".datom_git_pull aborts on non-git directory", {
@@ -1306,159 +1340,22 @@ test_that(".datom_git_pull aborts on non-git directory", {
   expect_error(.datom_git_pull(dir), "Not a git repository")
 })
 
-test_that(".datom_git_pull returns invisible TRUE", {
+test_that(".datom_git_pull returns, invisibly, whether HEAD moved", {
   info <- create_repo_with_remote()
-  result <- .datom_git_pull(info$work_path)
-  expect_true(result)
+  expect_false(.datom_git_pull(info$work_path))
   expect_invisible(.datom_git_pull(info$work_path))
-})
 
-
-# =============================================================================
-# .datom_check_git_current()
-# =============================================================================
-
-test_that(".datom_check_git_current passes when up to date", {
-  info <- create_repo_with_remote()
-
-  # No upstream changes — should pass silently
-  result <- .datom_check_git_current(info$work_path)
-  expect_true(result)
-  expect_invisible(.datom_check_git_current(info$work_path))
-})
-
-test_that(".datom_check_git_current aborts when behind remote", {
-  info <- create_repo_with_remote()
-
-  # Simulate another user pushing a commit
-  other_dir <- withr::local_tempdir()
-  other_repo <- git2r::clone(info$bare_path, other_dir)
-  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
-
-  writeLines("new upstream data", fs::path(other_dir, "new_file.txt"))
-  git2r::add(other_repo, "new_file.txt")
-  git2r::commit(other_repo, "New upstream commit")
-  git2r::push(other_repo, name = "origin",
-              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
-
-  # Local repo is now behind — should abort
-  expect_error(.datom_check_git_current(info$work_path), "behind remote")
-})
-
-test_that(".datom_check_git_current error message suggests datom_pull", {
-  info <- create_repo_with_remote()
-
-  # Push upstream commit
-  other_dir <- withr::local_tempdir()
-  other_repo <- git2r::clone(info$bare_path, other_dir)
-  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
-  writeLines("data", fs::path(other_dir, "upstream.txt"))
-  git2r::add(other_repo, "upstream.txt")
-  git2r::commit(other_repo, "Upstream")
-  git2r::push(other_repo, name = "origin",
-              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
-
-  expect_error(.datom_check_git_current(info$work_path), "datom_pull")
-})
-
-test_that(".datom_check_git_current passes when no remote configured", {
-  info <- create_test_repo()
-
-  # No remote = can't be behind → passes
-  result <- .datom_check_git_current(info$path)
-  expect_true(result)
-})
-
-test_that(".datom_check_git_current passes when no upstream branch", {
-  info <- create_repo_with_remote()
-
-  # Create a new local-only branch with no upstream
-  git2r::branch_create(git2r::last_commit(info$work_repo), "feature-branch")
-  git2r::checkout(info$work_repo, "feature-branch")
-
-  result <- .datom_check_git_current(info$work_path)
-  expect_true(result)
-})
-
-test_that(".datom_check_git_current passes when ahead of remote", {
-  info <- create_repo_with_remote()
-
-  # Make a local commit that hasn't been pushed
-  writeLines("local only", fs::path(info$work_path, "local.txt"))
-  git2r::add(info$work_repo, "local.txt")
-  git2r::commit(info$work_repo, "Local commit")
-
-  # Ahead, not behind — should pass
-  result <- .datom_check_git_current(info$work_path)
-  expect_true(result)
-})
-
-test_that(".datom_check_git_current tolerates network errors gracefully", {
-  info <- create_test_repo()
-
-  # A remote must exist so the fetch code path is reached, but the fetch itself
-  # is stubbed to raise a network-like error. This exercises the graceful
-  # error handling WITHOUT any real egress (previously this dialed out to
-  # invalid.example.com, tripping a real DNS lookup during R CMD check).
-  git2r::remote_add(info$repo, name = "origin", url = "https://invalid.example.com/repo.git")
-  mockery::stub(
-    .datom_check_git_current, "git2r::fetch",
-    function(...) stop("simulated network failure")
-  )
-
-  # Network error should warn but not abort
-  expect_no_error(.datom_check_git_current(info$path))
-})
-
-test_that(".datom_check_git_current proceeds when fetch fails and cached refs are ahead", {
-  info <- create_repo_with_remote()
-
-  # Another user pushes, so the remote genuinely moves ahead
+  # A fast-forward moves HEAD too: git2r reports `sha = NA` for one, so the
+  # answer is read from HEAD, not from merge()'s result.
   other_dir <- withr::local_tempdir()
   other_repo <- git2r::clone(info$bare_path, other_dir, progress = FALSE)
   git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
   writeLines("upstream", fs::path(other_dir, "upstream.txt"))
   git2r::add(other_repo, "upstream.txt")
   git2r::commit(other_repo, "Upstream commit")
-  git2r::push(other_repo, name = "origin",
-              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
+  git2r::push(other_repo, name = "origin", refspec = test_head_refspec(other_repo))
 
-  # Fetch once while the remote is reachable, so the remote-tracking ref is
-  # CACHED AHEAD of local HEAD
-  git2r::fetch(info$work_repo, name = "origin")
-
-  # Now the remote becomes unreachable (offline). No mocking: the URL points at
-  # a path that does not exist, so git2r::fetch() raises for real.
-  git2r::remote_set_url(info$work_repo, "origin",
-                        fs::path(withr::local_tempdir(), "unreachable"))
-
-  # Warns about the fetch, then returns -- it must NOT abort on the stale
-  # cached refs, which is what an offline developer would otherwise hit
-  expect_message(
-    expect_true(.datom_check_git_current(info$work_path)),
-    "Could not fetch from remote"
-  )
-})
-
-test_that(".datom_check_git_current proceeds when fetch fails and cached refs are level", {
-  info <- create_repo_with_remote()
-
-  # Upstream exists and is level with local; only the fetch is broken
-  git2r::remote_set_url(info$work_repo, "origin",
-                        fs::path(withr::local_tempdir(), "unreachable"))
-
-  # Passes today for the wrong reason (nothing unfavourable to compare against);
-  # this pins it as deliberate rather than accidental
-  expect_message(
-    expect_true(.datom_check_git_current(info$work_path)),
-    "Could not fetch from remote"
-  )
-})
-
-test_that(".datom_check_git_current aborts on non-git directory", {
-  skip_if_no_git2r()
-  dir <- withr::local_tempdir()
-  expect_error(.datom_check_git_current(dir), "Not a git repository")
+  expect_true(.datom_git_pull(info$work_path))
 })
 
 

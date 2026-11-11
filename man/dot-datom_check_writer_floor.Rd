@@ -37,5 +37,15 @@ raises a floor must already satisfy it.
 A value that will not parse as a version \strong{aborts} rather than being ignored.
 Treating a malformed floor as no floor would turn a typo in a policy field
 into a silently disabled policy.
+
+\strong{Read from the clone's \code{.datom/project.yaml} on every call}, never from a
+copy taken when the connection was made: every write now pulls before its own
+work, and a floor raised in a commit that pull brings in has to bind the write
+it arrived in. The parse is gated like every other read of this file (its
+declared format first). A file that exists but cannot be read or parsed stops
+the write: a floor that cannot be read is not the same as no floor. No clone,
+or a clone with no \code{project.yaml}, has no declaration to read and passes; a
+write without a clone is refused by the role check, and a connection cannot
+be made from a clone without the file.
 }
 \keyword{internal}

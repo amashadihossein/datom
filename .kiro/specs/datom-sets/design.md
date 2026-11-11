@@ -1166,7 +1166,7 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I2** | Artifact names are unique **across kinds** within a project. There is exactly one `manifest$artifacts` namespace; no second node may be introduced. |
 | **I3** | An integrity check is **never** silently skipped. Absent `document_sha` on a set is an error, not a skip (section 8). |
 | **I4** | `schema_version` and `document_sha` are in the `volatile` exclusion list. A schema bump must not alter any existing artifact's `metadata_sha`. |
-| **I5** | Git is the serialization point: **git commit + push must succeed before any storage mutation**, for sets exactly as for tables (`datom_write()` steps 7-10). A set write that fails at git leaves no orphaned payload. |
+| **I5** | Git is the serialization point: **git commit + push must succeed before any storage mutation**, for sets exactly as for tables (`datom_write()` steps 7-10). A set write that fails at git leaves no orphaned payload. **Superseded by #155 (spec `interrupted-commands`, decision D1):** the payload now goes into storage first, never overwriting a stored one, so a set write that stops before its commit can leave a payload no version names. Metadata, history and manifest still go only after the push. See "Write Ordering & Resilience" in `dev/datom_specification.md`. |
 | **I6** | The set payload is written to **both** git (canonical) and storage (mirror) in the same operation. The storage mirror is always derived from git, never the reverse. |
 | **I7** | Business logic **never** calls `.datom_s3_*()` or `.datom_local_*()` directly -- only `.datom_storage_*()` dispatch. |
 | **I8** | Reading a set requires **no git clone**. Storage-only readers are the primary consumer (AC1). |
@@ -1508,6 +1508,10 @@ the safe direction, and is exactly the state `datom_validate()` reports and `fix
 Decision: **do not special-case it.** `paths = NULL` means what `git add .` means; silently
 excluding datom paths would make the function lie about its contract, and the recovery path
 already exists. Worth one sentence in the roxygen so callers know the interaction is intentional.
+
+**Reversed by #155 (spec `interrupted-commands`, decision D9):** `datom_repo_commit()` now stops,
+before staging anything, when the commit would take datom's own uncommitted files, naming the write
+to re-run or `datom_validate(fix = TRUE)`. A commit of other paths still goes ahead.
 
 ### 19.8 Push decoupling needs a second verb (review finding F13)
 

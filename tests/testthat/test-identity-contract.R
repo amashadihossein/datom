@@ -255,10 +255,11 @@ test_that("Feature: datom-cv1, S6 -- an identical re-derive is a no-op: no commi
   head_before <- identity_head_sha(fx)
   history_before <- identity_history(fx, "agg")
   stored_before <- identity_stored_parquet(fx, "agg")
-  # Backdate the stored object so a re-upload (file_copy overwrite) is visible
-  # as a changed mtime -- proof of "no upload" that needs no storage mock.
-  backdated <- as.POSIXct("2001-01-01 00:00:00", tz = "UTC")
-  fs::file_touch(stored_before, modification_time = backdated)
+  # Count calls to the data-file upload (passing through to the real one). A
+  # backdated mtime cannot prove "no upload" any more: that upload never
+  # touches a stored file, so the mtime survives an attempted upload too.
+  upload <- mock_upload_absent(NULL)
+  local_mocked_bindings(.datom_storage_upload_absent = upload$fn)
 
   # Same data, same parents, current unchanged -> none.
   second <- suppressMessages(
@@ -270,14 +271,11 @@ test_that("Feature: datom-cv1, S6 -- an identical re-derive is a no-op: no commi
   expect_identical(second$metadata_sha, first$metadata_sha)
   expect_null(second$commit_sha)
 
-  # No commit, no history entry, no re-upload.
+  # No commit, no history entry, no upload attempted.
   expect_identical(identity_head_sha(fx), head_before)
   expect_length(identity_history(fx, "agg"), length(history_before))
   expect_identical(identity_stored_parquet(fx, "agg"), stored_before)
-  expect_equal(
-    as.numeric(fs::file_info(stored_before)$modification_time),
-    as.numeric(backdated)
-  )
+  expect_length(upload$keys(), 0L)
 })
 
 
@@ -301,8 +299,11 @@ test_that("Feature: datom-cv1, S3 -- a re-export with identical content is metad
 
   meta1 <- identity_metadata(fx, "dm")
   stored1 <- identity_stored_parquet(fx, "dm")
-  backdated <- as.POSIXct("2001-01-01 00:00:00", tz = "UTC")
-  fs::file_touch(stored1, modification_time = backdated)
+  bytes1 <- digest::digest(file = stored1, algo = "sha256")
+  # Count calls to the data-file upload from here on (passing through to the
+  # real one); see S6 for why not a backdated mtime.
+  upload <- mock_upload_absent(NULL)
+  local_mocked_bindings(.datom_storage_upload_absent = upload$fn)
 
   # Re-export the same content with different bytes (quoting only). This is the
   # loop that used to mint a spurious full write on every export.
@@ -332,12 +333,10 @@ test_that("Feature: datom-cv1, S3 -- a re-export with identical content is metad
   expect_identical(meta2$parquet_sha, meta1$parquet_sha)
   expect_true(nzchar(meta2$parquet_sha))
 
-  # No upload: same single object, untouched mtime.
+  # No upload attempted: same single object, same bytes.
   expect_identical(identity_stored_parquet(fx, "dm"), stored1)
-  expect_equal(
-    as.numeric(fs::file_info(stored1)$modification_time),
-    as.numeric(backdated)
-  )
+  expect_length(upload$keys(), 0L)
+  expect_identical(digest::digest(file = stored1, algo = "sha256"), bytes1)
   expect_identical(
     digest::digest(file = stored1, algo = "sha256"),
     meta2$parquet_sha
@@ -398,8 +397,10 @@ test_that("Feature: datom-cv1, S4 -- re-syncing an older content-matching file a
   v1 <- identity_history(fx, "dm")[[1]]$version
   file_sha_v1 <- identity_metadata(fx, "dm")$original_file_sha
   stored <- identity_stored_parquet(fx, "dm")
-  backdated <- as.POSIXct("2001-01-01 00:00:00", tz = "UTC")
-  fs::file_touch(stored, modification_time = backdated)
+  # Count calls to the data-file upload from here on (passing through to the
+  # real one); see S6 for why not a backdated mtime.
+  upload <- mock_upload_absent(NULL)
+  local_mocked_bindings(.datom_storage_upload_absent = upload$fn)
 
   # V2: a re-export -- different bytes, same content.
   identity_write_csv(csv, df, quote = FALSE)
@@ -432,12 +433,9 @@ test_that("Feature: datom-cv1, S4 -- re-syncing an older content-matching file a
   expect_identical(sum(versions == v1), 1L)
   expect_setequal(versions, c(v1, v2))
 
-  # No upload for a metadata-only revisit.
+  # No upload for either metadata-only write (the re-export and the revisit).
   expect_identical(identity_stored_parquet(fx, "dm"), stored)
-  expect_equal(
-    as.numeric(fs::file_info(stored)$modification_time),
-    as.numeric(backdated)
-  )
+  expect_length(upload$keys(), 0L)
 
   # The regression symptom: version resolution stays unambiguous, both for the
   # full sha and for a short prefix.
@@ -562,13 +560,20 @@ test_that("Feature: datom-cv1, revert-to-older content reuses the history parque
     fx$conn, paste0("tbl/", write_a$data_sha, ".parquet")
   )
   expect_true(fs::file_exists(object_a))
-  backdated <- as.POSIXct("2001-01-01 00:00:00", tz = "UTC")
-  fs::file_touch(object_a, modification_time = backdated)
 
   suppressMessages(datom_write(fx$conn, data = content_b, name = "tbl"))
 
   # Back to content A: a full change relative to current (B), but the object is
-  # already stored and pinned by A's version.
+  # already stored and pinned by A's version. Count calls to the data-file
+  # upload for this write (passing through to the real one).
+  #
+  # This test is the only guard of the history branch of the hash decision
+  # (`.datom_resolve_parquet_sha()`): without that branch the write falls
+  # through to the upload, which finds the file stored and records the same
+  # hash, so every other assertion here stays green. Only the count tells the
+  # two apart -- and it is what spares a revert from hashing the stored file.
+  upload <- mock_upload_absent(NULL)
+  local_mocked_bindings(.datom_storage_upload_absent = upload$fn)
   write_a2 <- suppressMessages(
     datom_write(fx$conn, data = content_a, name = "tbl")
   )
@@ -578,12 +583,9 @@ test_that("Feature: datom-cv1, revert-to-older content reuses the history parque
   meta <- identity_metadata(fx, "tbl")
   expect_identical(meta$parquet_sha, parquet_sha_a)
 
-  # The stored object was not re-uploaded: backdated mtime intact, and its
-  # bytes still hash to the parquet_sha A's version pinned.
-  expect_equal(
-    as.numeric(fs::file_info(object_a)$modification_time),
-    as.numeric(backdated)
-  )
+  # No upload attempted, and the stored bytes still hash to the parquet_sha
+  # A's version pinned.
+  expect_length(upload$keys(), 0L)
   expect_identical(
     digest::digest(file = object_a, algo = "sha256"),
     parquet_sha_a

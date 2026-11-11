@@ -364,12 +364,12 @@ test_that("Feature: datom-cv1, Property 15: a refused table leaves no git, stora
     conn$role <- "developer"
     conn$path <- getwd()
 
-    uploads <- 0L
+    # The data-file upload, not the plain one: from #155 the parquet is stored
+    # through `.datom_storage_upload_absent()` before any clone file changes, so
+    # a counter on the plain upload would stay at zero whatever the write did.
+    upload <- mock_upload_absent()
     local_mocked_bindings(
-      .datom_storage_upload = function(conn, lp, sk) {
-        uploads <<- uploads + 1L
-        invisible(TRUE)
-      },
+      .datom_storage_upload_absent = upload$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -380,7 +380,7 @@ test_that("Feature: datom-cv1, Property 15: a refused table leaves no git, stora
     expect_error(datom_write(conn, data = bad, name = "t"), "not hashable")
 
     # no parquet upload, no table directory, no metadata, no manifest, no commit
-    expect_equal(uploads, 0L)
+    expect_length(upload$keys(), 0L)
     expect_false(fs::dir_exists("t"))
     expect_false(fs::file_exists(fs::path("t", "metadata.json")))
     expect_false(fs::file_exists(fs::path(".datom", "manifest.json")))

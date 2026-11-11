@@ -23,9 +23,9 @@ The recorded hash, or NULL.
 Scans the developer's local \code{version_history.json} (newest-first) for the
 most recent entry whose \code{data_sha} matches and that carries a non-empty hash
 in \code{field}. Returns NULL when none is found. Reads the local git clone
-(offline-friendly); a stale clone is tolerated because the subsequent git push
-serializes concurrent writers (a behind clone fails to push before it can
-upload).
+(offline-friendly). A stale clone does no harm to a write of either kind: if
+the lookup misses an entry a colleague recorded, the upload that follows
+finds the file already stored and records the stored file's hash.
 }
 \details{
 One scan serves both kinds, because the question is identical in each case --

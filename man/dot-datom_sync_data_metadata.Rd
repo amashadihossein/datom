@@ -2,7 +2,7 @@
 % Please edit documentation in R/sync.R
 \name{.datom_sync_data_metadata}
 \alias{.datom_sync_data_metadata}
-\title{Sync Data-Side Metadata to Storage}
+\title{The Repair: Finish Every Artifact's Unfinished Work and Publish It All}
 \usage{
 .datom_sync_data_metadata(conn, .confirm = TRUE)
 }
@@ -13,34 +13,58 @@
 before proceeding. Set to \code{FALSE} for non-interactive use.}
 }
 \value{
-Invisibly, a list with \code{repo_files} (character vector of synced
-keys) and \code{tables} (list of per-table sync results).
+Invisibly, a list with \code{repo_files} (\code{".metadata/manifest.json"}
+when the manifest was published, else empty), \code{manifest} (what
+\code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}} reports for it) and \code{tables}: per artifact,
+named by artifact, a list with \code{name}, \code{action} (\code{"published"} or
+\code{"error"}), \code{version} (the version published, or \code{NULL}), \code{reset} and
+\code{pushed} (logical) and \code{error} (the failure's text, or \code{NULL}). An
+artifact whose never-committed first write was reset is listed with
+\code{action = "reset"}: there is nothing of it to publish.
 }
 \description{
-Mirrors the data repo's metadata to the data store so readers see current
-state: the manifest (\code{.metadata/manifest.json}) and each artifact's metadata
-(\code{{name}/.metadata/metadata.json}, \code{version_history.json}). \strong{Every artifact
-of either kind}, not tables only -- discovery is \code{.datom_clone_artifact_names()}
-and has been kind-agnostic since sets existed.
+Brings storage in line with git for \strong{every artifact of either kind}
+(\code{\link[=.datom_clone_artifact_names]{.datom_clone_artifact_names()}}), in this order:
 }
 \details{
-\strong{It is not metadata-only, and the name understates it.} For a \strong{set}, a
-payload missing from storage is restored from the clone -- see
-\code{.datom_restore_set_payload()} in this file for the three conditions on that.
-So this function can put content into storage, not just documents about
-content.
+\enumerate{
+\item heal's reset and the pull, on every artifact (\code{all = TRUE}): datom's
+files an interrupted write left uncommitted are put back to the last
+commit, never published (each such artifact gets a warning: that write is
+not run again); the clone is pulled;
+\item a set's payload missing from storage is restored from the clone
+(\code{.datom_restore_set_payload()}), before anything publishes the set's
+documents: a set's data file first. One that cannot be restored stops the
+repair before anything is published;
+\item heal's publish: a committed version storage lacks is pushed and
+published. Where a write stops on another artifact's work, the repair
+acts: calling it is the consent. A stored version this clone has never
+seen is replaced by the clone's, and a stored row for an artifact the
+clone lacks is dropped, each with a warning (\code{\link[=.datom_heal_publish]{.datom_heal_publish()}});
+\item every artifact is published through the one publish path,
+\code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}: first any commit the git remote still lacks
+is pushed, without pulling again (heal pushes only to finish a differing
+manifest row, and every document readers follow is on GitHub first); then
+the snapshot, the history, \code{metadata.json} last, then the manifest, and the
+manifest only if every artifact published, so a failure leaves the
+manifest naming versions whose documents are in storage.
+}
+
+Republishing every artifact, not only those whose manifest row differs, is
+what corrects two publishes that crossed (the stored manifest naming one
+version while the stored \code{metadata.json} holds another), and what puts back
+a current version's snapshot storage lost. The artifacts heal finds behind
+are published twice, once by heal and once here: both write the same
+committed documents, and heal stays the same on every route.
+
+\strong{Two public routes reach this}, and both behave the same:
+\code{datom_write(conn)} with no \code{data} and no \code{name} (the mirror-everything
+route, which asks first), and \code{datom_validate(fix = TRUE)}. Heal runs here,
+after the prompt, and nowhere else on either route, so answering "no"
+changes nothing.
 
 Data-only: governance files (dispatch.json, ref.json, migration_history.json)
 are not touched here. Governance sync is owned by the governance layer
 (\code{gov_sync_dispatch()}).
-
-\strong{Two public routes reach this}, and both get the restore: \code{datom_write(conn)}
-with no \code{data} and no \code{name} (the mirror-everything route), and
-\code{datom_validate(fix = TRUE)}. Describing the restore as repair-only would
-leave a reader surprised to see it fire under a write verb.
-
-Used after a failed upload, or by \code{datom_validate(fix = TRUE)}, to bring
-storage back in line with the local data clone. Requires a developer
-connection with a local repo path.
 }
 \keyword{internal}

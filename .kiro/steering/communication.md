@@ -100,6 +100,23 @@ task, or recall an old decision, it is not written yet.
 - If a point needs three layers of context, it is probably two points. Split it, or drop it and
   offer it on request.
 
+## Write for someone who was not in the room
+
+Added 2026-11-06, after a checkpoint opened with "when a write is re-run after a break at or after
+its commit": every term in it was the agent's working shorthand, and the message explained none of
+them. The rewrite that worked is the third example at the end of this file.
+
+- **Start from what I run and what I see.** Name the command (`datom_write()`, not "a write"), say
+  what went wrong in everyday words ("stops partway, for example on a dropped connection", not "a
+  break"), and say what I will notice afterwards.
+- **Describe a step by what it does, not by where it sits in a sequence.** "After it has committed
+  the new version to git but before readers can see it", not "after its commit" or "at step 6".
+- **Your working vocabulary is not mine.** Words from the tests, the spec or your own notes ("a
+  break", "heal", "publish", "a stored row", "the containment check", "the probe went red", "the
+  control") get a plain description the first time they appear, or are left out.
+- **Reread before sending, as someone who has never seen the spec.** For each noun, ask whether I
+  would know what it is. If not, rewrite the sentence; do not add a footnote.
+
 ## Length
 
 - A design proposal or checkpoint fits **one screen**. Detail goes behind an offer -- "want the
@@ -188,3 +205,25 @@ Readable:
 
 What the first version did wrong: it named three things without saying what they are, used a task
 number as if it were a subject, and flagged something as dangerous without saying what breaks.
+
+### Third example -- a checkpoint TLDR in the agent's own shorthand
+
+Too dense (real checkpoint, 2026-11-06):
+
+> When a write is re-run after a break at or after its commit, it now pushes and publishes the
+> version it had already committed, before doing its own work. It reports "none" and makes no
+> second commit. If another table or set has unfinished committed work, or storage names a version
+> this clone has never seen, the write stops before pushing or publishing anything.
+
+Readable:
+
+> Task 4b changes what happens when `datom_write()` or `datom_write_set()` stops partway, for
+> example on a dropped connection, after it has committed the new version to git but before
+> readers can see it. Running the same command again now finishes that version: it pushes the
+> commit to GitHub and uploads the metadata to storage, instead of committing the version a second
+> time. If the unfinished work belongs to a different table, the command changes nothing and stops,
+> telling you to run `datom_validate(fix = TRUE)`.
+
+What the first version did wrong: "a write", "a break" and "its commit" were the agent's shorthand,
+so I could not tell which command, what had gone wrong, or which moment was meant. "Publishes" and
+"unfinished committed work" named mechanisms instead of saying what I would see.

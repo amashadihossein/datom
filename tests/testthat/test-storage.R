@@ -397,6 +397,26 @@ test_that("datom_storage_copy() rel keys are stripped from from_conn prefix", {
   expect_true(all(startsWith(all_dest_keys, "new/datom/")))
 })
 
+test_that("datom_storage_copy() skips a temporary file left by an interrupted local upload", {
+  withr::with_tempdir({
+    from_root <- fs::dir_create("from")
+    to_root   <- fs::dir_create("to")
+    from_conn <- make_local_storage_conn(from_root, prefix = "proj")
+    to_conn   <- make_local_storage_conn(to_root,   prefix = "proj")
+
+    fs::dir_create(fs::path(from_root, "proj/datom/dm"))
+    writeBin(charToRaw("parquet bytes"), fs::path(from_root, "proj/datom/dm/abc.parquet"))
+    writeBin(charToRaw("parquet by"), fs::path(from_root, "proj/datom/dm/.abc.parquet.1a2b.tmp"))
+    expect_true("proj/datom/dm/.abc.parquet.1a2b.tmp" %in% datom_storage_list(from_conn))
+
+    result <- datom_storage_copy(from_conn, to_conn)
+
+    expect_identical(result$key, "dm/abc.parquet")
+    expect_true(fs::file_exists(fs::path(to_root, "proj/datom/dm/abc.parquet")))
+    expect_false(fs::file_exists(fs::path(to_root, "proj/datom/dm/.abc.parquet.1a2b.tmp")))
+  })
+})
+
 
 # === datom_storage_verify() ===================================================
 
@@ -634,6 +654,25 @@ test_that("datom_storage_verify() keys=NULL lists from from_conn", {
     expect_equal(nrow(result), 2L)
     expect_true(all(result$ok))
     expect_setequal(result$key, c("t1/a.parquet", "t2/b.parquet"))
+  })
+})
+
+test_that("datom_storage_verify() skips a temporary file left by an interrupted local upload", {
+  withr::with_tempdir({
+    from_conn <- make_local_storage_conn(fs::dir_create("from"), prefix = "proj")
+    to_conn   <- make_local_storage_conn(fs::dir_create("to"),   prefix = "proj")
+
+    fs::dir_create("from/proj/datom/dm")
+    fs::dir_create("to/proj/datom/dm")
+    writeBin(charToRaw("data"), "from/proj/datom/dm/abc.parquet")
+    writeBin(charToRaw("data"), "to/proj/datom/dm/abc.parquet")
+    # Left in the source only, as datom_storage_copy() leaves it behind.
+    writeBin(charToRaw("da"), "from/proj/datom/dm/.abc.parquet.1a2b.tmp")
+
+    result <- datom_storage_verify(from_conn, to_conn)  # keys = NULL
+
+    expect_identical(result$key, "dm/abc.parquet")
+    expect_true(all(result$ok))
   })
 })
 

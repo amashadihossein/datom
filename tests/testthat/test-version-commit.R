@@ -1,13 +1,17 @@
 # The version-to-commit link: `commit_sha` on the stored version history.
 #
-# THREE FUNCTIONS UPLOAD `version_history.json`, and each one is a chance to
-# erase the field, because the clone's copy can never carry it -- that file is
-# inside the commit it would name. So there is one test per upload route, and
-# each was confirmed to redden when ONLY that route's merge is removed:
+# ONE FUNCTION UPLOADS `version_history.json`, `.datom_push_metadata_s3()`,
+# and it is the chance to erase the field, because the clone's copy can never
+# carry it -- that file is inside the commit it would name. Every route reaches
+# it through the one publish path, `.datom_publish_artifacts()`, and there is
+# one test per public route:
 #
-#   the ordinary write     `.datom_push_metadata_s3()`   -> "the ordinary write ..."
-#   the repair             `.datom_sync_one_artifact()`  -> "datom_validate(fix = TRUE) ..."
-#   the metadata-only sync `.datom_sync_metadata()`      -> "the metadata-only route ..."
+#   the ordinary write     -> "the ordinary write ..."
+#   the repair             -> "datom_validate(fix = TRUE) ..."
+#   the metadata-only sync -> "the metadata-only route ..."
+#
+# (The metadata-only route and the repair each had an upload of their own until
+# they moved onto the one publish path, the repair in #155.)
 #
 # A single "after a repair the field is still there" test satisfies none of the
 # three: the ordinary write is the route that loses the field FIRST, on the second
@@ -158,8 +162,8 @@ test_that("datom_validate(fix = TRUE) re-derives `commit_sha` instead of strippi
   expect_false(anyNA(expected))
 
   # Two separate losses, so the repair has to both re-upload and re-derive: the
-  # stored history is gone (which is what makes the repo invalid, so `fix` runs
-  # at all), and the clone's copy it will upload carries no commit ids.
+  # stored history is gone (which also makes the repo invalid), and the clone's
+  # copy it will upload carries no commit ids.
   fs::file_delete(.datom_local_path(fx$conn, vc_history_key("dm")))
 
   result <- suppressMessages(datom_validate(fx$conn, fix = TRUE))
@@ -172,25 +176,27 @@ test_that("datom_validate(fix = TRUE) re-derives `commit_sha` instead of strippi
 test_that("the metadata-only route re-derives `commit_sha` that storage has lost", {
   fx <- local_commit_link_project()
   vc_write(fx, "dm", 3L)
+  stored_v1 <- .datom_storage_read_json(fx$conn, .datom_artifact_meta_key("dm", "metadata"))
   vc_write(fx, "dm", 5L)
   expected <- vc_links(vc_stored_history(fx, "dm"))
 
   vc_strip_stored_links(fx, "dm")
   expect_true(all(is.na(vc_links(vc_stored_history(fx, "dm")))))
 
-  # This route exists for a metadata edit made by hand in the clone. `custom` is
-  # hashed into the version, so the edit changes the version while leaving
-  # `data_sha` alone -- which is exactly the `metadata_only` classification the
-  # route needs in order to do anything at all.
-  meta_path <- fs::path(fx$repo_dir, "dm", "metadata.json")
-  meta <- jsonlite::read_json(meta_path, simplifyVector = TRUE)
-  meta$custom <- list(note = "hand-edited")
-  jsonlite::write_json(meta, meta_path, auto_unbox = TRUE, pretty = TRUE)
+  # The route publishes what is committed when storage differs, and makes no
+  # commit of its own (a hand edit of the clone's metadata.json stops it). So the
+  # state it acts on is storage behind the clone's last commit: the stored
+  # metadata.json put back to the first version's.
+  .datom_storage_write_json(
+    fx$conn, .datom_artifact_meta_key("dm", "metadata"), stored_v1
+  )
+  head_before <- vc_head(fx)
 
   result <- suppressMessages(datom_write(fx$conn, data = NULL, name = "dm"))
-  expect_identical(result$action, "metadata_only")
+  expect_identical(result$action, "published")
+  expect_identical(vc_head(fx), head_before)
 
-  # Both pre-existing versions get their commit ids back, worked out from git.
+  # Both versions get their commit ids back, worked out from git.
   links <- vc_links(vc_stored_history(fx, "dm"))
   expect_identical(links[names(expected)], expected)
 })

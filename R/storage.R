@@ -21,6 +21,10 @@
 #' is a path relative to `conn$root`. This mirrors the contract of the
 #' internal `.datom_storage_list_objects()` dispatch layer.
 #'
+#' Every file is listed, including a temporary file an interrupted upload to a
+#' local store can leave beside a data file (its name starts with `.` and ends
+#' in `.tmp`). [datom_storage_copy()] and [datom_storage_verify()] skip those.
+#'
 #' @param conn A `datom_conn` object.
 #' @return A character vector of full storage keys. May be empty if the
 #'   namespace contains no objects.
@@ -234,6 +238,10 @@ datom_storage_delete_prefix <- function(conn, prefix_key = NULL) {
 #'   Server-side `copy_object` (same-region optimisation) is reserved for a
 #'   future release.
 #'
+#' A temporary file left by an interrupted upload to a local store (its name
+#' starts with `.` and ends in `.tmp`) is not copied; [datom_storage_list()]
+#' still shows it.
+#'
 #' This is a policy-free primitive. It does not modify the source namespace,
 #' update `project.yaml`, or switch `ref.json`. For a complete managed
 #' migration (governed projects) use `datomanager::gov_migrate_data()`.
@@ -285,6 +293,7 @@ datom_storage_copy <- function(from_conn, to_conn) {
   }
 
   full_keys <- datom_storage_list(from_conn)
+  full_keys <- full_keys[!.datom_is_temp_key(full_keys)]
 
   if (length(full_keys) == 0L) {
     cli::cli_alert_info("Source namespace is empty -- nothing to copy.")
@@ -448,7 +457,10 @@ datom_storage_copy <- function(from_conn, to_conn) {
 #' @param to_conn A `datom_conn` object (destination to verify).
 #' @param keys Character vector of relative keys (after `{prefix}/datom/`) to
 #'   verify. `NULL` (default) verifies every key returned by
-#'   `datom_storage_list(from_conn)`. Pass a subset to verify a sample.
+#'   `datom_storage_list(from_conn)`, except a temporary file left by an
+#'   interrupted upload to a local store (its name starts with `.` and ends in
+#'   `.tmp`), which [datom_storage_copy()] does not copy either. Pass a subset
+#'   to verify a sample.
 #' @param mode `"structural"` (default) or `"content"`. See above.
 #' @return A data frame with columns:
 #'   * `key` (character): relative storage key.
@@ -502,6 +514,7 @@ datom_storage_verify <- function(from_conn, to_conn,
 
   if (is.null(keys)) {
     full_keys <- datom_storage_list(from_conn)
+    full_keys <- full_keys[!.datom_is_temp_key(full_keys)]
     rel_keys  <- purrr::map_chr(full_keys, .datom_storage_rel_key, conn = from_conn)
   } else {
     if (!is.character(keys)) {

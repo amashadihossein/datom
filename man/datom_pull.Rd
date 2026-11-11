@@ -4,10 +4,15 @@
 \alias{datom_pull}
 \title{Pull Latest Changes from Remote}
 \usage{
-datom_pull(conn)
+datom_pull(conn, finish_merge = FALSE)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
+
+\item{finish_merge}{\code{TRUE} to let datom finish a merge in progress that it
+did not start, once nothing but \code{.datom/manifest.json} conflicts: it
+rebuilds the manifest and commits the merge. With no merge in progress it
+changes nothing. Default \code{FALSE}, under which such a merge stops the pull.}
 }
 \value{
 Invisibly, a list with:
@@ -25,6 +30,17 @@ to ensure the local state is current before syncing or writing tables.
 Git is the source of truth for all metadata (manifest, dispatch, table
 metadata). The manifest and other metadata files live in git and are
 pulled along with any other committed changes.
+
+When the incoming commits conflict with this clone's only in
+\code{.datom/manifest.json} (two people wrote different tables), datom rebuilds
+that file from the tables' own files and finishes the merge. Any other
+conflict stops the pull with the files in conflict and the
+\verb{git checkout MERGE_HEAD -- ...} command for each conflicted table or set;
+every later datom command stops the same way until the merge is finished. A
+merge datom did not start (of a local branch, say) is never finished unasked:
+finish it with \code{finish_merge = TRUE}, or end it with \verb{git merge --abort}. If
+your own changed files are in the way of the incoming commits, the pull stops
+and gives the \verb{git stash -u} steps.
 
 Requires developer role (readers have no git access).
 }

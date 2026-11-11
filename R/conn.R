@@ -9,6 +9,11 @@
 #' The primary fields (`root`, `prefix`, `region`, `client`) refer to
 #' the **data store**. Governance store fields are prefixed with `gov_`.
 #'
+#' The repo's writer floor (`min_writer_version`) is not held here: the write
+#' check reads it from the clone's `project.yaml` on every write
+#' ([.datom_check_writer_floor()]), so a floor raised in a pull binds the write
+#' it arrived in.
+#'
 #' @param project_name Project name string.
 #' @param root Storage root (S3 bucket name or local directory path).
 #' @param prefix Storage prefix (can be NULL).
@@ -35,11 +40,6 @@
 #' @param github_api_url GitHub API base URL. Sourced from
 #'   `store$github_api_url` at conn-construction time. Defaults to
 #'   `"https://api.github.com"` when not set.
-#' @param min_writer_version The lowest version of datom this repo accepts
-#'   writes from, read from `project.yaml` at conn-construction time. `NULL`
-#'   means the repo declares no such limit, which is every repo written so far.
-#'   Held on the connection because the file it comes from is already parsed
-#'   there, so the write-entry check costs no extra read.
 #'
 #' @return A `datom_conn` object.
 #' @keywords internal
@@ -60,8 +60,7 @@ new_datom_conn <- function(project_name,
                           backend = "s3",
                           data_repo_url = NULL,
                           github_pat = NULL,
-                          github_api_url = NULL,
-                          min_writer_version = NULL) {
+                          github_api_url = NULL) {
   role <- match.arg(role)
   backend <- match.arg(backend, c("s3", "local"))
 
@@ -125,8 +124,7 @@ new_datom_conn <- function(project_name,
       gov_local_path = gov_local_path,
       data_repo_url = data_repo_url,
       github_pat    = github_pat,
-      github_api_url = github_api_url,
-      min_writer_version = min_writer_version
+      github_api_url = github_api_url
     ),
     class = "datom_conn"
   )
@@ -304,6 +302,18 @@ print.datom_conn <- function(x, ...) {
 #' component on `store`, if present, is ignored here. Governance is attached
 #' later via the governance layer (`gov_attach()`).
 #'
+#' @section If it stops partway:
+#' If `datom_init_repo()` stops before its first push, for example at the commit
+#' or on a dropped connection at the push, it removes what it created, and the
+#' same call run again starts afresh. If it stops after the push, while
+#' connecting to storage or recording the project there, the git repo is kept
+#' and the message says how to finish: connect with
+#' `conn <- datom_get_conn(path, store)`, using the same store, then run
+#' `datom_validate(conn, fix = TRUE)`. Running `datom_init_repo()` again in a
+#' folder that already holds a project refuses before touching the git repo or
+#' storage, and names both that repair and, labelled as abandoning the project,
+#' how to start over.
+#'
 #' @param path Path to the project folder. Defaults to current directory.
 #' @param project_name Project name, used for S3 namespace and git repo.
 #' @param store A `datom_store` object (from `datom_store()`). Must have role
@@ -458,6 +468,15 @@ datom_init_repo <- function(path = ".",
     ))
   }
 
+  # --- A folder already initialised --------------------------------------------
+  # Before anything touches the remote or storage, so every re-run in such a
+  # folder meets this one refusal, whatever the remote: later, a folder remote
+  # refuses as "already has content" and `create_repo = TRUE` would first create
+  # a GitHub repo and leave it empty. The refusal cannot tell whether an earlier
+  # run stopped after its push, so it gives both ways out.
+  path <- fs::path_abs(path)
+  .datom_check_init_folder_free(path)
+
   # --- Resolve data_repo_url -------------------------------------------------
   remote_url <- store$data_repo_url
   is_folder_remote <- !is.null(remote_url) &&
@@ -581,16 +600,6 @@ datom_init_repo <- function(path = ".",
     if (!is.null(check_conn)) {
       .datom_check_namespace_free(check_conn, overridable = !is_product_init)
     }
-  }
-
-  # --- Path setup -------------------------------------------------------------
-  path <- fs::path_abs(path)
-
-  if (fs::file_exists(fs::path(path, ".datom", "project.yaml"))) {
-    cli::cli_abort(c(
-      "A datom repository already exists at {.path {path}}.",
-      "i" = "Delete {.path {fs::path(path, '.datom')}} to re-initialize."
-    ))
   }
 
   # --- Create directory structure ---------------------------------------------
@@ -759,30 +768,44 @@ datom_init_repo <- function(path = ".",
   # below are reported but do NOT roll back local files (user has work to
   # recover) -- they abort with a clear recovery hint.
 
-  data_conn <- .datom_build_init_conn(
-    project_name, store$data, path, "developer", NULL,
-    gov_store = NULL,
-    gov_local_path = NULL,
-    data_repo_url = remote_url,
-    github_pat    = store$github_pat,
-    github_api_url = store$github_api_url
-  )
-
   # --- Mirror manifest to data storage ----------------------------------------
   # Manifest is part of the data-side contract -- readers need it to clone.
-  # Failure aborts with the verb that can actually finish the job: the recovery
-  # hint here used to name datom_sync_manifest(), which scans `input_files/` and
-  # returns a data frame of statuses and writes nothing to storage at all. The
-  # verb that mirrors metadata is reached through datom_validate(fix = TRUE).
+  # Building the storage connection is inside the same handler: it can fail too
+  # (a malformed credential), and after the push either failure leaves the same
+  # state. That state is not rolled back: the remote may be a GitHub repo, which
+  # datom cannot reliably delete, or one the caller supplied. A re-run of this
+  # call refuses, since the folder is initialised, so the stop names the repair,
+  # spelled for someone who has no connection yet; it uploads the manifest.
   tryCatch({
+    data_conn <- .datom_build_init_conn(
+      project_name, store$data, path, "developer", NULL,
+      gov_store = NULL,
+      gov_local_path = NULL,
+      data_repo_url = remote_url,
+      github_pat    = store$github_pat,
+      github_api_url = store$github_api_url
+    )
     .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
   }, error = function(e) {
-    cli::cli_abort(c(
-      "Data repo pushed but manifest upload failed.",
-      "x" = conditionMessage(e),
-      "i" = "Local data clone is intact at {.path {path}}.",
-      "i" = "After fixing the cause (e.g. credentials, connectivity), run {.code datom_validate(conn, fix = TRUE)} to upload the manifest."
-    ), call = NULL)
+    msg <- conditionMessage(e)
+    connect_cmd <- .datom_init_connect_cmd(path)
+    cli::cli_abort(
+      c(
+        "Pushed the data repo to the git remote, but could not upload its \\
+         manifest to data storage.",
+        "x" = "{msg}",
+        "i" = "The local clone at {.path {path}} is intact, and the git remote \\
+               has its first commit.",
+        "i" = "Once the cause is fixed (credentials, connectivity), connect \\
+               with {.code {connect_cmd}}, giving it the same store you passed \\
+               to {.fn datom_init_repo}, and run \\
+               {.code datom_validate(conn, fix = TRUE)} to upload the manifest.",
+        "i" = "Running {.fn datom_init_repo} again refuses: the folder is \\
+               already initialised."
+      ),
+      class = "datom_init_manifest_failed",
+      call = NULL
+    )
   })
 
   .init_success <- TRUE
@@ -792,6 +815,54 @@ datom_init_repo <- function(path = ".",
   )
 
   invisible(TRUE)
+}
+
+
+#' Refuse to Initialise a Folder That Already Holds a datom Repository
+#'
+#' [datom_init_repo()] runs this before anything touches the remote or storage,
+#' so every re-run in such a folder meets this refusal, whatever the remote.
+#' It cannot tell whether an earlier run stopped after its push (the git remote
+#' has the repo, storage lacks the manifest) or finished, so it names both ways
+#' out: the repair, which finishes the first case, and starting over, which
+#' needs the git remote's repository deleted too. The second is labelled as
+#' abandoning the project: the same refusal meets a re-run in a healthy,
+#' published project, where following it discards the history.
+#'
+#' @param path The folder, as an absolute path.
+#' @return Invisibly `NULL` when the folder holds no `.datom/project.yaml`;
+#'   otherwise does not return.
+#' @keywords internal
+.datom_check_init_folder_free <- function(path) {
+  if (!fs::file_exists(fs::path(path, ".datom", "project.yaml"))) {
+    return(invisible(NULL))
+  }
+  connect_cmd <- .datom_init_connect_cmd(path)
+  cli::cli_abort(
+    c(
+      "A datom repository already exists at {.path {path}}.",
+      "i" = "If an earlier {.fn datom_init_repo} here stopped after its push, \\
+             connect with {.code {connect_cmd}}, giving it the same store you \\
+             passed to {.fn datom_init_repo}, and run \\
+             {.code datom_validate(conn, fix = TRUE)} instead: it uploads the \\
+             manifest.",
+      "i" = "To abandon this project and start over, which loses its history: \\
+             delete this folder's {.file .datom} and {.file .git} and the git \\
+             remote's repository, then re-run."
+    ),
+    class = "datom_init_folder_taken"
+  )
+}
+
+
+#' The Connect Command a Stop of datom_init_repo() Names
+#'
+#' @param path The folder, as an absolute path.
+#' @return One string, `conn <- datom_get_conn("<path>", store)`. Built here
+#'   rather than inside `{.code}`, which would quote the path a second time.
+#' @keywords internal
+.datom_init_connect_cmd <- function(path) {
+  paste0("conn <- datom_get_conn(\"", path, "\", store)")
 }
 
 
@@ -961,7 +1032,18 @@ datom_clone <- function(path, store, ...) {
 #'   The data component provides bucket, prefix, region, and credentials.
 #' @param project_name Project name. Required for readers (no local repo).
 #'   Ignored when `path` is provided (read from yaml).
-#' @param endpoint Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.
+#' @param endpoint Optional S3 endpoint URL (e.g., for S3 access points or an
+#'   S3-compatible service). NULL for default. A data file is uploaded only if
+#'   nothing is stored at its key (S3's conditional write, `If-None-Match`),
+#'   with a whole-file SHA-256 checksum. On an S3-compatible service:
+#'   * one that rejects either header (400 or 501) stops every write at its
+#'     first step, the data file upload, with the service's own error, and
+#'     nothing changes. paws alone can cause this: from `paws.common` 0.9.0
+#'     every upload carries a checksum by default, metadata uploads included;
+#'   * one that ignores conditional writes lets two writers storing the same
+#'     new content at the same moment both upload. The second file replaces
+#'     the first, and reads of one of the two versions are then refused by the
+#'     hash check.
 #'
 #' @return A `datom_conn` object.
 #' @export
@@ -1284,21 +1366,10 @@ datom_get_conn <- function(path = NULL,
   conn$github_pat <- store$github_pat
   conn$github_api_url <- store$github_api_url
 
-  # The repo's declared minimum writer version, if it declares one. Read here
-  # because project.yaml is already parsed on this path; the write entry then
-  # costs no extra read. Absent in every repo written so far, and absent must
-  # stay indistinguishable from "no limit" -- see .datom_check_writer_floor().
-  #
-  # RESIDUAL, recorded rather than fixed: `cfg` is the PRE-PULL parse. When
-  # .datom_resolve_data_location() above detects a migration it pulls git, which
-  # can replace project.yaml -- so a floor raised in that pull is missed for this
-  # session. The pulled file's FORMAT is checked (the re-read in `R/ref.R` gates
-  # it), but the floor is not, because this assignment runs off the older copy.
-  # Fixing it means re-parsing after the resolve returns, which is a change to
-  # connection construction with the writer-floor test surface attached; the
-  # window is one session on a migrating repo, and the next connection reads the
-  # pulled file.
-  conn$min_writer_version <- cfg$min_writer_version
+  # The repo's declared minimum writer version is deliberately NOT copied onto
+  # the connection: the write check reads it from project.yaml on every write
+  # (.datom_check_writer_floor()), because a pull -- the one every write makes,
+  # or the migration pull above -- can raise it after this parse.
 
   # The repo's declared mode, for the ONE consumer that only reports: the mode
   # line in datom_status(). Absent means an ordinary data repo.

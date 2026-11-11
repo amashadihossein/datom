@@ -22,7 +22,14 @@ product repo, the set preview: \code{project}, \code{name}, \code{kind}, \code{v
 \code{version_to}, \code{status}. Any subset of its rows will do.}
 
 \item{continue_on_error}{If \code{TRUE} (default), continues processing
-remaining tables when one fails. If \code{FALSE}, stops on first error. Not
+remaining tables when one fails, as long as the failure left the clone
+untouched: a file that does not import, a data frame datom refuses, or the
+data file's upload. A table whose write fails after it has begun changing
+the clone (written its files, or committed, for example on a dropped
+connection at the push) stops the sync there: the tables after it come
+back \code{"skipped"}, because their writes would carry its unfinished version
+into git or storage. Run the same call again, with the same preview, to
+finish it and sync the rest. If \code{FALSE}, stops on first error. Not
 accepted on a product repo, where one failure stops the call and nothing
 has been written.}
 
@@ -42,6 +49,12 @@ Refused on an ordinary repo.}
 \value{
 On an ordinary repo, the manifest data frame augmented with \code{result}
 and \code{error} columns. \code{result} is \code{"success"}, \code{"skipped"}, or \code{"error"}.
+An \code{"unpushed"} row, and an \code{"unchanged"} row whose table this call
+published for an earlier run, come back \code{"success"} without the file being
+read. A row whose write found nothing to save (a teammate synced the same
+file first) is \code{"success"} too, and the call says it was already up to
+date. Rows not attempted because the sync stopped carry the reason in
+\code{error}.
 
 On a product repo, the updated \code{datom_set}, with what changed appended to
 its \code{datom_edits} attribute. Its \code{version} and \code{data_sha} are emptied when
@@ -59,6 +72,23 @@ Reading files needs the rio package (\code{install.packages("rio")}).
 Rows flagged \code{"unsupported_format"} by \code{\link[=datom_sync_manifest]{datom_sync_manifest()}} are reported
 as \code{result = "error"} with the recourse in the \code{error} column; the rest of
 the batch still processes.
+
+\strong{A sync that stops partway finishes when run again.} Before the first
+table it brings the clone up to date with GitHub, and finishes any table in
+the preview that an earlier run left unfinished: it pushes and publishes a
+table saved but not pushed (\code{"unpushed"} in the preview) or pushed but not
+published, and sets back the files of a table it is about to write again.
+If another table has unfinished work, or a preview row it does not write has
+changes to datom's files that were never committed, it stops before
+changing anything and names \code{\link[=datom_validate]{datom_validate()}}\code{(fix = TRUE)}. A failed
+fetch stops it too.
+
+\strong{Two people syncing at once.} When one table's push brings in a teammate's
+commit whose files are not in storage yet, that table's write publishes the
+table but not the project's manifest, and warns. The sync then stops: the
+tables after it come back \code{"skipped"}, whatever \code{continue_on_error} says.
+Run \code{\link[=datom_validate]{datom_validate()}}\code{(fix = TRUE)}, then the same call again, with the
+same preview.
 
 On a product repo (\code{mode: product}) it applies a preview of the repo's set
 instead -- see "On a product repo" below.

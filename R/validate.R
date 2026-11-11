@@ -98,18 +98,47 @@ datom_repository_check <- function(path) {
 #'
 #' Statuses reported in the `tables` frame: `metadata_missing_s3`,
 #' `history_missing_s3`, `data_missing_s3`, `members_unresolvable`,
-#' `document_sha_missing`, and `kind_unsupported` for an artifact whose metadata
+#' `document_sha_missing`, `kind_unsupported` for an artifact whose metadata
 #' declares a kind this version of datom does not know -- reported rather than
-#' fatal, with that row's payload left unchecked.
+#' fatal, with that row's payload left unchecked -- and `manifest_mismatch_s3`.
+#'
+#' `manifest_mismatch_s3` means the stored manifest names a different version
+#' of the artifact from the one its stored `metadata.json` and history
+#' describe, so a read and [datom_list()] can disagree. Two writes of the same
+#' table publishing at once can leave it, and so can a write that stopped just
+#' before its manifest upload. It compares storage with itself (no git read),
+#' and `fix = TRUE`, or the artifact's next write, clears it.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
-#' @param fix If `TRUE`, attempts to fix inconsistencies by syncing data-side
-#'   metadata (manifest + per-artifact metadata) to storage, and by restoring a
-#'   **set's** payload when storage has lost it -- git holds `{name}/set.json`,
-#'   so those bytes are recoverable. A restore happens only when the stored
-#'   object is absent and only when the clone's bytes hash to the
-#'   `document_sha` already recorded; a stored payload is never overwritten and
-#'   its recorded hash is never recomputed.
+#' @param fix If `TRUE`, runs the repair after the checks, whether or not they
+#'   found anything (the repair also finishes what they cannot see). In order:
+#'   * datom's files that an interrupted write left uncommitted are put back to
+#'     the last commit, never published, with a warning naming each artifact
+#'     (run that write again to save it);
+#'   * the clone is pulled;
+#'   * a **set's** payload storage has lost is restored from the clone -- git
+#'     holds `{name}/set.json`, so those bytes are recoverable. A restore
+#'     happens only when the stored object is absent and only when the clone's
+#'     bytes hash to the `document_sha` already recorded; a stored payload is
+#'     never overwritten and its recorded hash is never recomputed;
+#'   * any commit the git remote lacks is pushed;
+#'   * every artifact's documents are published from the clone (its version
+#'     snapshot, history, then `metadata.json`), then the manifest, and the
+#'     manifest only if every artifact was published.
+#'
+#'   A stored version this clone has never seen is replaced by the clone's,
+#'   and an artifact the stored manifest names but the clone lacks loses its
+#'   row; each gets a warning. So a repair run while a teammate is writing can
+#'   replace the version they published seconds earlier, until their table's
+#'   next write. If the stored manifest cannot be read, every artifact and the
+#'   manifest are published from the clone, with a warning saying so. The
+#'   repair reports, per artifact, what it reset, pushed and published.
+#'
+#'   A merge in progress, a failed fetch, a refused push or a set payload
+#'   storage will not take stops the repair with an error before anything is
+#'   published, each message naming its way out. A failure while publishing one
+#'   artifact does not stop it: the others are published, the manifest is not,
+#'   and `fixed` is `FALSE`.
 #'
 #'   A missing **table** payload (`data_missing_s3`) cannot be repaired: the
 #'   parquet bytes are never in the clone. Those tables are named in a warning
@@ -121,7 +150,8 @@ datom_repository_check <- function(path) {
 #'     \item{repo_files}{Data frame of repo-level file checks.}
 #'     \item{tables}{Data frame of per-artifact checks, one row per artifact of
 #'       either kind, with a `kind` column. Named `tables` for compatibility.}
-#'     \item{fixed}{Logical — `TRUE` if `fix = TRUE` was applied.}
+#'     \item{fixed}{Logical — `TRUE` if `fix = TRUE` ran the repair and every
+#'       artifact was published.}
 #'   }
 #' @export
 #'
@@ -197,34 +227,58 @@ datom_validate <- function(conn, fix = FALSE) {
     )
   }
 
+  mismatched <- .datom_validate_mismatched(table_checks)
+  if (length(mismatched) > 0L) {
+    cli::cli_alert_warning(
+      "The stored manifest names a different version of {.val {mismatched}} \\
+       from the one {?its/their} stored documents describe, so a read and \\
+       {.fn datom_list} can disagree."
+    )
+    cli::cli_alert_info(
+      "Run {.code datom_validate(fix = TRUE)} to publish \\
+       {cli::qty(length(mismatched))}{?it/them} again; {?its/their} next \\
+       write does too."
+    )
+  }
+
   fixed <- FALSE
 
-  if (!is_valid && isTRUE(fix)) {
-    # The repair syncs metadata documents only. A missing payload cannot be
-    # reconstructed from the clone -- the parquet bytes never existed there --
-    # so those findings survive the fix and must be named rather than implied
-    # by a second validate run.
+  # Whether or not a check above found something: the repair also finishes
+  # what these checks cannot see (datom's files left uncommitted, a version
+  # committed but not pushed or published, a current version's lost snapshot),
+  # and the stops in every write name it as the way out of those.
+  if (isTRUE(fix)) {
+    # A missing table payload cannot be reconstructed from the clone -- the
+    # parquet bytes never existed there -- so those findings survive the fix
+    # and must be named rather than implied by a second validate run.
     unfixable <- .datom_validate_unfixable_tables(table_checks)
 
-    cli::cli_alert_info("Attempting to fix by syncing metadata to S3...")
-    tryCatch({
-      .datom_sync_data_metadata(conn, .confirm = FALSE)
-      fixed <- TRUE
+    cli::cli_alert_info(
+      "Repairing: finishing unfinished writes and publishing every artifact \\
+       from this clone..."
+    )
+    # A stop inside the repair (a merge in progress, a failed fetch, a refused
+    # push, a payload storage will not take) comes through unchanged, as it
+    # does from `datom_write(conn)`: each names its own way out, and a script
+    # should halt on it. A failure while publishing one artifact is not a stop:
+    # the repair's report names it, and `fixed` is FALSE.
+    repair <- .datom_sync_data_metadata(conn, .confirm = FALSE)
+    failed <- purrr::keep(repair$tables, ~ identical(.x$action, "error"))
+    fixed <- length(failed) == 0L
+    if (fixed) {
       cli::cli_alert_success(
-        "Metadata synced. Re-run {.fn datom_validate} to verify."
+        "Repair finished. Re-run {.fn datom_validate} to verify."
       )
-      if (length(unfixable) > 0L) {
-        cli::cli_alert_warning(
-          "Data still missing from storage for {length(unfixable)} table{?s}: {.val {unfixable}}."
-        )
-        cli::cli_bullets(c(
-          "i" = "Syncing metadata does not fix this -- the parquet bytes are not in the git clone.",
-          "i" = "Re-run {.fn datom_write} with the source data to upload them."
-        ))
-      }
-    }, error = function(e) {
-      cli::cli_alert_danger("Fix failed: {conditionMessage(e)}")
-    })
+    }
+    if (length(unfixable) > 0L) {
+      cli::cli_alert_warning(
+        "Data still missing from storage for {length(unfixable)} table{?s}: {.val {unfixable}}."
+      )
+      cli::cli_bullets(c(
+        "i" = "The repair does not fix this -- the parquet bytes are not in the git clone.",
+        "i" = "Re-run {.fn datom_write} with the source data to upload them."
+      ))
+    }
   }
 
   invisible(list(
@@ -419,19 +473,11 @@ datom_validate <- function(conn, fix = FALSE) {
 #' Validate per-table metadata consistency
 #' @noRd
 .datom_validate_tables <- function(conn) {
-  repo_path <- conn$path
-
-  # Discover tables (directories with metadata.json)
-  all_dirs <- fs::dir_ls(repo_path, type = "directory")
-  all_dirs <- all_dirs[!grepl("^\\.", fs::path_file(all_dirs))]
-  all_dirs <- all_dirs[!fs::path_file(all_dirs) %in%
-    c("input_files", "renv", "man", "R", "tests", "vignettes", "src")]
-
-  table_dirs <- all_dirs[purrr::map_lgl(all_dirs, function(d) {
-    fs::file_exists(fs::path(d, "metadata.json"))
-  })]
-
-  table_names <- fs::path_file(table_dirs)
+  # The same artifacts the repair and heal act on: a folder the manifest names,
+  # or whose metadata.json declares a datom `hash_algo`. A user's own
+  # `app/metadata.json` is not one, so it is neither reported nor sent to a fix
+  # that would skip it.
+  table_names <- .datom_clone_artifact_names(conn)
 
   if (length(table_names) == 0L) {
     # Every column a populated result carries, `kind` included: a zero-row frame
@@ -449,8 +495,11 @@ datom_validate <- function(conn, fix = FALSE) {
     ))
   }
 
+  # Read once for every artifact's manifest_mismatch_s3 check.
+  stored_rows <- .datom_validate_stored_rows(conn)
+
   rows <- purrr::map(table_names, function(tbl) {
-    .datom_validate_one_table(conn, tbl)
+    .datom_validate_one_table(conn, tbl, stored_rows)
   })
 
   result <- do.call(rbind, rows)
@@ -459,13 +508,92 @@ datom_validate <- function(conn, fix = FALSE) {
 }
 
 
+#' The Stored Manifest's Rows, for the Manifest Mismatch Check
+#'
+#' Read once per `datom_validate()` call. `NULL` when the stored manifest is
+#' absent (the repo-level check reports that), cannot be read, or is in a
+#' format this build refuses: there is then nothing to compare with, and the
+#' check is skipped rather than reporting every artifact.
+#'
+#' @param conn A `datom_conn` object.
+#' @return A named list of rows, or `NULL`.
+#' @noRd
+.datom_validate_stored_rows <- function(conn) {
+  stored <- tryCatch(.datom_stored_manifest(conn), error = function(e) NULL)
+  if (is.null(stored) || !identical(stored$status, "ok")) return(NULL)
+  stored$rows
+}
+
+
+#' Does the Stored Manifest Name the Version the Stored Documents Describe
+#'
+#' The `manifest_mismatch_s3` check. Storage against
+#' itself: the stored `metadata.json` and history describe one version
+#' ([.datom_documents_version()]: the document's own version when this build can
+#' place every field and the history names it, else the recorded one), and the
+#' stored manifest's row should name it. Two publishes that crossed leave them
+#' disagreeing, and so does a write broken just before its manifest upload;
+#' either side may be the stale one. No fetch and no git read, so a clone that
+#' is behind needs no special case.
+#'
+#' A row missing from the stored manifest counts as a mismatch: the documents
+#' are published and the manifest does not name them. Documents that cannot be
+#' read, or a history that records nothing usable, are not: there is no version
+#' to compare, and the existence checks report what is missing.
+#'
+#' @param conn A `datom_conn` object.
+#' @param name Artifact name.
+#' @param stored_rows The stored manifest's rows.
+#' @return `TRUE` or `FALSE`.
+#' @noRd
+.datom_validate_manifest_mismatch <- function(conn, name, stored_rows) {
+  docs <- tryCatch(
+    list(
+      meta = .datom_storage_read_json(conn, .datom_artifact_meta_key(name, "metadata")),
+      history = .datom_storage_read_json(
+        conn, .datom_artifact_meta_key(name, "version_history")
+      )
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(docs) || !is.list(docs$meta) || is.null(names(docs$meta))) {
+    return(FALSE)
+  }
+
+  version <- tryCatch(
+    .datom_documents_version(docs$meta, docs$history),
+    error = function(e) NULL
+  )
+  if (is.null(version)) return(FALSE)
+
+  !identical(stored_rows[[name]]$current_version, version)
+}
+
+
+#' The Artifacts Reported as `manifest_mismatch_s3`
+#'
+#' @param table_checks The per-artifact check data frame.
+#' @return Artifact names.
+#' @noRd
+.datom_validate_mismatched <- function(table_checks) {
+  if (is.null(table_checks) || nrow(table_checks) == 0L) return(character())
+  hit <- purrr::map_lgl(table_checks$status, function(status) {
+    "manifest_mismatch_s3" %in% trimws(strsplit(status, ",", fixed = TRUE)[[1L]])
+  })
+  as.character(table_checks$table[hit])
+}
+
+
 #' Validate one artifact's git-storage consistency
 #'
 #' Named for tables for the same reason the frame's column is `table` and the
 #' result's field is `tables`: those names are what callers already read. It
 #' handles both kinds.
+#'
+#' @param stored_rows The stored manifest's rows, or `NULL` to skip the
+#'   manifest mismatch check (`.datom_validate_stored_rows()`).
 #' @noRd
-.datom_validate_one_table <- function(conn, name) {
+.datom_validate_one_table <- function(conn, name, stored_rows = NULL) {
   repo_path <- conn$path
 
   # Local checks
@@ -517,6 +645,10 @@ datom_validate <- function(conn, fix = FALSE) {
   if (metadata_local && !metadata_s3) issues <- c(issues, "metadata_missing_s3")
   if (history_local && !history_s3) issues <- c(issues, "history_missing_s3")
   if (isFALSE(data_s3)) issues <- c(issues, "data_missing_s3")
+  if (metadata_s3 && history_s3 && !is.null(stored_rows) &&
+      .datom_validate_manifest_mismatch(conn, name, stored_rows)) {
+    issues <- c(issues, "manifest_mismatch_s3")
+  }
 
   if (is.na(kind)) {
     cli::cli_alert_warning(

@@ -2,22 +2,64 @@
 % Please edit documentation in R/utils-git.R
 \name{.datom_git_pull}
 \alias{.datom_git_pull}
-\title{Pull from Remote (Fetch + Merge)}
+\title{Pull from Remote (Fetch, and Merge Only When Behind)}
 \usage{
-.datom_git_pull(path, pat = NULL)
+.datom_git_pull(path, pat = NULL, finish_merge = FALSE)
 }
 \arguments{
 \item{path}{Repository path.}
 
 \item{pat}{GitHub personal access token. Passed directly to
 \code{.datom_git_credentials()}. NULL means unauthenticated.}
+
+\item{finish_merge}{See \code{\link[=datom_pull]{datom_pull()}}; passed to the merge check.}
 }
 \value{
-Invisible TRUE on success.
+Invisibly, \code{TRUE} when HEAD moved (a merge or a fast-forward),
+\code{FALSE} otherwise.
 }
 \description{
-Fetches from the remote and merges upstream changes into the current
-branch. Aborts on merge conflicts - user must resolve manually.
-This is the primary defense against diverged histories.
+The pull every write makes before it writes to the git remote or to storage
+(no command writes there before it has pulled), and the one \code{\link[=datom_pull]{datom_pull()}},
+the push commands and the migration pull make. Owned by the commands, not by
+heal: removing heal would leave it in place.
+}
+\details{
+In order:
+\enumerate{
+\item \strong{The merge check} (\code{\link[=.datom_check_merge]{.datom_check_merge()}}): a merge in progress stops
+the command before anything changes, unless it is one datom can finish
+(only the manifest left in conflict), which it then finishes.
+\item \strong{Fetch.} A failure stops the command with a message saying the remote
+could not be reached; nothing has changed.
+\item \strong{Merge only if the clone is behind}: HEAD does not contain the upstream
+tip just fetched. A clone level with the remote, or ahead of it, merges
+nothing. With no upstream branch nothing is merged, as before: a new code
+branch never has one, and on the project's branch heal pushes before it
+publishes, which git refuses when the clone is behind.
+\item \strong{A conflict only in \code{.datom/manifest.json} is resolved}
+(\code{\link[=.datom_resolve_manifest_conflict]{.datom_resolve_manifest_conflict()}}): every write rewrites the
+manifest's timestamp and summary, so two clones writing different
+artifacts conflict there and nowhere else. The manifest is derived from
+the artifacts' own files, so it is rebuilt from them and the merge
+committed. Any other conflict stops the command, leaving the merge in
+progress, with the merge check's message (it lists the conflicted files
+and says how to finish).
+\item \strong{It confirms it caught up}: HEAD must contain the tip. git2r's merge
+silently does nothing when the user's own uncommitted or untracked files
+are in the way of the incoming commits -- no error, no \code{MERGE_HEAD}, and
+\code{conflicts = NULL} in its result -- so this is decided by commit, never by
+\code{git2r::merge()}'s return fields. Otherwise it stops with the
+\verb{git stash -u} recipe.
+}
+
+Whether HEAD moved is returned for \code{\link[=.datom_pull_before_write]{.datom_pull_before_write()}}, which runs
+the format check on every artifact after a merge. A fast-forward counts:
+git2r returns \code{sha = NA} for one, so its return fields cannot say.
+
+\strong{Every stop here says "Nothing was published."} It is true wherever the
+pull runs: at a command's start, and inside a write's push, which comes
+before anything readers follow is published. (A write's data file may already
+be in storage by then; it is named by nothing, and a re-run reuses it.)
 }
 \keyword{internal}

@@ -41,13 +41,20 @@ deliberately the opposite of what datom's own writes do: a commit created
 inside \code{\link[=datom_write]{datom_write()}} stages an explicit file list, because it fires at a
 moment datom chose and must never sweep up work in progress.
 
-One consequence of add-all worth knowing rather than discovering: if an
-earlier datom write failed after writing local metadata but before committing,
-those datom files are dirty and this verb will stage them. That is left
-intentional -- silently excluding datom's own paths would make the argument
-lie about its contract, and the state is exactly what \code{\link[=datom_validate]{datom_validate()}}
-reports and \code{datom_validate(fix = TRUE)} repairs. It also moves git \emph{ahead} of
-storage, which is the safe direction.
+\strong{It never commits a datom write that stopped before its own commit.} Such a
+write leaves datom's files for its table or set (\code{metadata.json},
+\code{version_history.json}, \code{set.json}, and its row in \code{.datom/manifest.json})
+changed but uncommitted. When the commit would take any of them -- with
+\code{paths = NULL}, a path naming one or a folder holding one, or one already
+staged with \verb{git add} -- it stops before staging anything, naming the table or
+set: re-run that write to finish it, or run \code{datom_validate(fix = TRUE)} to
+discard the changes. A commit of other paths goes ahead. A plain \verb{git commit}
+from a terminal has no such check, so commit your own files with this verb.
+
+\strong{It pushes, and does not publish.} When the commits it pushes hold a datom
+version (a write whose own push failed), it names the table or set, which
+readers cannot see until \code{datom_validate(fix = TRUE)}, or a write of it,
+publishes it.
 
 \strong{Commit is idempotent, push is convergent, and neither implies the other.}
 A clean tree produces no commit and is not an error, so "commit everything"

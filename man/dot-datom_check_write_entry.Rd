@@ -9,8 +9,10 @@
 \arguments{
 \item{conn}{A \code{datom_conn} object.}
 
-\item{artifact}{Name of the single artifact this write touches, or \code{NULL} to
-check every artifact present in the clone.}
+\item{artifact}{Names of the artifacts this write touches (one for a table or
+set write; every table in the preview for \code{\link[=datom_sync]{datom_sync()}}, whose one heal may
+publish any of them), or \code{NULL} to check every artifact present in the
+clone.}
 }
 \value{
 Invisibly \code{NULL}. Aborts on any refusal.

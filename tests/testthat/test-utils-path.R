@@ -406,7 +406,7 @@ test_that("a non-hex data_sha in metadata.json is reported, not raised", {
     conn$path <- getwd()
     fs::dir_create(".datom")
     fs::dir_create("corrupt_tbl")
-    jsonlite::write_json(list(data_sha = "../../escape"),
+    jsonlite::write_json(list(data_sha = "../../escape", hash_algo = "datom-cv1"),
                          "corrupt_tbl/metadata.json", auto_unbox = TRUE)
     local_mocked_bindings(.datom_storage_exists = function(conn, s3_key) TRUE)
 

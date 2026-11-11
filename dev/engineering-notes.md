@@ -495,10 +495,19 @@ matter whenever a test needs to prove something did *not* happen.
   normally with one), and a conn with `gov_root = NULL` makes `.datom_check_ref_current()` take
   its legacy-conn skip. See `local_identity_project()`, and `dev/e2e-cv1-identity.R` for the
   same fixture as a runnable walkthrough.
-- **Prove "no upload" with a backdated mtime**: `fs::file_touch(obj, modification_time = <old>)`
-  before the write, then assert the mtime survived. A re-upload goes through
-  `.datom_local_upload()` -> `fs::file_copy(overwrite = TRUE)` and would reset it. Byte
-  comparison cannot distinguish "not re-uploaded" from "re-uploaded identical bytes".
+- **Prove "no upload" by counting calls to the data-file upload, not with a backdated mtime.**
+  From #155 a table's data file goes through `.datom_storage_upload_absent()`, which never
+  touches a stored file, so a backdated modification time survives an attempted upload too and
+  proves nothing. Count calls instead: `mock_upload_absent(NULL)` in `helper-mock.R` passes each
+  call through to the real upload on a real project and records the keys. Byte comparison cannot
+  distinguish "not uploaded" from "uploaded identical bytes" either. Two traps found moving the
+  tests over (2026-10-31): a counter left on the old `.datom_storage_upload()` stays at zero
+  whatever the write does, so a "nothing was uploaded" test stays green with the guard removed;
+  and in `test-identity-contract.R` the revert test is the only guard of the history branch of the
+  hash decision, which only a count can see (without the branch the write finds the file stored
+  and records the same hash). A set's payload goes through the same upload (since #155 task 3),
+  and so does the repair's payload restore, so the set tests count calls the same way; the restore
+  checks for the stored payload first and only calls the upload when it is missing.
 - **Prove "verified before parsed" with a valid imposter**: swapping in a *different but
   readable* parquet is the only corruption arrow would happily accept, so the abort can only
   come from the `parquet_sha` check. A single flipped byte fails either way and proves less.
@@ -908,7 +917,7 @@ git2r::content(blob)                            # the bytes the commit holds
 
 **`fs::path_rel()` with a relative first argument resolves it against the working directory**, so
 `fs::path_rel("dp/build.R", "/tmp/repo")` returns `"../../private/tmp/dp/build.R"`. Anything handed
-to `.datom_commit_and_mirror()` must be an **absolute** path, since that function relativises what
+to `.datom_commit_and_publish()` must be an **absolute** path, since that function relativises what
 it is given against `conn$path`. The failure is loud (`.datom_git_commit()` aborts "files do not
 exist"), so this costs minutes rather than correctness -- but repo-relative input has to be
 absolutised first.
@@ -940,9 +949,11 @@ Same task. `version_history.json` exists in two copies -- the clone's, which is 
 storage's -- and `commit_sha` can only ever live on the second, because the clone's copy is *inside*
 the commit that would name it. The shape of the defect that follows is general:
 
-- **The upload sends the whole file, so it overwrites rather than adds.** Three functions upload
-  that file (`.datom_push_metadata_s3()`, `.datom_sync_one_artifact()`, `.datom_sync_metadata()`),
-  each reading the clone's copy. Without a merge the field survives on the newest entry only, and
+- **The upload sends the whole file, so it overwrites rather than adds.** One function uploads
+  that file, `.datom_push_metadata_s3()`, reading the clone's copy; every route reaches it through
+  the one publish path, `.datom_publish_artifacts()`. (There were three until #155 moved the
+  metadata-only route, `.datom_sync_metadata()`, and the repair, whose `.datom_sync_one_artifact()`
+  is deleted, onto that path.) Without a merge the field survives on the newest entry only, and
   the loss happens on the **second ordinary write** of an artifact -- not in the repair verb, which
   is where the design notes had put the hazard. Derive the list of upload sites (`grep -n
   version_history R/*.R`) rather than trusting a count written down anywhere.
@@ -1294,3 +1305,119 @@ the writer cannot classify and refuses (the forward-compatibility vocabulary che
 the target test, but also everything downstream, so it cannot show the target test is what guards
 the property. Add a field the build **does** recognise but a set must not carry (e.g.
 `size_bytes`, a table field on the excluded list): only the field-set tests fail.
+
+### Interrupted commands: the facts the recovery code relies on (#155)
+
+Harvested at the completion of spec `.kiro/specs/interrupted-commands/`; the probes behind each are
+in its `research/` folder. Read before changing `R/heal.R`, the pull or push in `R/utils-git.R`, the
+data-file upload, or a test that breaks a write partway.
+
+**git2r (0.36.2)**
+
+- **`git2r::merge()` silently does nothing when the user's own files are in the way** of the
+  incoming commits (a modified or staged file they change, an untracked file where they add one): no
+  error, no `MERGE_HEAD`, HEAD unmoved, `conflicts = NULL`. Decide "did the pull catch up" by commit
+  (HEAD equals or descends from the fetched upstream tip), never by `merge()`'s fields; a
+  fast-forward returns `sha = NA`, so "did HEAD move" is decided by comparing HEAD too. The way out
+  is `git stash -u`, not plain `git stash`, which leaves the untracked file in the way.
+- **`git2r::merge` is base R's S3 generic**, so `local_mocked_bindings(merge = , .package = "git2r")`
+  cannot intercept it; tests go through `.datom_git_merge_upstream()`.
+- **A merge in progress is `.git/MERGE_HEAD` existing**: conflicted entries vanish from
+  `git2r::status()` once every file is staged, while the merge is still open. A merge of the
+  **remote branch** is one where the upstream tip equals `MERGE_HEAD` or descends from it;
+  `git2r::descendant_of(x, x)` is `FALSE`, so test equality separately (`.datom_git_contains()`). A
+  clean `git merge --no-commit` of a local branch looks exactly like "a merge with nothing left",
+  which is why datom never finishes a merge it did not start unless asked (`finish_merge = TRUE`).
+- **`git checkout --theirs <file>` does nothing to a file that merged cleanly**; `git checkout
+  MERGE_HEAD -- <files>` takes the remote copy of conflicted and clean files alike. The conflict
+  message names every datom file of each conflicted artifact for that reason.
+- **`git2r::add(repo, "./dm")` stages nothing, silently**, while `"dm"` and `"dm/"` stage the
+  folder. **A commit takes the whole index**, not only the paths just added, so a check on what a
+  commit would include must look at already-staged files too (`.datom_paths_take()`,
+  `.datom_check_before_commit()`).
+- `git2r::reset(repo, path = )` unstages chosen paths; `checkout(path =, force = TRUE)` then
+  restores a tracked one. A push of a clone behind its remote fails with "contains commits that are
+  not present locally" before a fetch and "non-fastforwardable" after one; match both.
+
+**Storage**
+
+- **An "only if absent" local write needs a hard link.** `file.rename()` onto an existing target
+  replaces it; `file.link()` refuses and leaves it. Copy to a temporary name in the same folder,
+  link into place, delete the temporary name (`.datom_local_upload_absent()`); with no hard links,
+  check then move, and accept the race.
+- **S3**: `IfNoneMatch = "*"` answers 412 when the key exists (paws class `http_412`, which also
+  carries `http_400`, so a handler for `http_400` catches it too); 409 comes only from a delete
+  racing the upload, and is an ordinary failure. A stored `ChecksumSHA256` is the file's SHA-256
+  only when `ChecksumType` is `FULL_OBJECT`, or absent with no `-N` suffix, and it decodes to 32
+  bytes. `jsonlite::base64_dec()` refuses a suffixed value by itself, so a test of the suffix rule
+  needs a lenient stand-in decoder. `IfNoneMatch` needs `paws.storage` 0.7.0, `ChecksumType` 0.8.0;
+  `paws.common` 0.9.0 adds a checksum to every upload unless the caller sends one.
+- **Re-serialising the same data gives identical bytes within one build**, so a test that the
+  recorded hash came from the stored file must plant the same content in other bytes
+  (uncompressed parquet; a set payload with `pretty = FALSE`).
+
+**Identity**
+
+- **A value in custom metadata must read back from JSON as written**, because every publish reads
+  `metadata.json` back from the clone and keys the snapshot by the document's own version. `NA` is
+  saved as `null` and reads back as nothing; `NA_integer_`, `NaN` and `Inf` come back as text.
+  `datom_write()` refuses them (`.datom_check_custom_storable()`). Decimals past four places are
+  rounded in storage and in the version id alike (#157).
+- **Which version stored files describe**: the document's own version only when every field is one
+  this build can place and the history names it, else the version the history records
+  (`.datom_documents_version()`). The history alone names the wrong version after custom metadata
+  goes `"x"` -> `"y"` -> `"x"`, since a version id hashes content and a revert brings an old id back.
+
+**Tests that break a command partway**
+
+- **A mock of a function the code no longer calls breaks nothing**, and the "re-run finishes" test
+  then passes having tested no break. `local_break_at()` (`helper-interrupt.R`) raises a
+  `datom_test_break` condition, and every break test asserts that class was what stopped the run.
+- **"Nothing was published" checked by comparing storage before and after is blind** when the
+  upload would send identical content; record the keys written instead.
+- **`suppressWarnings()` inside a helper hides warnings from an outer `withCallingHandlers()`**;
+  give such helpers a `quiet = FALSE` path.
+- **An uncommitted edit of a datom file in a fixture is an unfinished write**: heal resets it (the
+  artifact being written) or stops on it (any other). A fixture that plants a document "from a newer
+  datom" or edits the manifest must commit the edit, or the test silently checks nothing.
+- `mockery::stub(f, ...)` reaches only calls made directly in `f`, so stub the helper a command
+  calls, not the function the helper calls.
+
+### Interrupted commands: what a re-run does not finish, and where each case is covered
+
+From #155 (spec `.kiro/specs/interrupted-commands/`, design section 12, which this copies; the
+spec keeps the reasoning). Since #155 a write, a set write, a sync, the repair and
+`datom_init_repo()` finish on a re-run, or stop with a way out, after a break at any step (the
+conventions section "Commands that change state"). These are the cases left over. "Guarded" means
+a test goes red if the case comes back; "documented" names where a user reads about it.
+References such as D13, P10 or "section 6" are to that spec. The completeness checks
+`datom_validate()` lacks (a missing snapshot, a published hand edit) are filed as
+[#158](https://github.com/amashadihossein/datom/issues/158).
+
+| Failure mode | What the user sees | Guarded / documented |
+|---|---|---|
+| A write broke before its commit, leaving its data file in storage with no version naming it | Nothing; costs space. For sensitive data, the bytes are in the bucket although no version exists | Documented in `?datom_write` |
+| A project a released datom already broke | A re-run or the repair can still leave its readers failing | Documented in `NEWS.md` |
+| A merge conflict outside the manifest (two people wrote the same artifact, or the user's own files) | The command stops before any publish; no version is published, though this write's data file may already be in storage, unnamed. The message, repeated by the merge check in every later datom command until the conflict is resolved (R3.9), says: take the remote copy of all of each conflicted artifact's datom files (`git checkout MERGE_HEAD -- ...`, names filled in), resolve your own files and `git add` them, re-run. datom then rebuilds the manifest and finishes the merge. A merge started outside datom, of anything but the remote branch, is never finished unasked: every command stops, and `datom_pull(conn, finish_merge = TRUE)` or `git merge --abort` ends it | Guarded by existing tests, R7.7, and the merge check's tests (tasks 4a, 5, 8); #105 owns a recovery command |
+| Two R sessions writing through one clone at once | Not supported | Documented |
+| An S3-compatible service that ignores conditional writes, two writers, same new content, same moment | One version's reads are refused by the hash check. Loud | Documented beside `endpoint` |
+| An S3-compatible service that rejects `IfNoneMatch` or `ChecksumSHA256` (400 or 501) | Every write stops at its first step with the service's own error; nothing changes. No fallback (owner, 2026-10-28). paws alone can trigger this: from `paws.common` 0.9.0, every upload carries a checksum by default, datom's metadata uploads included, so such a service can fail even without datom's new arguments | Documented beside `endpoint` |
+| An S3 409: a teardown deletes a data file while a write uploads it | The write stops with the usual upload error before the clone changes; a re-run finishes | Documented in `dev/engineering-notes.md` |
+| A local store on a file system without hard links, two writers, same new content, same moment | The second move replaces the first file; one version's reads are refused by the hash check. Loud | Documented in `?datom_store_local` |
+| Someone edits a datom-owned file by hand (an artifact's `metadata.json`, `version_history.json` or `set.json`, or `.datom/manifest.json`) (requirements D13) | A write of that artifact with data resets the edit and says so; any other write, and `datom_write(conn, name =)`, stops, naming the artifact and `datom_validate(fix = TRUE)`, which resets it; `datom_write(conn, name =)` no longer commits it. Custom metadata is changed with `datom_write(conn, data, name, metadata = )` | Guarded (task 4a's test); documented in `?datom_write` and `NEWS.md` |
+| A crash during a local upload leaves a temporary file (`.{name}.tmp`) beside the data file | Nothing for readers. A leftover after the link costs no space (a hard link shares the bytes); one left mid-copy takes space. `datom_storage_list()` shows it; copy and verify skip it | Guarded (a test that copy and verify skip it); documented in `?datom_store_local` |
+| Two people publish the same table within seconds, and the older publish lands last (DD4) | Readers get the superseded version as current until the table's next write or `datom_validate(fix = TRUE)` republishes it; any other write in an up-to-date clone stops and names that fix. Reads that name a version are unaffected | Guarded (P10); documented in `dev/engineering-notes.md` |
+| A write finds another artifact's unfinished work (requirements D14 principle 8) | The write stops before changing anything, naming the artifact, what was found and `datom_validate(fix = TRUE)`. After a storage failure on one table, every write of another table stops until someone runs the fix or re-runs that table's write. Accepted by the owner (2026-10-31): heal is needed in a small share of runs, and acting on another artifact is where its edge cases came from | Guarded (tasks 4a, 4b); documented in `?datom_write`, `?datom_write_set`, `?datom_sync` |
+| The user's own uncommitted or untracked files are in the way of the commits a pull brings in | The command stops before changing anything and gives the `git stash -u` recipe, including resolving what `git stash pop` reports | Guarded (task 4a: the caught-up check); the way out is in the message |
+| Storage names a version of an artifact that this clone's history does not contain (a publish seconds old; or storage edited by hand, or commits removed from GitHub, S8) | A write stops before changing anything: re-run, and if it persists, `datom_validate(fix = TRUE)`, which publishes the clone's version and names the stored version it replaced (an artifact the clone lacks loses its stored row, and the repair says so) | Guarded (task 4b: the containment check and the repair's override, R3.10) |
+| A clone with no upstream branch (init failed to set it) | Heal pushes before publishing; a clone that is behind has that push rejected, with a message saying to run `datom_pull(conn)`; a push that succeeds sets the upstream | Guarded (task 4a: the rejected-push message) |
+| A write's push brings in a teammate's commit whose version is not in storage yet | The write skips its manifest upload and says so, naming `datom_validate(fix = TRUE)`; its own documents are published. The next write of another artifact stops and names the same fix | Guarded (task 4b, R3.10) |
+| The same, with the two publishes crossing so the stored manifest names the newer version and the stored metadata holds the older one (DD4) | Readers get the superseded version, and heal does not notice, until the table's next write or `datom_validate(fix = TRUE)` | Reported by `datom_validate()` as `manifest_mismatch_s3`, naming the fix; fixed by `datom_validate(fix = TRUE)` or the table's next write (section 6, P11) |
+| A version's snapshot is missing from storage (no route in this spec can cause it: every route uploads the snapshot before `metadata.json`; left by 0.2.0's write interrupted between `metadata.json` and the snapshot, D7, or by storage losing a file outside datom) | Not reported by `datom_validate()`, which checks only that `metadata.json`, the history and the data file exist. `datom_read(version = )` of that version fails. From task 7, `datom_validate(fix = TRUE)` restores the **current** version's snapshot from the clone's `metadata.json` (section 6); an older version's is restored by nothing | Not guarded. Documented in `dev/engineering-notes.md` at completion; the check, and restoring older snapshots from git, go to [#158](https://github.com/amashadihossein/datom/issues/158) |
+| 0.2.0's `datom_write(conn, name =)` published a hand edit of `metadata.json` | The stored `metadata.json` describes a version that no history entry, manifest row or snapshot records. Readers are told the previous version, and a read pinned to it returns the pre-edit metadata. `datom_validate()` reports nothing | Not guarded (D7). D13 and task 4b stop new cases. A publish from the clone writes one extra snapshot under the edited document's own version, which nothing names; the previous version's snapshot is never touched (section 4, step d). Not reported as `manifest_mismatch_s3`, since its recorded version and its manifest row agree. Goes to [#158](https://github.com/amashadihossein/datom/issues/158) |
+| One of datom's files, committed outside datom, does not parse | Every command that reads that file stops with one short message naming the file and saying to restore all of that artifact's datom files from a commit where they parse, `git commit`, and re-run: heal (every write, and the repair) while the artifact's publish is pending, and a write of that artifact at any time | Guarded (task 4b's tests, through the shared reader). The way out is in the stop message itself (section 4, step d) |
+| A file put at a data address by hand, adopted by a re-run | Its content is read without a content check | Documented in `dev/engineering-notes.md`; not checked |
+| A teammate still on a released datom (D11) | An upgraded teammate's write can publish their data-less version | Documented in `NEWS.md` |
+| GitHub unreachable at the start of a command (DD1) | The command stops with a message and changes nothing; the user re-runs when online | Guarded (P9); documented in `?datom_write` |
+| A table whose committed `metadata.json` holds a `null` for an `NA` in custom metadata, written by an earlier datom (review of `5bdb7da`) | A write now refuses `NA`, so no new version can hold one. For an existing one, heal's publish after an interrupted write by that earlier build re-reads the file, and the document then hashes to a version id no history names: its snapshot is filed under that id, a lookup of the recorded version fails, and the stored `metadata.json` says `{}` where it said `null`. The commit-by-version lookup already missed such versions before this spec | Documented only (D7: a state an earlier release created). `.datom_check_custom_storable()` guards new writes |
+| Custom metadata decimals past four places (found in the same review) | Stored rounded (`0.123456` as `0.1235`), and two values differing only past the fourth decimal get one version id, because the version hash uses `jsonlite`'s default of four digits too | Not this spec's: fixing it changes existing version ids. Filed as [#157](https://github.com/amashadihossein/datom/issues/157) (2026-11-06) |

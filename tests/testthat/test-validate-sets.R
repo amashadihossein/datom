@@ -431,20 +431,43 @@ test_that("a stored payload that is present is never re-uploaded (AC29c)", {
   # this test pass through the hash check instead, leaving the never-overwrite
   # rule -- the one that keeps a recorded document_sha describing real bytes --
   # unasserted.
-  uploaded <- character()
-  real_upload <- .datom_storage_upload
-  local_mocked_bindings(
-    .datom_storage_upload = function(conn, local_path, key) {
-      uploaded <<- c(uploaded, key)
-      real_upload(conn, local_path, key)
-    }
-  )
+  #
+  # Counted on the data-file upload the restore uses. A counter left on the
+  # plain `.datom_storage_upload()` would stay at zero whatever the repair
+  # uploads.
+  upload <- mock_upload_absent(NULL)
+  local_mocked_bindings(.datom_storage_upload_absent = upload$fn)
 
   fs::file_delete(vs_stored(fx, ".metadata/manifest.json"))
   suppressMessages(datom_validate(fx$conn, fix = TRUE))
 
-  expect_false(vs_payload_key(fx) %in% uploaded)
-  expect_equal(uploaded, character())
+  expect_identical(upload$keys(), character())
+})
+
+test_that("a payload another writer stores while the restore runs is kept, and not reported as restored", {
+  # The restore checks for the stored payload, then uploads only if it is still
+  # absent. Here the first check misses a payload that is there, as it would if
+  # another writer stored it in between: the upload must keep that file and the
+  # restore must not claim it.
+  fx <- local_validate_set_project()
+  vs_one_member_set(fx)
+  payload <- vs_stored(fx, vs_payload_key(fx))
+  before <- digest::digest(file = payload, algo = "sha256")
+
+  real_exists <- .datom_storage_exists
+  local_mocked_bindings(.datom_storage_exists = function(conn, key) {
+    if (identical(key, vs_payload_key(fx))) return(FALSE)
+    real_exists(conn, key)
+  })
+
+  messages <- capture.output(
+    keys <- .datom_restore_set_payload(fx$conn, fx$set_name),
+    type = "message"
+  )
+
+  expect_identical(keys, character())
+  expect_false(any(grepl("Restored the stored payload", messages)))
+  expect_identical(digest::digest(file = payload, algo = "sha256"), before)
 })
 
 test_that("the mirror-everything route restores the payload too, not just the repair", {
@@ -473,6 +496,10 @@ test_that("the restore declines loudly when the clone's payload does not match",
   fs::file_delete(payload)
   cat("\n", file = fs::path(fx$repo_dir, fx$set_name, "set.json"),
       append = TRUE)
+  # Committed, as a hand edit pulled from git would arrive: an uncommitted edit
+  # of datom's files is an unfinished write, which the repair puts back first.
+  git_commit_files(fx$repo_dir, paste0(fx$set_name, "/set.json"),
+                   "Edit the set's payload by hand")
 
   messages <- capture.output(datom_validate(fx$conn, fix = TRUE),
                              type = "message")
