@@ -2,11 +2,15 @@
 
 **Issue**: [#134](https://github.com/amashadihossein/datom/issues/134), part 3b ("S3 credential
 function"), split from part 3a in the issue's comment of 2026-10-24.
-**Branch**: `spec/s3-credential-function`, cut from `dev` at `347a403`. **PRs into `dev`.**
+**Branch**: `spec/s3-credential-function`, cut from `dev` at `347a403`; `dev` merged in at `c539516`
+on 2026-11-10, after #155. **PRs into `dev`.**
 **Tier**: 3 (credential handling). Requirements, design and tasks each stop for the owner's approval;
 decisions are taken one at a time.
-**Test baseline**: 5142 expectations, 0 failed, 0 skipped (`devtools::test()` on `dev` at `347a403`,
-2026-10-27).
+**Status**: approved by the owner on 2026-10-27. Amended with the owner on 2026-11-10, after #155
+(interrupted commands finish on a re-run) merged: R2.7 is new; R4.1, R4a.1, R4a.2, R4b (FM3, FM4,
+FM14-FM16) and AC8 changed; AC11 is new; decisions 7-9 added.
+**Test baseline**: 6354 expectations, 0 failed, 0 skipped (`devtools::test()` on this branch after
+merging `dev` at `c539516`, 2026-11-10; 5142 on `347a403` before #155).
 **Reference contract**: datom-py's `.kiro/specs/s3-reader/requirements.md`, R3. Where R differs, the
 requirement says so under "R differs".
 
@@ -99,6 +103,19 @@ handed in is specific to paws.
      ("Caused by error"), as a Python traceback shows the chained exception. A function that puts a
      key in its own error message exposes it either way.
 6. Results are never printed, logged, or included in a message.
+7. **A credential failure reaches the caller as itself** (decision 8, owner, 2026-11-10). datom
+   labels the failure `datom_credentials_failed` or `datom_credentials_invalid` where it calls the
+   function, the one place it knows the cause, and nothing downstream relabels it, turns it into a
+   warning, or swallows it, whichever command is running and wherever in it the call falls. The
+   message says to log in again and re-run the command; under #155 a re-run finishes whatever the
+   first run left unfinished.
+   - **One exception**: `datom_init_repo()` after its push keeps its own stop, which names the
+     repair, because a re-run of `datom_init_repo()` refuses (#155, D5 as reversed). The credential
+     failure is attached as its cause (open point for the design review; see `design.md`, section 5).
+   - **Not covered**: AWS refusing keys datom believed good (revoked keys, a clock off by more than
+     the 15-minute margin, keys passed directly whose session token has run out). datom did not just
+     call the function there; it sees only AWS's reply, so these stay ordinary storage errors, as
+     today.
 
 ### R3. Nothing ambient supplies credentials
 
@@ -122,10 +139,11 @@ handed in is specific to paws.
 
 ### R4. No key is held where a saved session can write it (decision 3)
 
-1. **Function form.** The current keys, their expiry and the paws client live only in a private
-   environment inside datom's namespace, filed under a random id. The store holds the function and
-   the id; the connection holds the id and the function. Neither holds a key, a token, an expiry or
-   a paws client. `print()` says credentials come from a function.
+1. **Function form.** The current keys and their expiry live only in a private environment inside
+   datom's namespace, filed under an id unique across R sessions. No paws client is kept anywhere: one
+   is built for each request (decision 9). The store holds the function and the id; the connection
+   holds the id and the function. Neither holds a key, a token, an expiry or a paws client. `print()`
+   says credentials come from a function.
    - **Parallel workers** (owner, 2026-10-27): a worker started as a fresh R process (`parLapply`,
      `future` multisession, `callr`, always on Windows) receives only the connection's bytes, so the
      id is not found there; because the connection carries the function, the worker calls it and
@@ -145,17 +163,21 @@ Single sign-on involves two lifetimes: the keys (about an hour, renewed by R2.3)
 them (set by the organisation, often 8-12 hours). Only the login's end can stop a job, because the
 function then fails until the user runs `aws sso login` again.
 
-1. **Check before anything changes.** Every write checks its keys before any local file write or git
-   commit, renewing them if they are within 15 minutes of expiry. A function that fails there stops
-   the write before the clone, git or storage is touched. (Before the commit is not early enough:
-   the write updates the clone's manifest first, and `datom_sync_manifest()` compares input files
-   against that manifest, so a later re-run would think the table synced.) (A write commits and pushes git, then uploads to storage, in
-   `.datom_commit_and_mirror()` in `R/read_write.R`; a failure after the push leaves git ahead of
-   storage.)
-2. **A credential failure stops `datom_sync()`.** Today it catches each artifact's error and moves
-   on, so an expired login would fail every remaining artifact, each calling the function again.
-   A `datom_credentials_failed` or `datom_credentials_invalid` error ends the sync instead; artifacts
-   already synced stay synced, and the report says which.
+1. **A re-run after logging in finishes the write** (rewritten 2026-11-10, decision 7). A credential
+   failure at any storage request of `datom_write()` or `datom_write_set()` leaves a state that the
+   same command, re-run once the user has logged in again, finishes: git and storage end as one
+   uninterrupted run would have left them. No separate key check is added. Since #155 a write
+   uploads its data file before it changes the clone, and its first storage request comes earlier
+   still, so the renewal made before each request (R2.3) already stops a write there; a later failure
+   leaves a version that is either not committed (reset by the re-run) or committed but not published
+   (published by the re-run). (Until 2026-11-10 this item asked for a key check before any local file
+   write, because a write then pushed to git before uploading its data file.)
+2. **A credential failure stops `datom_sync()`.** Since #155, `datom_sync()` with its default
+   `continue_on_error = TRUE` stops when a table's write failed after changing the clone, but moves on
+   to the next table when the write failed before changing it, which is where an expired login fails.
+   A `datom_credentials_failed` or `datom_credentials_invalid` error ends the sync instead; tables
+   already synced stay synced, and the sync says which were synced and which were not attempted
+   before the credential error reaches the caller (R2.7).
 
 ### R4b. Failure modes, guarded and documented
 
@@ -167,10 +189,10 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 | # | Failure mode | What the user sees | Guarded | Documented |
 |---|---|---|---|---|
 | FM1 | Keys expire during a session | Nothing; datom renews them | test (R5.4) | |
-| FM2 | Single sign-on login expired before a write | Stop before git, naming `aws sso login` | test | yes |
-| FM3 | Login expires between a write's git push and its data upload | Git ahead of storage; readers still see the previous version. **No datom route repairs it today** (existing behaviour, confirmed 2026-10-27 with a folder remote and local storage; [#155](https://github.com/amashadihossein/datom/issues/155), fixed ahead of this spec's design): re-running the same `datom_write()` finds the version already in the clone's history and skips the upload, and `datom_validate(fix = TRUE)` copies the metadata to storage without the data file, after which readers' current version fails. R4a.1 makes this rare for credentials; it does not fix it | | yes |
-| FM4 | Login expires during `datom_sync()` | The sync stops; earlier artifacts stay synced | test | yes |
-| FM5 | Code reaches a function-built connection's client directly, skipping renewal | Error at once (there is no `conn$client`) | test | |
+| FM2 | Single sign-on login expired before a command | The credential error, naming `aws sso login`; at `datom_store_s3()` already when it checks the bucket (`validate = TRUE`) | test | yes |
+| FM3 | Login expires partway through a write (rewritten 2026-11-10) | At the reads that start the write, or at step 1 (data file to storage): readers see the previous version, the clone is unchanged apart from a pull. Steps 2-4 (clone files, commit, push) make no storage request. At steps 5-6 (metadata and manifest to storage): readers see the previous version and the new one is on GitHub. Either way, log in and re-run the same command, which finishes it (#155) | test (R4a.1) | yes |
+| FM4 | Login expires during `datom_sync()` | The sync stops and says which tables were synced and which were not attempted; re-running the same call finishes | test | yes |
+| FM5 | Code reaches a function-built connection's client directly, skipping renewal | Error at once (there is no `conn$client`). Code that tests for a client and skips when there is none would skip in silence, as the connect-time reachability check would have (found 2026-11-10) | test: no code under `R/` names the stored client outside the accessor and the connection builders | |
 | FM6 | paws starts searching the machine even when given keys with no expiry time | Would be silent | test (R5.2), the only alarm | |
 | FM7 | `AWS_ENDPOINT_URL*` set, or `endpoint_url` in `~/.aws/config` | Refused, or overridden by the explicit address | test | yes |
 | FM8 | The function returns malformed or expired keys, or raises | `datom_credentials_invalid` / `datom_credentials_failed`, no value echoed | test | yes |
@@ -179,6 +201,9 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 | FM11 | Session saved with a store built from keys passed directly | The keys are in the file | | yes |
 | FM12 | Connection sent to a fresh-process parallel worker | The worker calls the function once; on macOS the keychain may prompt per process | test | yes |
 | FM13 | Keys held in the user's own variables, or written literally inside the function | Saved with the session; outside datom's control | | yes |
+| FM14 | The function returns keys that live 15 minutes or less (an assumed role at its 15-minute minimum, for example) (added 2026-11-10) | Works, but datom calls the function before every request; a function that assumes a role on each call may be slowed or throttled by AWS | | yes |
+| FM15 | A datom error handler added later without letting credential failures through (added 2026-11-10) | A misleading message, as in the examples in `design.md` section 5 | test (R2.7), for the commands it covers | |
+| FM16 | Login expires during `datom_init_repo()` after its push (added 2026-11-10) | `datom_init_repo()`'s own stop, naming the repair; the credential failure shown as its cause | test | yes |
 
 ### R5. Tests
 
@@ -190,6 +215,10 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
    removed, recorded in the commit that adds it.
 4. A test shows the function is called again once its credentials near expiry, and not before.
 5. The existing suite still passes, with its count reported in every commit.
+6. A test runs each command with a credential failure at its 1st, 2nd, 3rd... storage request, until
+   the command completes without reaching one, and checks what the caller sees (R2.7); for the write
+   commands it then re-runs the command and checks git and storage against an uninterrupted run
+   (R4a.1). Added 2026-11-10.
 
 ### R6. Documentation
 
@@ -217,7 +246,8 @@ Each is taken one at a time with the owner and recorded here.
 1. **Who renews the keys. DECIDED (owner, 2026-10-27): datom does ("option B").** datom keeps the
    current keys and their expiry in its private memory (decision 3), gives paws keys with no expiry
    time, and builds a new client when the keys near expiry. Every use of a stored client goes
-   through one accessor (17 lines in four files under `R/`); a function-built connection has no
+   through one accessor (17 lines in four files under `R/` on 2026-10-27; 19 lines in three files
+   after #155); a function-built connection has no
    `conn$client`, so a missed use errors at once. The accessor falls back to `conn$client` when the
    connection has no id, so stores built from keys, and the tests' fake clients, are unchanged.
    - **Rejected, "option A"**: replace paws's lookup list with datom's function (F3). Smaller, but
@@ -252,6 +282,21 @@ Each is taken one at a time with the owner and recorded here.
 6. **Static keys take the same path? Settled by decision 1.** Keys built into a store go through the
    same client builder (explicit address, no expiry time given to paws), so neither form can fall
    back.
+7. **No separate key check before a write. DECIDED (owner, 2026-11-10) (R4a.1).** #155 moved the
+   data file upload ahead of every change to the clone, so a login lost partway through a write
+   leaves a state the re-run finishes, and the renewal made before each storage request already
+   stops a write at its first one. The check R4a.1 first asked for would add nothing.
+8. **A credential failure is labelled where datom calls the function, and nothing downstream
+   relabels it. DECIDED (owner, 2026-11-10) (R2.7).** In the owner's words: where the error occurs
+   at a point we know we are dealing with credential expiry, because we just asked, catch it as
+   that, and do not leave it to be caught downstream. Set aside: fixing only the two places in
+   connection setup that turn the failure into a warning, which leaves every other message
+   misleading and makes `datom_sync()` and scripts dig the failure out of a chain of causes.
+9. **Private memory keeps the keys and their expiry only; a paws client is built for each request.
+   DECIDED (owner, 2026-11-10) (R4.1).** Chosen as the least code: nothing has to be kept in step
+   with the keys after a renewal. Neither cost was a concern: an entry is added per store built (not
+   per renewal), about 40 KB with a cached client against about 1 KB without, and building a client
+   takes about 1 ms (both measured 2026-11-10).
 
 ## Parity with datom-py
 
@@ -266,6 +311,8 @@ PR (one repo per change). Points to carry over:
 | China regions | Refused for now | Resolved by botocore |
 | Saved store or connection holds keys | Function form: no, keys live in private memory under an id; keys form: yes, documented | Open (its pickling task) |
 | First call of the function | At store construction when the bucket is checked | At connect |
+| Renewal fails 10-15 minutes before expiry | Stops at once with `datom_credentials_failed` | botocore (1.43) treats 15 minutes as advisory: a failed refresh is logged and the held keys are used until the mandatory point, 10 minutes before expiry |
+| A credential failure inside a command | Reaches the caller as itself, never relabelled (R2.7) | Not checked |
 
 ## Acceptance criteria
 
@@ -278,6 +325,7 @@ PR (one repo per change). Points to carry over:
 | AC5 | The function is not called at construction under `validate = FALSE`, and is called again near expiry | R2.3 |
 | AC6 | A function-built store and connection print, serialise and save (`.RData`) with no key or token, after requests too; in a fresh R the function is called again | R4 |
 | AC7 | `AWS_ENDPOINT_URL*` set is refused; otherwise requests go only to the given or standard address; China regions are refused | R3.4 |
-| AC8 | A function failing at a write's key check stops before git is touched; a credential failure ends `datom_sync()` | R4a |
+| AC8 | A credential failure at each storage request of a write, in turn, followed by the same command re-run, leaves git and storage as one uninterrupted run would; a credential failure ends `datom_sync()`, which first says which tables it synced | R4a |
 | AC9 | Every failure mode in R4b marked guarded has its test, and every one marked documented appears in `?datom_store_s3` | R4b, R6.2 |
-| AC10 | Each test for AC1-AC9 is recorded going red when its guard alone is removed | R5.3 |
+| AC10 | Each test for AC1-AC9 and AC11 is recorded going red when its guard alone is removed | R5.3 |
+| AC11 | For each command, a credential failure at its 1st, 2nd, 3rd... storage request reaches the caller as `datom_credentials_failed` with datom's message, except `datom_init_repo()` after its push, where it is the cause of that command's own stop | R2.7 |
