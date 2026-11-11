@@ -8,7 +8,9 @@ on 2026-11-10, after #155. **PRs into `dev`.**
 decisions are taken one at a time.
 **Status**: approved by the owner on 2026-10-27. Amended with the owner on 2026-11-10, after #155
 (interrupted commands finish on a re-run) merged: R2.7 is new; R4.1, R4a.1, R4a.2, R4b (FM3, FM4,
-FM14-FM16) and AC8 changed; AC11 is new; decisions 7-9 added.
+FM14-FM16) and AC8 changed; AC11 is new; decisions 7-9 added. Amended again the same day, after a
+design review evaluated with the owner (`design.md`, section 14): R2.5, R2.7, R3.4, R4.1, R5.6, FM12,
+FM14, FM15, FM16, AC7, AC11 and decision 2 changed; decisions 10 and 11 added.
 **Test baseline**: 6354 expectations, 0 failed, 0 skipped (`devtools::test()` on this branch after
 merging `dev` at `c539516`, 2026-11-10; 5142 on `347a403` before #155).
 **Reference contract**: datom-py's `.kiro/specs/s3-reader/requirements.md`, R3. Where R differs, the
@@ -99,9 +101,11 @@ handed in is specific to paws.
 5. An error raised by the function stops with class `datom_credentials_failed` (datom-py code
    `credentials_failed`). datom's message does not include the function's output; the original
    error is attached as its parent.
-   - **R differs, in display only**: printing an rlang error shows its parent's message beneath
-     ("Caused by error"), as a Python traceback shows the chained exception. A function that puts a
-     key in its own error message exposes it either way.
+   - **R differs** (reworded 2026-11-10; it said "in display only", which was wrong): datom adds
+     none of the function's output to its own text, but R includes a cause's text in an error's
+     message, both in its message text (`conditionMessage()`) and when printed ("Caused by error").
+     A Python exception's `str()` leaves the chained exception out; only the traceback shows it. A
+     function that puts a key in its own error message exposes it either way.
 6. Results are never printed, logged, or included in a message.
 7. **A credential failure reaches the caller as itself** (decision 8, owner, 2026-11-10). datom
    labels the failure `datom_credentials_failed` or `datom_credentials_invalid` where it calls the
@@ -109,9 +113,8 @@ handed in is specific to paws.
    warning, or swallows it, whichever command is running and wherever in it the call falls. The
    message says to log in again and re-run the command; under #155 a re-run finishes whatever the
    first run left unfinished.
-   - **One exception**: `datom_init_repo()` after its push keeps its own stop, which names the
-     repair, because a re-run of `datom_init_repo()` refuses (#155, D5 as reversed). The credential
-     failure is attached as its cause (open point for the design review; see `design.md`, section 5).
+   - **No exception, `datom_init_repo()` included** (decision 11). After its push, a re-run of
+     `datom_init_repo()` refuses, and that refusal names the repair (#155, D5 as reversed).
    - **Not covered**: AWS refusing keys datom believed good (revoked keys, a clock off by more than
      the 15-minute margin, keys passed directly whose session token has run out). datom did not just
      call the function there; it sees only AWS's reply, so these stay ordinary storage errors, as
@@ -133,8 +136,14 @@ handed in is specific to paws.
    - every client datom builds is given the address explicitly: the `endpoint` the caller passed, or
      the standard AWS address for the store's region, keeping today's bucket-address style. That
      closes `endpoint_url` in `~/.aws/config` too, which datom cannot check without reading the file;
-   - AWS China regions (`cn-*`), whose addresses take a different form, are refused for now with a
-     clear message.
+   - datom builds the standard address only for regions whose S3 address is
+     `s3.<region>.amazonaws.com`: AWS's standard regions and GovCloud (decision 10). For any other
+     region (China, the US government secret clouds, the EU Sovereign Cloud, a made-up region name),
+     a client built with no `endpoint` stops, naming the region and `datom_get_conn(endpoint = )`.
+     With an `endpoint`, any region is accepted. `datom_store_s3(validate = TRUE)` checks the bucket
+     at the address datom builds, so for such a region it stops and says to use `validate = FALSE`
+     and pass `endpoint =` at connect. (Until 2026-11-10 this item refused China regions at the store,
+     which blocked `endpoint =` as the way out.)
 5. Region already comes only from the store.
 
 ### R4. No key is held where a saved session can write it (decision 3)
@@ -149,6 +158,9 @@ handed in is specific to paws.
      id is not found there; because the connection carries the function, the worker calls it and
      carries on, once per worker. A forked worker (`mclapply`) starts with the private memory and
      finds the id. datom itself runs nothing in parallel.
+   - The function then runs without the caller's global variables (checked 2026-11-10: a function
+     reading a global failed in a fresh R with "object not found"), so the docs say to write it
+     self-contained: packages called as `keyring::key_get()`, no global variables.
 2. `serialize()` of such a store or connection, and a saved session (`.RData`) holding them, contain
    no key or token the function returned, including after requests have been made. (A function
    that carries keys inside itself, for example a closure over literal strings, is the caller's
@@ -199,11 +211,11 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 | FM9 | Local clock wrong by more than the 15-minute margin | AWS refuses the request | | yes |
 | FM10 | Session saved (`.RData`, a cache) with a function-built store or connection | No key in the file; a fresh R calls the function again | test | yes |
 | FM11 | Session saved with a store built from keys passed directly | The keys are in the file | | yes |
-| FM12 | Connection sent to a fresh-process parallel worker | The worker calls the function once; on macOS the keychain may prompt per process | test | yes |
+| FM12 | Connection sent to a fresh-process parallel worker | The worker calls the function once; on macOS the keychain may prompt per process. A function that uses the caller's global variables fails there with "object not found" (R4.1) | test | yes |
 | FM13 | Keys held in the user's own variables, or written literally inside the function | Saved with the session; outside datom's control | | yes |
-| FM14 | The function returns keys that live 15 minutes or less (an assumed role at its 15-minute minimum, for example) (added 2026-11-10) | Works, but datom calls the function before every request; a function that assumes a role on each call may be slowed or throttled by AWS | | yes |
-| FM15 | A datom error handler added later without letting credential failures through (added 2026-11-10) | A misleading message, as in the examples in `design.md` section 5 | test (R2.7), for the commands it covers | |
-| FM16 | Login expires during `datom_init_repo()` after its push (added 2026-11-10) | `datom_init_repo()`'s own stop, naming the repair; the credential failure shown as its cause | test | yes |
+| FM14 | The function returns keys with 15 minutes or less left: keys that live that briefly (an assumed role at its 15-minute minimum), or a source that keeps handing back the same keys until just before they expire (a cache another tool refreshes late) (added 2026-11-10, widened the same day) | Works, but datom calls the function before every request while the keys it returns have 15 minutes or less left; a function that assumes a role on each call may be slowed or throttled by AWS | | yes |
+| FM15 | A datom error handler, or a `purrr` loop that reaches storage, added later without letting credential failures through (added 2026-11-10) | A misleading message, as in the examples in `design.md` section 5 | test (R2.7), for the commands it covers | |
+| FM16 | Login expires during `datom_init_repo()` after its push (added 2026-11-10, reworded the same day) | The credential failure. Re-running `datom_init_repo()` after logging in refuses and names the repair (`datom_get_conn()`, then `datom_validate(conn, fix = TRUE)`) | test | yes |
 
 ### R5. Tests
 
@@ -216,7 +228,9 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 4. A test shows the function is called again once its credentials near expiry, and not before.
 5. The existing suite still passes, with its count reported in every commit.
 6. A test runs each command with a credential failure at its 1st, 2nd, 3rd... storage request, until
-   the command completes without reaching one, and checks what the caller sees (R2.7); for the write
+   the injected failure no longer fires, and checks that the caller gets the failure itself, not as
+   the cause of another error, and that no run returns normally after the failure fired (R2.7;
+   rules in `design.md`, section 5); for the write
    commands it then re-runs the command and checks git and storage against an uninterrupted run
    (R4a.1). Added 2026-11-10.
 
@@ -262,7 +276,7 @@ Each is taken one at a time with the owner and recorded here.
    `AWS_ENDPOINT_URL*` is set, always pass the address explicitly, and refuse China regions for now.
    A planted variable would otherwise send signed requests, and the data read back, to another
    server. Cost: a user who points datom at MinIO through that variable must pass `endpoint =` to
-   `datom_get_conn()` instead.
+   `datom_get_conn()` instead. (The China refusal was replaced on 2026-11-10 by decision 10.)
 3. **Keys reaching disk through a saved session (F7). DECIDED (owner, 2026-10-27).**
    - **Function form**: the current keys and the paws client live only in a private environment in
      datom's namespace, filed under a random id; the store and the connection hold the id, never a
@@ -297,6 +311,18 @@ Each is taken one at a time with the owner and recorded here.
    with the keys after a renewal. Neither cost was a concern: an entry is added per store built (not
    per renewal), about 40 KB with a cached client against about 1 KB without, and building a client
    takes about 1 ms (both measured 2026-11-10).
+10. **Which regions datom builds an address for. DECIDED (owner, 2026-11-10) (R3.4).** Only those
+    whose S3 address is `s3.<region>.amazonaws.com` (AWS's standard regions and GovCloud), from AWS's
+    own region patterns; any other needs `endpoint =`. The refusal sits where datom builds the
+    address, not in the store constructor, so `endpoint =` always works as the way out. In the
+    owner's words, US and EU are the primary focus; regions outside them may go unsupported, and this
+    rule keeps the standard ones that work today at no extra code. Set aside: refusing a list of
+    known odd regions, which gives a new odd group a wrong address and a confusing "could not
+    resolve host" error instead of a message.
+11. **`datom_init_repo()` after its push has no exception. DECIDED (owner, 2026-11-10) (R2.7).** A
+    credential failure there reaches the caller as everywhere else. Set aside: init's own stop with
+    the failure as its cause, which would show "re-run the command" above "running
+    `datom_init_repo()` again refuses", since R includes a cause's text in an error's message.
 
 ## Parity with datom-py
 
@@ -308,7 +334,7 @@ PR (one repo per change). Points to carry over:
 | Who renews | datom, before each request, 15 minutes early | botocore's refreshable credentials, through botocore internals (option A) |
 | `AWS_ENDPOINT_URL*` set | Refused, naming the variable | Silently ignored |
 | Configured endpoints otherwise | Address always passed explicitly | Ignored through a botocore setting |
-| China regions | Refused for now | Resolved by botocore |
+| Regions whose S3 address is not `s3.<region>.amazonaws.com` (China, government clouds, EU Sovereign Cloud) | Refused unless `endpoint =` is given | Resolved by botocore |
 | Saved store or connection holds keys | Function form: no, keys live in private memory under an id; keys form: yes, documented | Open (its pickling task) |
 | First call of the function | At store construction when the bucket is checked | At connect |
 | Renewal fails 10-15 minutes before expiry | Stops at once with `datom_credentials_failed` | botocore (1.43) treats 15 minutes as advisory: a failed refresh is logged and the held keys are used until the mandatory point, 10 minutes before expiry |
@@ -324,8 +350,8 @@ PR (one repo per change). Points to carry over:
 | AC4 | With wrong credentials planted in every ambient source, requests carry only the store's credentials, for both forms and every client | R3 |
 | AC5 | The function is not called at construction under `validate = FALSE`, and is called again near expiry | R2.3 |
 | AC6 | A function-built store and connection print, serialise and save (`.RData`) with no key or token, after requests too; in a fresh R the function is called again | R4 |
-| AC7 | `AWS_ENDPOINT_URL*` set is refused; otherwise requests go only to the given or standard address; China regions are refused | R3.4 |
+| AC7 | `AWS_ENDPOINT_URL*` set is refused; otherwise requests go only to the given or standard address; a region with no standard `amazonaws.com` address is refused when no `endpoint` is given and accepted with one | R3.4 |
 | AC8 | A credential failure at each storage request of a write, in turn, followed by the same command re-run, leaves git and storage as one uninterrupted run would; a credential failure ends `datom_sync()`, which first says which tables it synced | R4a |
 | AC9 | Every failure mode in R4b marked guarded has its test, and every one marked documented appears in `?datom_store_s3` | R4b, R6.2 |
 | AC10 | Each test for AC1-AC9 and AC11 is recorded going red when its guard alone is removed | R5.3 |
-| AC11 | For each command, a credential failure at its 1st, 2nd, 3rd... storage request reaches the caller as `datom_credentials_failed` with datom's message, except `datom_init_repo()` after its push, where it is the cause of that command's own stop | R2.7 |
+| AC11 | For each command, a credential failure at its 1st, 2nd, 3rd... storage request reaches the caller as `datom_credentials_failed` itself, not as the cause of another error, with datom's message | R2.7 |
