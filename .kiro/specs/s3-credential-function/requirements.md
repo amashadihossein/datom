@@ -24,7 +24,9 @@ command that commits or pushes. R3.8, R5.9, R6.4, R6.5, FM19, decision 16 and AC
 FM21 and decision 18 added. Amended a sixth time the same day, after a fifth review (`design.md`,
 section 14, review 5): the floor is raised only at init, by the write routes at their opening pull
 (once per `datom_sync()`), and by `datom_repo_set_data_store()`. R3.8, R5.10, R6.5 and AC15
-changed; R6.7 and decision 19 added.
+changed; R6.7 and decision 19 added. Amended a seventh time the same day, after a sixth review
+(`design.md`, section 14, review 6): the raise goes into the command's own commit everywhere, and
+heal's reset restores a leftover floor edit. R3.8, R5.10 and decision 19 changed.
 **Test baseline**: 6354 expectations, 0 failed, 0 skipped (`devtools::test()` on this branch after
 merging `dev` at `c539516`, 2026-11-10; 5142 on `347a403` before #155).
 **Reference contract**: datom-py's `.kiro/specs/s3-reader/requirements.md`, R3. Where R differs, the
@@ -217,19 +219,24 @@ handed in is specific to paws.
      `min_writer_version` in `.datom/project.yaml` to the constant when it is absent or lower, and
      none ever lowers it. One function does the raise.
      - `datom_init_repo()` writes it into the first `project.yaml`;
-     - the write routes (`datom_write()`, `datom_write_set()`, `datom_sync()`) make it their own small
-       commit at the command's opening pull, after the floor check and before the first step, only
-       when there is something to write, pushed with the command's push. `datom_sync()` raises once,
-       after its batch's opening pull and before its per-table loop, so no table's write makes a
-       raise commit. The rule: **the raise belongs at the command's opening pull, never inside a step
-       a caller tracks** (a raise inside the first table's write would move HEAD, and a failure of
-       that write before its own commit would read as "failed partway" and stop the sync);
+     - `datom_write()` and `datom_write_set()` write the raised floor into `.datom/project.yaml`
+       with the clone's other files (step 2), when it changes anything, and commit it with the
+       write's own commit. No write when there is nothing to write. Inside `datom_sync()` the first
+       table whose write commits carries it. The rule (amended 2026-11-12, review 6): **the raise is
+       part of the command's own commit, never a commit of its own**, so no step a caller tracks
+       moves HEAD by itself. A table that fails at its data upload (step 1) has not touched
+       `project.yaml`, so the sync moves on;
+     - a write that stops after step 2 and before its commit leaves the floor edit uncommitted; the
+       reset of unfinished work before the next write restores `.datom/project.yaml` from HEAD when
+       its only difference is `min_writer_version` raised to the constant, which is certain to be
+       datom's own leftover. Any other difference is left alone. Without it, a teammate's change to
+       `project.yaml` would block the next pull, and the re-run would find the floor already raised
+       and never commit it;
      - `datom_repo_set_data_store()` sets it inside its own commit, which already rewrites
        `project.yaml`.
      - `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_push()` check the floor
-       and never raise it. A separate raise commit there would take whatever the user had staged (a
-       commit takes the whole index), and none of them writes data, so a repo they alone touch gets
-       its floor at the next write.
+       and never raise it: none of them writes data, so the floor need not reach GitHub before them,
+       and a repo they alone touch gets its floor at the next write.
    - **One floor check at the start of every command that commits or pushes**: the write routes,
      through the entry check, as today, and now also `datom_repo_set_data_store()`,
      `datom_repo_attach_governance()`, `datom_repo_commit()` and `datom_repo_push()`, which check
@@ -382,10 +389,14 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
       raise an absent or lower floor; a higher floor is never lowered; `datom_repo_commit()`,
       `datom_repo_attach_governance()` and `datom_repo_push()` do not raise, and
       `datom_repo_commit()` with staged files commits exactly them;
+    - a write in a repo with no floor puts `min_writer_version` into its own commit, with no
+      separate commit; with files the user staged, the write's commit holds them exactly as today;
     - a first 0.3.0 `datom_sync()` of a repo with no floor, where the first table's data upload
-      fails and `continue_on_error = TRUE`, goes on to the next table;
-    - #155's break-at-each-step test of the write routes includes the raise commit as a step, and a
-      re-run after a break there finishes the write.
+      fails and `continue_on_error = TRUE`, goes on to the next table, and the first table that
+      commits carries the floor;
+    - #155's break-at-each-step test: a break after step 2 leaves the floor edit; the re-run, with a
+      teammate's floor raise pushed in between, pulls, finishes, and leaves one floor in
+      `project.yaml`; a `project.yaml` with any other uncommitted difference is not reset.
 
 ### R6. Documentation
 
@@ -552,10 +563,11 @@ Each is taken one at a time with the owner and recorded here.
     at the opening pull of a write route (once per `datom_sync()`), and inside
     `datom_repo_set_data_store()`'s own commit. `datom_repo_commit()` and
     `datom_repo_attach_governance()` only check. Set aside: raising inside every committing command's
-    own commit, or a separate raise commit refused when files are staged. A separate raise commit in
-    `datom_repo_commit()` would carry the user's staged files under the raise's message; and the
-    floor needs to be on GitHub only before an old build can write data, which only the write routes
-    do.
+    own commit, or a separate raise commit refused when files are staged. The floor needs to be on
+    GitHub only before an old build can write data, which only the write routes do. Amended the
+    same day (owner, review 6): every raise goes into the command's own commit, never a commit of
+    its own, since `.datom_git_commit()` commits the whole index and a separate commit would carry
+    the user's staged files on every route, while reaching GitHub no sooner.
 
 ## Parity with datom-py
 

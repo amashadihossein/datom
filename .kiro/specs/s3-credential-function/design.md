@@ -109,10 +109,10 @@ code in its own file, recorded 2026-10-28). The S3 client builder stays with its
 | `R/repo.R` | `datom_repo_set_data_store()`, `datom_repo_attach_governance()`, `datom_repo_commit()`, `datom_repo_push()` | changed | Call `.datom_writer_floor_gate()` before anything changes (R3.8): they checked no floor until now. None makes a separate raise commit. `datom_repo_set_data_store()` sets the floor inside its own commit, with `.datom_floor_raised(cfg)`; the other three never raise (decision 19). `datom_repo_commit(push = FALSE)` checks the clone as it is, without a pull |
 | `R/forward-compat.R` | `.datom_min_writer_version` | new | The floor constant, `"0.3.0"`. Raised only by the owner, for a real incompatibility. A comment beside it points at the engineering note: raise `DESCRIPTION`'s `Version` with it (R6.7) |
 | `R/forward-compat.R` | `.datom_floor_raised(cfg)` | new | `cfg` (a parsed `project.yaml`) with `min_writer_version` raised to the constant when absent or lower; never lowered. The one rule, used by init, the raise commit and the repoint |
-| `R/forward-compat.R` | `.datom_raise_writer_floor(conn)` | new | For the write routes: writes `.datom_floor_raised()`'s result to the clone's `project.yaml` and commits it alone (`Raise min_writer_version to 0.3.0`) when it changed anything, pushed with the command's push; does nothing otherwise |
+| `R/forward-compat.R` | `.datom_write_floor_local(conn)` | new | For the write routes: writes `.datom_floor_raised()`'s result to the clone's `project.yaml` when it changes anything, and returns `".datom/project.yaml"` so the caller adds it to its commit; otherwise returns nothing. Makes no commit |
+| `R/heal.R` | `.datom_unfinished_files()`, `.datom_reset_unfinished()` | changed | Also count, and restore from HEAD, `.datom/project.yaml` when its only difference from HEAD is `min_writer_version` raised to the constant: a write that stopped after step 2. Any other difference is left alone, as today |
 | `R/forward-compat.R` | `.datom_writer_floor_gate(conn, pull = TRUE)` | new | Pull (unless `pull = FALSE`), then `.datom_check_writer_floor()`. Used by the four `datom_repo_*` commands. The write routes get the same two steps from their entry check and `.datom_pull_before_write()`, which re-runs the entry check when it brought anything in |
-| `R/read_write.R`, `R/set.R` | `datom_write()`, `datom_write_set()` | changed | Call `.datom_raise_writer_floor()` after their opening pull and change detection, before the data file upload, when there is something to write; skipped when `.healed = TRUE`, since `datom_sync()` raised already |
-| `R/sync.R` | `datom_sync()` | changed | Calls `.datom_raise_writer_floor()` once, after its batch's opening pull (`.datom_pull_before_write()`) and before the per-table loop, when there is a table to write, so no table's write moves HEAD with a raise commit (review 5, point 1) |
+| `R/read_write.R`, `R/set.R` | `datom_write()`, `datom_write_set()` | changed | At step 2, with the clone's other files, call `.datom_write_floor_local()` and add what it returns to the `git_files` `.datom_commit_and_publish()` commits. Inside `datom_sync()` the first table whose write commits carries the floor |
 | `DESCRIPTION` | `Version` | changed | `0.3.0`, so `dev` builds and the suite pass their own floor |
 | `R/heal.R` | `.datom_publish_artifacts()` | changed | Its loop uses `lapply()`, with `.datom_pass_credentials(e)` as the first line of its handler, so a credential failure stops at the first artifact rather than calling the function once per artifact |
 | `R/sync.R` | `datom_sync()` | changed | On a credential failure: says which tables were synced and which were not attempted, then passes the failure on (R4a.2) |
@@ -419,20 +419,25 @@ the repo, and nothing below it commits or pushes after that, apart from a write 
 - **Raised where data is written** (decision 19), all through `.datom_floor_raised()`, which never
   lowers it:
   - `datom_init_repo()` writes it into the first `project.yaml`;
-  - a write route makes a small raise commit at its opening pull, after the floor check and before
-    its first step, when there is something to write, pushed with its push. For `datom_write()` and
-    `datom_write_set()` that is after change detection and before the data file upload;
-    `datom_sync()` raises once, before its per-table loop. **The raise belongs at the command's
-    opening pull, never inside a step a caller tracks**: `datom_sync()` records HEAD before each
-    table and reads any move as "this write failed partway" (`.datom_write_left_changes()`), so a
-    raise inside the first table's write would stop the whole sync when that write failed at its
-    upload;
+  - `datom_write()` and `datom_write_set()` write the raised floor into `project.yaml` at step 2,
+    with the clone's other files, and commit it with the write's own commit. **The raise is part of
+    the command's own commit, never a commit of its own** (review 6): `.datom_git_commit()` commits
+    the whole index, so a separate commit would carry the user's staged files, and it would reach
+    GitHub no sooner, being pushed with the write. So no step a caller tracks moves HEAD by itself:
+    `datom_sync()` records HEAD before each table and reads a move as "this write failed partway"
+    (`.datom_write_left_changes()`); a table that fails at its upload (step 1) has touched nothing,
+    and the sync moves on. The first table whose write commits carries the floor;
+  - **a write that stops after step 2 and before its commit** leaves the floor edit uncommitted.
+    Heal's reset (`.datom_reset_unfinished()`) restores `project.yaml` from HEAD when its only
+    difference is `min_writer_version` raised to the constant, which is certain to be datom's own
+    leftover; any other difference is left alone. Without it a teammate's change to `project.yaml`
+    would block the next pull (git refuses to merge into a file with local changes), and the re-run
+    would find the floor already raised in the working tree and never commit it;
   - `datom_repo_set_data_store()` sets it inside its own commit, which already rewrites
     `project.yaml`.
-  - `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_push()` never raise. A
-    separate raise commit in `datom_repo_commit()` would carry the user's staged files under the
-    raise's message, since a commit takes the whole index; and none of the three writes data, so a
-    repo only they touch gets its floor at the next write.
+  - `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_push()` never raise:
+    none of the three writes data, so the floor need not reach GitHub before them, and a repo only
+    they touch gets its floor at the next write.
 - **Checked at the start of every command that commits or pushes**: the write routes through their
   entry check and `.datom_pull_before_write()`, which re-runs it when the pull brought anything in;
   the four `datom_repo_*` commands through `.datom_writer_floor_gate()`, new here, since they checked
@@ -482,12 +487,12 @@ its default carries on to the next table when a write failed before changing the
 exactly where an expired login fails. The location agreement check (section 6) runs in the entry
 check, before any of these steps, so its stop also leaves nothing half-done.
 
-**The floor raise is a new step before step 1**, taken only the first time a 0.3.0 build writes to a
-repo (section 6). It commits `project.yaml` alone and makes no storage request. A break after it
-leaves an unpushed commit that holds no datom version; under #155 that is no reason to push (heal
-publishes only versions storage lacks), the re-run's raise finds the floor already in place and does
-nothing, and the re-run's push sends both commits. #155's break-at-each-step test of the write routes
-gains this step.
+**The floor raise adds no step** (review 6): the first time a 0.3.0 build writes to a repo, step 2
+also writes the raised floor into `project.yaml`, and step 3 commits it with the rest. A break before
+step 3 leaves the floor edit uncommitted; heal's reset restores it with the write's other files, and
+the re-run writes and commits it again. A break after step 3 is #155's case unchanged: the commit
+holds the floor, and the re-run pushes and publishes it. #155's break-at-each-step test checks both,
+with a teammate's floor raise pushed before the re-run.
 
 ## 8. Design decisions and choices
 
@@ -553,7 +558,7 @@ The table is R4b in `requirements.md`; this maps each guarded row to its test.
 | FM16 | The sweep on `datom_init_repo()`, like every other command |
 | FM17 | R5.8: each write route stops on each kind of disagreement; connecting warns; the approve command lets the next write through |
 | FM18 | R5.8: the message for a location from `ref.json` that is not standard AWS, and none otherwise |
-| FM19 | R5.10: init writes the floor; a write and the repoint raise an absent or lower floor and never lower one; the other three `datom_repo_*` commands do not raise, and `datom_repo_commit()` commits exactly the staged files; each `datom_repo_*` command refuses before changing anything with a floor of `"99.0.0"`; a first sync whose first table's upload fails goes on to the next table; the raise commit is a step of the break-at-each-step test |
+| FM19 | R5.10: init writes the floor; a write and the repoint raise an absent or lower floor and never lower one; the other three `datom_repo_*` commands do not raise, and `datom_repo_commit()` commits exactly the staged files; each `datom_repo_*` command refuses before changing anything with a floor of `"99.0.0"`; a write carries the floor in its own commit, with no separate commit; a first sync whose first table's upload fails goes on to the next table; a break after step 2 is reset and finished by the re-run, a teammate's floor raise in between; a `project.yaml` with any other difference is not reset |
 | (R3.9) | R5.9: moves off MinIO, from S3 to local, onto MinIO, each followed by a write; every location writer agrees with the others for the same store; an unknown `storage.data` key survives a repoint |
 
 ## 11. Correctness properties (what the tests pin)
@@ -681,3 +686,10 @@ the moment the first build at or above it touches the repo. Each claim was verif
 | 1 | A raise inside the first table's write makes `datom_sync()` read a failed write as "failed partway" | Yes, by reading: `datom_sync()` records HEAD before each table; `.datom_write_left_changes()` returns TRUE once HEAD moved | `datom_sync()` raises once, before its loop; the rule "the raise belongs at the opening pull" (section 6) | No |
 | 2 | `datom_repo_commit()` would raise even with nothing to commit | Yes: it decides "made a commit" by comparing HEAD before and after | Superseded: it never raises (decision 19) | Found while checking: a separate raise commit takes everything staged, so the user's files would land in the raise commit. Laid out as scenarios, the owner chose to raise only where data is written: init, the write routes, and inside the repoint's own commit |
 | 3 | Whoever raises the floor bumps `DESCRIPTION` | Yes: no engineering note covers the floor | R6.7: a note and a comment at the constant | No |
+
+### Review 6, of `5c61468` (2026-11-12)
+
+| # | Finding | Verified | Outcome | Differs from the review |
+|---|---|---|---|---|
+| 1 | Every datom commit takes the whole index, so the write routes' separate raise commit would carry staged files too, and reaches GitHub no sooner | Yes: `.datom_git_commit()` adds its files, then `git2r::commit()` commits everything staged | The floor goes into the command's own commit everywhere: `.datom_write_floor_local()` at step 2, `project.yaml` added to the write's commit; `.datom_raise_writer_floor()`, the sync's raise before its loop and the `.healed` skip removed (decision 19 amended) | No |
+| 2 | A write stopped after step 2 leaves the floor edit uncommitted, which can block the next pull | Yes: heal resets only an artifact's documents and `.datom/manifest.json`; `.datom_unfinished_files()` does not count `project.yaml` (and `R/heal.R` says heal never resets it) | Heal's reset restores `project.yaml` when its only difference is the raised floor; anything else is left alone | Added: without the reset the re-run would also never commit the floor, since the working tree already holds it |
