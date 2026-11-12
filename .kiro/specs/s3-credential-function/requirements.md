@@ -17,7 +17,11 @@ the data repo agree. R1.1-R1.3, R3.4, R5.6, R6.4, FM7, FM15, decision 10 and AC7
 R3.7, R5.7, R5.8, FM17-FM19, decisions 12-15 and AC12-AC14 added. Amended a fourth time, after a
 third design review decided with the owner on 2026-11-11 (`design.md`, section 14, review 3): R3.6,
 R5.7, R6.5, FM19 and decision 14 changed; R3.8, R3.9, R5.9, decisions 16-17 and AC15-AC16 added.
-The spec stays one spec (owner, 2026-11-11).
+The spec stays one spec (owner, 2026-11-11). Amended a fifth time, after a fourth design review
+decided with the owner on 2026-11-12 (`design.md`, section 14, review 4): the writer floor becomes
+a fixed `0.3.0`, raised by the first commit of a 0.3.0 build and checked at the start of every
+command that commits or pushes. R3.8, R5.9, R6.4, R6.5, FM19, decision 16 and AC15 changed; FM20,
+FM21 and decision 18 added.
 **Test baseline**: 6354 expectations, 0 failed, 0 skipped (`devtools::test()` on this branch after
 merging `dev` at `c539516`, 2026-11-10; 5142 on `347a403` before #155).
 **Reference contract**: datom-py's `.kiro/specs/s3-reader/requirements.md`, R3. Where R differs, the
@@ -192,20 +196,43 @@ handed in is specific to paws.
    in their own store. A forged `ref.json` can still feed readers forged data, as it can today by
    naming another AWS bucket: readers have no second record to check against. The help recommends
    tight write access to the governance store, with versioning and an audit log on it.
-8. **Older writers are refused where they would write to the wrong place** (decision 16, owner,
-   2026-11-11). An older datom ignores `endpoint` (its `.datom_parse_ref()` reads root, prefix and
-   region only, and its write checks compare bucket and prefix only), so for a location with an
-   endpoint it would write to standard AWS, into a same-named bucket if one answers (for example the
-   old copy, kept until its sunset, after a move to another service that kept the bucket name). So:
-   - `datom_init_repo()` writes `min_writer_version: <the running datom's version>` into
-     `project.yaml` when the store has an `endpoint`;
-   - `datom_repo_set_data_store()` raises `min_writer_version` to the running version when the new
-     location has an `endpoint` and the recorded floor is lower or absent. It never lowers it. Its
-     help says it now edits `min_writer_version` as well as `storage.data`;
-   - a location without an endpoint gets no floor: old and new datom write to the same place, so a
-     teammate still on 0.2.0 keeps writing (#155's D11 stands for those repos);
-   - 0.1.1 onward read the floor and refuse; 0.1.0 does not read it and cannot be stopped. The docs
-     say so.
+8. **Older writers are refused once a 0.3.0 build has committed to the repo** (decisions 16 and
+   18; rewritten 2026-11-12, owner). An older datom ignores `endpoint` (its `.datom_parse_ref()`
+   reads root, prefix and region only, and its write checks compare bucket and prefix only), so for
+   a location with an endpoint it would write to standard AWS, into a same-named bucket if one
+   answers (for example the old copy, kept until its sunset, after a move to another service that
+   kept the bucket name). The owner's intent: a raised floor takes effect the moment the first build
+   at or above it touches the repo, and nothing below it commits or pushes after that, apart from a
+   write already in flight.
+   - **The floor is one fixed number**, a constant in the code: `0.3.0`. It is not the running
+     version, which would make a repo created by a later release refuse earlier ones that work. It
+     has no endpoint condition. Only the owner raises it, when a real incompatibility calls for it.
+     `DESCRIPTION` goes to `Version: 0.3.0` on this branch, so `dev` builds and the suite pass their
+     own floor. `0.3.0`, not `0.2.1`: a CRAN fix of 0.2.0 would be 0.2.1, made from `main` without
+     this feature, and must not pass the floor.
+   - **The floor rises at the first commit**: every command that commits to the data repo raises
+     `min_writer_version` in `.datom/project.yaml` to the constant when it is absent or lower, and
+     never lowers it. `datom_init_repo()` writes it into the first `project.yaml`. Elsewhere the
+     raise is its own small commit, made after the command's opening pull and floor check and before
+     its first step (for a write, before the data file upload, and only when there is something to
+     write), and pushed with the command's push. One function does the raise. `datom_repo_push()`
+     makes no commit, so it checks the floor and does not raise it.
+   - **One floor check at the start of every command that commits or pushes**: the write routes,
+     through the entry check, as today, and now also `datom_repo_set_data_store()`,
+     `datom_repo_attach_governance()`, `datom_repo_commit()` and `datom_repo_push()`, which check
+     nothing today. Each pulls first, then checks, before anything changes. (`datom_repo_commit()`
+     with `push = FALSE` checks the clone as it is, without a pull: a local commit should not need
+     the network, and its later push goes through `datom_repo_push()`, which pulls and checks.)
+   - **No re-check at the push** (decision 18): a write already running when a teammate pushes a
+     higher floor still lands; every command after it refuses at its opening pull. Documented.
+   - **A reader cannot raise the floor**: readers have no clone and do not push. Readers are never
+     checked against it either, since it lives only in `project.yaml`.
+   - Repos made by 0.2.0 or earlier carry no floor until their first commit by a 0.3.0 build; a
+     0.2.0 writer can write there until then. Accepted.
+   - 0.1.1 onward read the floor and refuse; 0.1.0 does not read it and cannot be stopped. 0.2.0
+     checks the floor at the start of a write, before its only pull, which comes at push time, so an
+     out-of-date 0.2.0 clone can make one more write after the raise; its next write is refused.
+     Released code cannot change. The docs say so.
    - **Reads are not protected**: an older reader can read the old copy described above, with only
      the "Data was migrated from ..." warning. Accepted; new readers get R3.7's message.
 9. **One shape for a data location** (decision 17, owner, 2026-11-11). Every record of where data
@@ -296,7 +323,9 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 | FM16 | Login expires during `datom_init_repo()` after its push (added 2026-11-10, reworded the same day) | The credential failure. Re-running `datom_init_repo()` after logging in refuses and names the repair (`datom_get_conn()`, then `datom_validate(conn, fix = TRUE)`) | test | yes |
 | FM17 | `ref.json` points somewhere `project.yaml` does not: a move not yet pulled, or a change made to governance alone (added 2026-11-10) | `datom_get_conn()` warns; every write stops before changing anything, naming the locations, reconnecting, and the approve command (R3.6) | test | yes |
 | FM18 | `ref.json` sends readers somewhere other than standard AWS (added 2026-11-10) | A message at connect saying where the data comes from (R3.7). A forged `ref.json` can still feed readers forged data | test | yes |
-| FM19 | An older datom meets a project whose location records an `endpoint` (added 2026-11-10, reworded 2026-11-11) | It ignores the field and goes to standard AWS. Usually that fails there; but after a move to another service that kept the bucket name, the old copy kept until its sunset answers. **Writes**: refused by the writer floor (R3.8), on 0.1.1 onward; 0.1.0 cannot be stopped. **Reads**: an older reader reads the old copy with only the "Data was migrated" warning (accepted) | test (the floor is written and raised, R5.9) | yes |
+| FM19 | An older datom meets a project whose location records an `endpoint` (added 2026-11-10, reworded 2026-11-11 and 12) | It ignores the field and goes to standard AWS. Usually that fails there; but after a move to another service that kept the bucket name, the old copy kept until its sunset answers. **Writes**: refused by the writer floor (R3.8) once a 0.3.0 build has committed to the repo, on 0.1.1 onward; 0.1.0 cannot be stopped; an out-of-date 0.2.0 clone makes one more write. **Reads**: an older reader reads the old copy with only the "Data was migrated" warning (accepted) | test (the floor is written, raised and checked, R5.10) | yes |
+| FM20 | A teammate on a newer release pushes a higher floor while this clone's write is running (added 2026-11-12) | That one write lands; every command after it refuses at its opening pull. The write publishes one version of its own artifact and lowers nothing | | yes |
+| FM21 | A repo made by 0.2.0 or earlier, not yet committed to by a 0.3.0 build (added 2026-11-12) | No floor yet: a 0.2.0 writer can still write there | | yes |
 
 ### R5. Tests
 
@@ -330,8 +359,16 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
      MinIO, then a write: each write goes through after the approve command;
    - for the same store, every writer of a location record (`ref.json`, `project.yaml` at init,
      `project.yaml` after `datom_repo_set_data_store()`) produces a record the comparer calls equal;
-   - the floor: written by init with an endpoint and not without; raised by a repoint onto an
-     endpoint; never lowered; a key in `storage.data` this build does not know survives a repoint.
+   - a key in `storage.data` this build does not know survives a repoint.
+10. Tests for the writer floor (R3.8), rewritten 2026-11-12, each guard shown going red when it alone
+    is removed:
+    - each of `datom_repo_set_data_store()`, `datom_repo_attach_governance()`, `datom_repo_commit()`
+      and `datom_repo_push()`, with a floor above the installed version (`"99.0.0"`), refuses before
+      changing anything;
+    - the raise: `datom_init_repo()` writes the constant; the first commit by a command raises an
+      absent or lower floor; a higher floor is never lowered; `datom_repo_push()` does not raise;
+    - #155's break-at-each-step test of the write routes includes the raise commit as a step, and a
+      re-run after a break there finishes the write.
 
 ### R6. Documentation
 
@@ -343,11 +380,15 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 3. The trade-off between the two forms: keys passed directly are the easy route and the way out, and
    a saved session or cache can write them to disk; the function form keeps them out. Recommend
    never saving the workspace (`usethis::use_blank_slate()`).
-4. `NEWS.md`: the four breaking changes of R1.2 first, each with what to do instead; then the
-   credential function, the endpoint on the store, and the agreement check before writes.
+4. `NEWS.md`: the four breaking changes of R1.2 first, each with what to do instead, and the writer
+   floor: the first commit by 0.3.0 makes a repo refuse writers older than 0.3.0. Next to the
+   existing "upgrade everyone who writes to a repo at the same time": an out-of-date 0.2.0 clone can
+   make one more write after the floor rises, and a write already in flight when it rises lands.
+   Then the credential function, the endpoint on the store, and the agreement check before writes.
 5. `?datom_store_s3`: the `endpoint` argument (moved from `datom_get_conn()`, with its notes on
    S3-compatible services); `?datom_repo_set_data_store`: its use as the approval of R3.6, that it
-   replaces the location fields as a set, and that it raises `min_writer_version` (R3.8).
+   replaces the location fields as a set. The help of every command that commits says it raises
+   `min_writer_version`, and of every command that commits or pushes that it checks it (R3.8).
 6. **The pattern rule, where every session reads it** (decision 15): a line in the "Don'ts" of
    `.github/copilot-instructions.md`, and the credential case added to "Two ways a condition's class
    silently disappears" in `dev/engineering-notes.md`.
@@ -464,20 +505,29 @@ Each is taken one at a time with the owner and recorded here.
     at each site, and a code-reading test (about a second of CI, deterministic) fails on a new loop or
     handler that breaks it. The design had broken the engineering note's rule while the note was
     only loaded on demand.
-16. **A writer floor only where an older datom would write to the wrong place. DECIDED (owner,
-    2026-11-11) (R3.8).** `min_writer_version` is written by `datom_init_repo()`, and raised by
-    `datom_repo_set_data_store()`, only when the location records an `endpoint`. This amends #155's
-    D11 (mixed-version teams not guarded) for those repos only. Set aside: a floor on every new repo
-    and every repoint, which the review first proposed; it would refuse teammates on 0.2.0 who write
-    plain-AWS repos correctly. The owner's rule for such choices: in the experimental phase, code
-    whose only job is to keep an older datom working is added only when it is very, very minimal or
-    has another benefit; here it is one condition per site. Reads stay unprotected, accepted.
+16. **The writer floor is a fixed `0.3.0`, raised by the first commit of a 0.3.0 build. DECIDED
+    (owner, 2026-11-12) (R3.8).** Replaces the decision of 2026-11-11 (a floor only where an
+    endpoint is recorded, chosen to keep 0.2.0 teammates writing plain-AWS repos), and #155's D11
+    (mixed-version teams not guarded) for every repo a 0.3.0 build commits to: the owner is cutting
+    0.2.0 loose. A constant, not the running version, so a repo created by a later release does not
+    refuse earlier ones that work. `0.3.0`, not the review's `0.2.1`, because a CRAN fix of 0.2.0
+    made from `main` would be numbered 0.2.1 and lack this feature. The check runs at the start of
+    every command that commits or pushes, where today only the write routes check.
 17. **One shape for a data location. DECIDED (owner, 2026-11-11) (R3.9).** In the owner's model,
     governance changes `ref.json` first, the project owner carries the change into `project.yaml`
     with `datom_repo_set_data_store()`, and nothing about the location may be ambiguous afterwards.
     So one builder makes every location record, the repoint replaces it as a set, and one comparer
     decides "same location". Set aside: the owner's first idea, an endpoint replacing the region,
     because AWS signatures name a region.
+18. **No floor re-check at the push. DECIDED (owner, 2026-11-12) (R3.8).** The review proposed
+    checking the floor again inside `.datom_git_push()`, after its pull, and undoing the command's
+    local commit when it refuses. Set aside: it would be the one refusal after a commit, against
+    #155's rule that work found after its commit is finished; the undo must remove the commit after
+    a merge without wiping the user's other uncommitted files, which is new recovery code; and
+    without the undo the check gains nothing, since the upgraded re-run would publish the commit
+    anyway. It closes a window as long as one write in flight, which opens only when a later release
+    raises the floor, narrower than the 0.2.0 exposure already accepted. That one write lowers
+    nothing: it does not change `project.yaml`, so its push carries the merged, higher floor.
 
 ## Parity with datom-py
 
@@ -517,5 +567,5 @@ PR (one repo per change). Points to carry over:
 | AC12 | With governance attached, every write route stops before changing anything when `ref.json`, `project.yaml` and the connection disagree on location; `datom_get_conn()` warns instead of stopping; after `datom_repo_set_data_store()` the write goes through | R3.6 |
 | AC13 | A location from `ref.json` that is not standard AWS S3 produces a message at connect; one from the caller's own store does not | R3.7 |
 | AC14 | The code-reading test passes on the finished code and fails when one pass-on line is removed or one `lapply()` turned back into `purrr::map()` | R5.7 |
-| AC15 | `min_writer_version` is written by init and raised by a repoint exactly when the location has an `endpoint`, and never lowered | R3.8 |
+| AC15 | `min_writer_version` is written by init and raised to `0.3.0` by the first commit of any command, never lowered; every command that commits or pushes refuses before changing anything when the floor is above the installed version | R3.8 |
 | AC16 | After a move off MinIO, from S3 to a local folder, or onto MinIO, approved once, the next write goes through; every writer of a location record agrees with the others for the same store | R3.9 |

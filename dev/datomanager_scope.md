@@ -274,6 +274,13 @@ This split follows the seam between mechanism and policy: moving bytes is a plat
 primitive (datom); declaring the new location authoritative is a governance decision
 (datomanager).
 
+**Switch both records in one call** (added 2026-11-12, from datom's `s3-credential-function` spec,
+R3.6). From datom 0.3.0, every write refuses unless `ref.json` and the data repo's
+`.datom/project.yaml` name the same location (bucket, prefix, region, endpoint). So
+`gov_migrate_data()` should switch `ref.json` and run `datom_repo_set_data_store()` in the same
+call. Otherwise developers' writes stop in the gap until the project owner approves the move by
+running `datom_repo_set_data_store()` themselves.
+
 **Prerequisite -- datom Phase 22**: before Phase 19 can be built, datom must export the
 six storage/repo extension functions (`datom_storage_copy`, `datom_storage_verify`,
 `datom_storage_list`, `datom_storage_delete_prefix`, `datom_repo_set_data_store`,

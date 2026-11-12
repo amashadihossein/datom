@@ -6,10 +6,12 @@ for [#155](https://github.com/amashadihossein/datom/issues/155), resumed once #1
 each item landed is in section 13. Three reviews (of `53b4a71` and `030b07f` on 2026-11-10, of
 `55ce81f` on 2026-11-11) were evaluated with the owner point by point and their outcomes are applied
 here; the record is section 14. The second moved the endpoint onto the store and added the location
-agreement check; the third added one shape for a location record and a writer floor (section 6).
+agreement check; the third added one shape for a location record and a writer floor; the fourth (of
+`40f62b1`, 2026-11-12) made the floor a fixed `0.3.0`, raised by the first commit and checked by
+every command that commits or pushes (section 6).
 
-Read first: `requirements.md` (approved 2026-10-27, amended four times on 2026-11-10 and 11).
-Decisions 1-17 referred to here are recorded there; DD1 and the choices in section 8 are this
+Read first: `requirements.md` (approved 2026-10-27, amended five times, 2026-11-10 to 12).
+Decisions 1-18 referred to here are recorded there; DD1 and the choices in section 8 are this
 document's.
 
 ## 1. The shape
@@ -54,7 +56,7 @@ each storage request -> .datom_s3_get_client(conn)
 | Connection | as today, but `cred_id` + `credentials` (and `gov_cred_id` + `gov_credentials`) instead of `client` / `gov_client`; `endpoint` and `gov_endpoint` | as today, with `client` / `gov_client`; `endpoint` and `gov_endpoint` |
 | Private memory (`.datom_cred_registry`) | per id: the current keys and their expiry (`POSIXct`, or `NULL` for keys that do not expire) | nothing |
 | `ref.json` (governance) | `current` gains an optional `endpoint` beside type, root, prefix, region | same |
-| `.datom/project.yaml` (data repo) | `storage.data` gains an optional `endpoint` beside type, root, prefix, region (one shape, section 6); `min_writer_version` is set when an endpoint is recorded | same |
+| `.datom/project.yaml` (data repo) | `storage.data` gains an optional `endpoint` beside type, root, prefix, region (one shape, section 6); `min_writer_version` is raised to `0.3.0` by the first commit of a 0.3.0 build | same |
 
 No object, in either form, holds a paws client for a function-built store: one is built per request
 and goes out of scope with it. Today one `endpoint` (an argument of `datom_get_conn()`) applied to
@@ -90,7 +92,7 @@ code in its own file, recorded 2026-10-28). The S3 client builder stays with its
 | `R/conn.R` | `.datom_build_init_conn()` | changed | Reads each component's own `endpoint`. Function-form component: carries its id and function, builds no client |
 | `R/conn.R` | `.datom_conn_for()` | changed | The governance view carries `gov_cred_id`, `gov_credentials` and `gov_endpoint` as its `cred_id`, `credentials` and `endpoint` |
 | `R/conn.R` | `.datom_get_conn_developer()`, `.datom_get_conn_reader()` | changed | The location from `ref.json` (bucket, prefix, region, endpoint) goes through `.datom_s3_check_address()` and `.datom_note_location_source()`; the credentials-only store rebuilt from it keeps the original store's id and function (it rebuilt from `store$data$access_key` and friends); the developer's cross-check of the store against `project.yaml` uses `.datom_location_same()`, so it compares the endpoint and region too |
-| `R/conn.R` | `datom_init_repo()` | changed | Writes `project.yaml`'s `storage.data` with `.datom_location_record()` (it built the block by hand); writes `min_writer_version` when the store has an `endpoint` (R3.8); uses the store's endpoint for the namespace check and the manifest upload |
+| `R/conn.R` | `datom_init_repo()` | changed | Writes `project.yaml`'s `storage.data` with `.datom_location_record()` (it built the block by hand), and `min_writer_version: <.datom_min_writer_version>` (R3.8); uses the store's endpoint for the namespace check and the manifest upload |
 | `R/conn.R` | `print.datom_conn()` | changed | Function form: "Credentials: from a function"; the governance endpoint when it differs |
 | `R/ref.R` | `.datom_location_record(store)` | new | R3.9: the one record of a location (section 6), built from a store component; used by `.datom_create_ref()`, `datom_init_repo()` and `datom_repo_set_data_store()` |
 | `R/ref.R` | `.datom_location_same(a, b)` | new | R3.9: whether two records name the same location, a missing field and an empty one counting as equal; used by `.datom_check_location_agrees()` and at connect |
@@ -103,7 +105,13 @@ code in its own file, recorded 2026-10-28). The S3 client builder stays with its
 | `R/ref.R` | `.datom_check_data_reachable()` | changed | Gets its client through the accessor, **before** its handler. Today it returns early when `conn$client` is `NULL`, which a function-built connection always is, so the check would stop checking for every one of them (FM5). The early return stays only for a connection with no id whose client is not a paws client (the tests' fakes) |
 | `R/forward-compat.R` | `.datom_check_write_entry()` | changed | Calls `.datom_check_location_agrees(conn)` when governance is attached. Every write route already passes through it |
 | `R/read_write.R`, `R/set.R` | `datom_write()`, `datom_write_set()` | changed | Drop their `.datom_check_ref_current()` call, now in the entry check |
-| `R/repo.R` | `datom_repo_set_data_store()` | changed | Replaces `storage.data`'s location fields as a set: removes every name in `.datom_location_fields`, then adds `.datom_location_record(new_store)`, keeping any other key (it merged with `utils::modifyList()`, which kept stale fields). Raises `min_writer_version` to the running version when the new location has an `endpoint` and the floor is lower or absent; never lowers it (R3.8). It is the approval of R3.6, and does not call the entry check, so it is never blocked by it |
+| `R/repo.R` | `datom_repo_set_data_store()` | changed | Replaces `storage.data`'s location fields as a set: removes every name in `.datom_location_fields`, then adds `.datom_location_record(new_store)`, keeping any other key (it merged with `utils::modifyList()`, which kept stale fields). It is the approval of R3.6, and does not call the entry check, so the location check never blocks it; it does pass the floor gate at its start, like the other three `datom_repo_*` commands (next row) |
+| `R/repo.R` | `datom_repo_set_data_store()`, `datom_repo_attach_governance()`, `datom_repo_commit()`, `datom_repo_push()` | changed | Call `.datom_writer_floor_gate()` before anything changes (R3.8): they checked no floor until now. `datom_repo_push()` checks without raising, since it makes no commit; `datom_repo_commit(push = FALSE)` checks the clone as it is, without a pull |
+| `R/forward-compat.R` | `.datom_min_writer_version` | new | The floor constant, `"0.3.0"`. Raised only by the owner, for a real incompatibility |
+| `R/forward-compat.R` | `.datom_raise_writer_floor(conn)` | new | Raises `min_writer_version` in the clone's `project.yaml` to the constant when absent or lower, as its own small commit (`Raise min_writer_version to 0.3.0`), pushed with the command's push; never lowers it; does nothing otherwise. The one place the raise happens |
+| `R/forward-compat.R` | `.datom_writer_floor_gate(conn, pull = TRUE, raise = TRUE)` | new | Pull (unless `pull = FALSE`), `.datom_check_writer_floor()`, then `.datom_raise_writer_floor()` (unless `raise = FALSE`). Used by the four `datom_repo_*` commands. The write routes get the same three steps from their entry check, `.datom_pull_before_write()` (which re-runs the entry check when it brought anything in) and a raise just before their first step |
+| `R/read_write.R`, `R/set.R` | `datom_write()`, `datom_write_set()` | changed | Call `.datom_raise_writer_floor()` after change detection and before the data file upload, when there is something to write |
+| `DESCRIPTION` | `Version` | changed | `0.3.0`, so `dev` builds and the suite pass their own floor |
 | `R/heal.R` | `.datom_publish_artifacts()` | changed | Its loop uses `lapply()`, with `.datom_pass_credentials(e)` as the first line of its handler, so a credential failure stops at the first artifact rather than calling the function once per artifact |
 | `R/sync.R` | `datom_sync()` | changed | On a credential failure: says which tables were synced and which were not attempted, then passes the failure on (R4a.2) |
 | `R/utils-path.R` | `.datom_render_readme()`, `.datom_store_constructor_snippet()` | changed | The README snippet shows `credentials = <your function>` for a function-built store, and `endpoint =` when there is one |
@@ -388,7 +396,7 @@ write would stop, and running the approve command again would not fix it.
   field and an empty one are equal (an absent prefix and `""`, through the existing
   `.datom_normalize_prefix()`).
 
-### Older datom and the `endpoint` field: the writer floor (R3.8, decision 16)
+### Older datom: the writer floor (R3.8, decisions 16 and 18)
 
 An older datom ignores `endpoint`: its `.datom_parse_ref()` returns root, prefix and region only,
 and `ref.json` has no format number to refuse on. For a location with an endpoint it therefore goes
@@ -398,16 +406,36 @@ migrated from ..." warning, and an older writer writes there, since its write ch
 (`.datom_check_ref_current()` and the store-versus-`project.yaml` cross-check) compare bucket and
 prefix only.
 
-- **Writes are stopped by the existing writer floor**, `min_writer_version` in `project.yaml`, which
-  0.1.1 onward read on every write (`.datom_check_writer_floor()`). `datom_init_repo()` writes the
-  running version there when the store has an `endpoint`; `datom_repo_set_data_store()` raises it to
-  the running version when the new location has an `endpoint` and the floor is lower or absent, and
-  never lowers it.
-- **Only where an endpoint is recorded**: without one, old and new datom write to the same place,
-  so teammates on 0.2.0 keep writing plain-AWS repos (#155's D11 stands there). One condition per
-  site, which passes the owner's bar for code that only serves older datom.
-- **Not stopped**: 0.1.0, which does not read the floor; and older readers, accepted (R3.7's message
-  is for new readers).
+The owner's intent: a raised floor takes effect the moment the first build at or above it touches
+the repo, and nothing below it commits or pushes after that, apart from a write already in flight.
+
+- **One fixed number**, `.datom_min_writer_version <- "0.3.0"`, with no endpoint condition. Not the
+  running version, which would make a repo created by a later release refuse earlier ones that work.
+  Only the owner raises it. `0.3.0` rather than `0.2.1`: a CRAN fix of 0.2.0, made from `main`
+  without this feature, would be numbered 0.2.1 and must not pass. `DESCRIPTION` goes to `0.3.0` on
+  this branch, so `dev` builds pass their own floor.
+- **Raised by the first commit**, through `.datom_raise_writer_floor()`: `datom_init_repo()` writes
+  it into the first `project.yaml`; every other command that commits raises an absent or lower floor
+  as its own small commit after its opening pull and floor check and before its first step, pushed
+  with its push. For a write, that is after change detection and before the data file upload, and
+  only when there is something to write. It never lowers the floor.
+- **Checked at the start of every command that commits or pushes**: the write routes through their
+  entry check and `.datom_pull_before_write()`, which re-runs it when the pull brought anything in;
+  the four `datom_repo_*` commands through `.datom_writer_floor_gate()`, new here, since they checked
+  nothing. `datom_repo_commit(push = FALSE)` checks the clone as it is, without a pull: a local
+  commit should not need the network, and its later push goes through `datom_repo_push()`, which
+  pulls and checks. `datom_repo_push()` checks and does not raise, since it makes no commit.
+- **No re-check at the push** (decision 18). A write already running when a teammate on a newer
+  release pushes a higher floor still lands: its push-time pull merges the higher floor, and its
+  push carries it, since the write does not touch `project.yaml`. Every command after it refuses at
+  its opening pull. Re-checking there would mean undoing a commit after a merge, the one refusal
+  after a commit, for a window one write long.
+- **Not stopped**: 0.1.0, which does not read the floor; an out-of-date 0.2.0 clone, for one write,
+  because 0.2.0 checks the floor before its only pull, which comes at push time (checked at its
+  release commit `1581240`); a repo made by 0.2.0 or earlier, until a 0.3.0 build first commits to
+  it; and older readers. All accepted and documented.
+- **A reader cannot raise the floor**, and is never checked against it: it lives only in the data
+  repo's `project.yaml`, not in storage, `ref.json` or the manifest.
 
 ### Readers are told when the location is not standard AWS (R3.7, decision 14)
 
@@ -436,6 +464,13 @@ So no separate key check is needed before a write (decision 7). `datom_sync()` s
 its default carries on to the next table when a write failed before changing the clone, which is
 exactly where an expired login fails. The location agreement check (section 6) runs in the entry
 check, before any of these steps, so its stop also leaves nothing half-done.
+
+**The floor raise is a new step before step 1**, taken only the first time a 0.3.0 build writes to a
+repo (section 6). It commits `project.yaml` alone and makes no storage request. A break after it
+leaves an unpushed commit that holds no datom version; under #155 that is no reason to push (heal
+publishes only versions storage lacks), the re-run's raise finds the floor already in place and does
+nothing, and the re-run's push sends both commits. #155's break-at-each-step test of the write routes
+gains this step.
 
 ## 8. Design decisions and choices
 
@@ -501,7 +536,7 @@ The table is R4b in `requirements.md`; this maps each guarded row to its test.
 | FM16 | The sweep on `datom_init_repo()`, like every other command |
 | FM17 | R5.8: each write route stops on each kind of disagreement; connecting warns; the approve command lets the next write through |
 | FM18 | R5.8: the message for a location from `ref.json` that is not standard AWS, and none otherwise |
-| FM19 | R5.9: the floor is written by init with an endpoint and not without, raised by a repoint onto one, never lowered |
+| FM19 | R5.10: init writes the floor; the first commit of each command raises an absent or lower floor and never lowers one; each `datom_repo_*` command refuses before changing anything with a floor of `"99.0.0"`; the raise commit is a step of the break-at-each-step test |
 | (R3.9) | R5.9: moves off MinIO, from S3 to local, onto MinIO, each followed by a write; every location writer agrees with the others for the same store; an unknown `storage.data` key survives a repoint |
 
 ## 11. Correctness properties (what the tests pin)
@@ -529,8 +564,9 @@ The table is R4b in `requirements.md`; this maps each guarded row to its test.
     the credential function (R5.7).
 13. Every record of a location built for the same store compares equal, and a repoint leaves no
     field of the old location behind (R3.9).
-14. A location with an endpoint carries a writer floor at or above the release that wrote it; one
-    without carries none added by this release (R3.8).
+14. Once a 0.3.0 build has committed to a repo, its floor is at least `0.3.0`; no command lowers
+    it; and no command that commits or pushes changes anything when the floor is above the installed
+    version (R3.8).
 
 ## 12. Model escalation (flag at plan time)
 
@@ -607,3 +643,16 @@ Its points arrived already decided with the owner; each claim was verified befor
 | 3 | `datom_repo_set_data_store()` keeps stale location fields | Yes, in R: `utils::modifyList()` kept `endpoint`, and `region` on a move to local | One location shape, one builder, replacement as a set, one comparer (R3.9, decision 17) | No |
 | 4 | The call graph misses functions passed by name | Yes, in R: `findGlobals(merge = FALSE)$functions` lists only names in call position | `merge = TRUE` in the script and the test; re-run: the same nine loops, 136 functions | No |
 | -- | Scope: one spec | -- | Kept as one spec | -- |
+
+### Review 4, of `40f62b1` (2026-11-12)
+
+Its points arrived already decided with the owner, with the intent that a raised floor takes effect
+the moment the first build at or above it touches the repo. Each claim was verified before applying.
+
+| # | Finding | Verified | Outcome | Differs from the review |
+|---|---|---|---|---|
+| 1 | The floor is one fixed number, in the code; `DESCRIPTION` bumped on this branch | Yes: `dev` reports `Version: 0.2.0`, as CRAN does | `.datom_min_writer_version <- "0.3.0"`; `DESCRIPTION` to `0.3.0` (decision 16) | The review named `0.2.1`. A CRAN fix of 0.2.0 made from `main` (the hotfix route in `dev/README.md`) would be 0.2.1 and lack this feature, so the owner took `0.3.0` |
+| 2 | The floor rises at the first commit of a 0.3.0 build | -- | `.datom_raise_writer_floor()`, its own commit before a command's first step (section 6); replaces the endpoint-only floor of review 3 and #155's D11 | `datom_repo_push()` makes no commit, so it checks and does not raise |
+| 3 | One floor check for every command that commits or pushes; a re-check after the push-time pull, undoing the commit when it refuses | Yes: `.datom_check_writer_floor()` runs only from the entry check; the four `datom_repo_*` commands check nothing; the one `git2r::push()` is in `.datom_git_push()`, which pulls and pushes with no check between | `.datom_writer_floor_gate()` at the start of the four `datom_repo_*` commands; **no re-check at the push** (decision 18) | The owner set aside the push-time re-check and undo once its cost was laid out: the one refusal after a commit, a reset after a merge that must spare the user's other files, for a window one write long. That write lowers nothing. Also `datom_repo_commit(push = FALSE)` checks without a pull |
+| 4 | The gap during a move | Yes: `dev/datomanager_scope.md` plans `gov_migrate_data()` | A note there: switch `ref.json` and run `datom_repo_set_data_store()` in one call | No |
+| 5 | 0.2.0 can make one more write after the floor rises | Yes: at 0.2.0's release commit `1581240`, `datom_write()` checks the floor first and pulls only in `.datom_git_push()`, after its commit | NEWS says so next to "upgrade everyone who writes to a repo at the same time" (R6.4) | No |
