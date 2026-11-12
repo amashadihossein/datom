@@ -110,7 +110,8 @@ code in its own file, recorded 2026-10-28). The S3 client builder stays with its
 | `R/forward-compat.R` | `.datom_min_writer_version` | new | The floor constant, `"0.3.0"`. Raised only by the owner, for a real incompatibility. A comment beside it points at the engineering note: raise `DESCRIPTION`'s `Version` with it (R6.7) |
 | `R/forward-compat.R` | `.datom_floor_raised(cfg)` | new | `cfg` (a parsed `project.yaml`) with `min_writer_version` raised to the constant when absent or lower; never lowered. The one rule, used by init, the raise commit and the repoint |
 | `R/forward-compat.R` | `.datom_write_floor_local(conn)` | new | For the write routes: writes `.datom_floor_raised()`'s result to the clone's `project.yaml` when it changes anything, and returns `".datom/project.yaml"` so the caller adds it to its commit; otherwise returns nothing. Makes no commit |
-| `R/heal.R` | `.datom_unfinished_files()`, `.datom_reset_unfinished()` | changed | Also count, and restore from HEAD, `.datom/project.yaml` when its only difference from HEAD is `min_writer_version` raised to the constant: a write that stopped after step 2. Any other difference is left alone, as today |
+| `R/forward-compat.R` | `.datom_reset_floor_leftover(path)` | new | When `.datom/project.yaml` differs from HEAD only in `min_writer_version` raised to `.datom_min_writer_version` (a write that stopped after step 2), restores it from HEAD; otherwise does nothing. `.datom_unfinished_files()` and `.datom_reset_unfinished()` are unchanged and never see `project.yaml` (review 7) |
+| `R/utils-git.R` | `.datom_git_pull()` | changed | Calls `.datom_reset_floor_leftover()` at its start, before it fetches and merges. Every pull goes through it: a write's opening pull, the push-time pull, `datom_pull()`, the pull at connect after a data move, and the `datom_repo_*` floor gate |
 | `R/forward-compat.R` | `.datom_writer_floor_gate(conn, pull = TRUE)` | new | Pull (unless `pull = FALSE`), then `.datom_check_writer_floor()`. Used by the four `datom_repo_*` commands. The write routes get the same two steps from their entry check and `.datom_pull_before_write()`, which re-runs the entry check when it brought anything in |
 | `R/read_write.R`, `R/set.R` | `datom_write()`, `datom_write_set()` | changed | At step 2, with the clone's other files, call `.datom_write_floor_local()` and add what it returns to the `git_files` `.datom_commit_and_publish()` commits. Inside `datom_sync()` the first table whose write commits carries the floor |
 | `DESCRIPTION` | `Version` | changed | `0.3.0`, so `dev` builds and the suite pass their own floor |
@@ -428,9 +429,12 @@ the repo, and nothing below it commits or pushes after that, apart from a write 
     (`.datom_write_left_changes()`); a table that fails at its upload (step 1) has touched nothing,
     and the sync moves on. The first table whose write commits carries the floor;
   - **a write that stops after step 2 and before its commit** leaves the floor edit uncommitted.
-    Heal's reset (`.datom_reset_unfinished()`) restores `project.yaml` from HEAD when its only
-    difference is `min_writer_version` raised to the constant, which is certain to be datom's own
-    leftover; any other difference is left alone. Without it a teammate's change to `project.yaml`
+    Every pull starts with `.datom_reset_floor_leftover()`, which restores `project.yaml` from
+    HEAD when its only difference is `min_writer_version` raised to the constant, which is certain
+    to be datom's own leftover; any other difference is left alone. It is its own step, not part of
+    heal's reset of unfinished artifact work: that list (`.datom_unfinished_files()`) is read by four
+    callers as artifacts' files, and `.datom_unfinished_owners()` would report `project.yaml` as an
+    artifact named `.datom` (review 7). Without it a teammate's change to `project.yaml`
     would block the next pull (git refuses to merge into a file with local changes), and the re-run
     would find the floor already raised in the working tree and never commit it;
   - `datom_repo_set_data_store()` sets it inside its own commit, which already rewrites
@@ -489,8 +493,8 @@ check, before any of these steps, so its stop also leaves nothing half-done.
 
 **The floor raise adds no step** (review 6): the first time a 0.3.0 build writes to a repo, step 2
 also writes the raised floor into `project.yaml`, and step 3 commits it with the rest. A break before
-step 3 leaves the floor edit uncommitted; heal's reset restores it with the write's other files, and
-the re-run writes and commits it again. A break after step 3 is #155's case unchanged: the commit
+step 3 leaves the floor edit uncommitted; heal resets the write's other files, the re-run's opening
+pull restores `project.yaml`, and the re-run writes and commits the floor again. A break after step 3 is #155's case unchanged: the commit
 holds the floor, and the re-run pushes and publishes it. #155's break-at-each-step test checks both,
 with a teammate's floor raise pushed before the re-run.
 
@@ -558,7 +562,7 @@ The table is R4b in `requirements.md`; this maps each guarded row to its test.
 | FM16 | The sweep on `datom_init_repo()`, like every other command |
 | FM17 | R5.8: each write route stops on each kind of disagreement; connecting warns; the approve command lets the next write through |
 | FM18 | R5.8: the message for a location from `ref.json` that is not standard AWS, and none otherwise |
-| FM19 | R5.10: init writes the floor; a write and the repoint raise an absent or lower floor and never lower one; the other three `datom_repo_*` commands do not raise, and `datom_repo_commit()` commits exactly the staged files; each `datom_repo_*` command refuses before changing anything with a floor of `"99.0.0"`; a write carries the floor in its own commit, with no separate commit; a first sync whose first table's upload fails goes on to the next table; a break after step 2 is reset and finished by the re-run, a teammate's floor raise in between; a `project.yaml` with any other difference is not reset |
+| FM19 | R5.10: init writes the floor; a write and the repoint raise an absent or lower floor and never lower one; the other three `datom_repo_*` commands do not raise, and `datom_repo_commit()` commits exactly the staged files; each `datom_repo_*` command refuses before changing anything with a floor of `"99.0.0"`; a write carries the floor in its own commit, with no separate commit; a first sync whose first table's upload fails goes on to the next table; a break after step 2 is reset and finished by the re-run, a teammate's `project.yaml` change in between; after that break the `datom_repo_*` commands and `datom_pull()` run, naming no artifact `.datom`; a `project.yaml` with any other difference is not reset |
 | (R3.9) | R5.9: moves off MinIO, from S3 to local, onto MinIO, each followed by a write; every location writer agrees with the others for the same store; an unknown `storage.data` key survives a repoint |
 
 ## 11. Correctness properties (what the tests pin)
@@ -692,4 +696,10 @@ the moment the first build at or above it touches the repo. Each claim was verif
 | # | Finding | Verified | Outcome | Differs from the review |
 |---|---|---|---|---|
 | 1 | Every datom commit takes the whole index, so the write routes' separate raise commit would carry staged files too, and reaches GitHub no sooner | Yes: `.datom_git_commit()` adds its files, then `git2r::commit()` commits everything staged | The floor goes into the command's own commit everywhere: `.datom_write_floor_local()` at step 2, `project.yaml` added to the write's commit; `.datom_raise_writer_floor()`, the sync's raise before its loop and the `.healed` skip removed (decision 19 amended) | No |
-| 2 | A write stopped after step 2 leaves the floor edit uncommitted, which can block the next pull | Yes: heal resets only an artifact's documents and `.datom/manifest.json`; `.datom_unfinished_files()` does not count `project.yaml` (and `R/heal.R` says heal never resets it) | Heal's reset restores `project.yaml` when its only difference is the raised floor; anything else is left alone | Added: without the reset the re-run would also never commit the floor, since the working tree already holds it |
+| 2 | A write stopped after step 2 leaves the floor edit uncommitted, which can block the next pull | Yes: heal resets only an artifact's documents and `.datom/manifest.json`; `.datom_unfinished_files()` does not count `project.yaml` (and `R/heal.R` says heal never resets it) | Heal's reset restores `project.yaml` when its only difference is the raised floor; anything else is left alone (superseded by review 7) | Added: without the reset the re-run would also never commit the floor, since the working tree already holds it |
+
+### Review 7, of `4da3202` (2026-11-12)
+
+| # | Finding | Verified | Outcome | Differs from the review |
+|---|---|---|---|---|
+| 1 | Adding `project.yaml` to `.datom_unfinished_files()` breaks its other callers, which read every file but the manifest as an artifact's | Yes: four callers (heal's reset, `.datom_write_left_changes()`, `.datom_check_before_commit()`, `.datom_stop_pull_blocked()`); `.datom_unfinished_owners()` splits by folder, so the file becomes an artifact `.datom`; heal runs before the opening pull in every write route | That change reverted; a small `.datom_reset_floor_leftover()` restores the leftover floor edit | The review called it at heal's start and in the `datom_repo_*` floor gate. The owner took one call inside `.datom_git_pull()`, which also covers `datom_pull()` and the pull at connect after a data move |

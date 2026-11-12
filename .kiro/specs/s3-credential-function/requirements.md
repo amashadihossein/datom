@@ -26,7 +26,10 @@ section 14, review 5): the floor is raised only at init, by the write routes at 
 (once per `datom_sync()`), and by `datom_repo_set_data_store()`. R3.8, R5.10, R6.5 and AC15
 changed; R6.7 and decision 19 added. Amended a seventh time the same day, after a sixth review
 (`design.md`, section 14, review 6): the raise goes into the command's own commit everywhere, and
-heal's reset restores a leftover floor edit. R3.8, R5.10 and decision 19 changed.
+heal's reset restores a leftover floor edit. R3.8, R5.10 and decision 19 changed. Amended an
+eighth time the same day, after a seventh review (`design.md`, section 14, review 7): the leftover
+floor edit is restored by its own small step at the start of every pull, not by the reset of
+unfinished artifact work. R3.8 and R5.10 changed.
 **Test baseline**: 6354 expectations, 0 failed, 0 skipped (`devtools::test()` on this branch after
 merging `dev` at `c539516`, 2026-11-10; 5142 on `347a403` before #155).
 **Reference contract**: datom-py's `.kiro/specs/s3-reader/requirements.md`, R3. Where R differs, the
@@ -226,12 +229,14 @@ handed in is specific to paws.
        part of the command's own commit, never a commit of its own**, so no step a caller tracks
        moves HEAD by itself. A table that fails at its data upload (step 1) has not touched
        `project.yaml`, so the sync moves on;
-     - a write that stops after step 2 and before its commit leaves the floor edit uncommitted; the
-       reset of unfinished work before the next write restores `.datom/project.yaml` from HEAD when
-       its only difference is `min_writer_version` raised to the constant, which is certain to be
-       datom's own leftover. Any other difference is left alone. Without it, a teammate's change to
-       `project.yaml` would block the next pull, and the re-run would find the floor already raised
-       and never commit it;
+     - a write that stops after step 2 and before its commit leaves the floor edit uncommitted.
+       Every pull, at its start, restores `.datom/project.yaml` from HEAD when its only difference
+       is `min_writer_version` raised to the constant, which is certain to be datom's own leftover
+       (amended 2026-11-12, review 7). Any other difference is left alone. Without it, a teammate's
+       change to `project.yaml` would block the pull, and the re-run would find the floor already
+       raised and never commit it. This is its own small step, not part of the reset of unfinished
+       artifact work: that list is read as artifacts' files by four callers, which would report
+       `project.yaml` as an artifact named `.datom`;
      - `datom_repo_set_data_store()` sets it inside its own commit, which already rewrites
        `project.yaml`.
      - `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_push()` check the floor
@@ -395,8 +400,11 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
       fails and `continue_on_error = TRUE`, goes on to the next table, and the first table that
       commits carries the floor;
     - #155's break-at-each-step test: a break after step 2 leaves the floor edit; the re-run, with a
-      teammate's floor raise pushed in between, pulls, finishes, and leaves one floor in
-      `project.yaml`; a `project.yaml` with any other uncommitted difference is not reset.
+      teammate's `project.yaml` change pushed in between, pulls, finishes, and the floor lands in
+      that write's own commit; a `project.yaml` with any other uncommitted difference is not reset;
+    - after that break, `datom_repo_set_data_store()`, `datom_repo_commit()` and `datom_pull()` run
+      without refusing, no message names an artifact `.datom`, and `datom_sync()`'s "failed
+      partway" behaviour is unchanged.
 
 ### R6. Documentation
 
