@@ -56,7 +56,7 @@ each storage request -> .datom_s3_get_client(conn)
 | Connection | as today, but `cred_id` + `credentials` (and `gov_cred_id` + `gov_credentials`) instead of `client` / `gov_client`; `endpoint` and `gov_endpoint` | as today, with `client` / `gov_client`; `endpoint` and `gov_endpoint` |
 | Private memory (`.datom_cred_registry`) | per id: the current keys and their expiry (`POSIXct`, or `NULL` for keys that do not expire) | nothing |
 | `ref.json` (governance) | `current` gains an optional `endpoint` beside type, root, prefix, region | same |
-| `.datom/project.yaml` (data repo) | `storage.data` gains an optional `endpoint` beside type, root, prefix, region (one shape, section 6); `min_writer_version` is raised to `0.3.0` by the first commit of a 0.3.0 build | same |
+| `.datom/project.yaml` (data repo) | `storage.data` gains an optional `endpoint` beside type, root, prefix, region (one shape, section 6); `min_writer_version` is raised to `0.3.0` at init, by the first write of a 0.3.0 build, or by a repoint | same |
 
 No object, in either form, holds a paws client for a function-built store: one is built per request
 and goes out of scope with it. Today one `endpoint` (an argument of `datom_get_conn()`) applied to
@@ -106,11 +106,13 @@ code in its own file, recorded 2026-10-28). The S3 client builder stays with its
 | `R/forward-compat.R` | `.datom_check_write_entry()` | changed | Calls `.datom_check_location_agrees(conn)` when governance is attached. Every write route already passes through it |
 | `R/read_write.R`, `R/set.R` | `datom_write()`, `datom_write_set()` | changed | Drop their `.datom_check_ref_current()` call, now in the entry check |
 | `R/repo.R` | `datom_repo_set_data_store()` | changed | Replaces `storage.data`'s location fields as a set: removes every name in `.datom_location_fields`, then adds `.datom_location_record(new_store)`, keeping any other key (it merged with `utils::modifyList()`, which kept stale fields). It is the approval of R3.6, and does not call the entry check, so the location check never blocks it; it does pass the floor gate at its start, like the other three `datom_repo_*` commands (next row) |
-| `R/repo.R` | `datom_repo_set_data_store()`, `datom_repo_attach_governance()`, `datom_repo_commit()`, `datom_repo_push()` | changed | Call `.datom_writer_floor_gate()` before anything changes (R3.8): they checked no floor until now. `datom_repo_push()` checks without raising, since it makes no commit; `datom_repo_commit(push = FALSE)` checks the clone as it is, without a pull |
-| `R/forward-compat.R` | `.datom_min_writer_version` | new | The floor constant, `"0.3.0"`. Raised only by the owner, for a real incompatibility |
-| `R/forward-compat.R` | `.datom_raise_writer_floor(conn)` | new | Raises `min_writer_version` in the clone's `project.yaml` to the constant when absent or lower, as its own small commit (`Raise min_writer_version to 0.3.0`), pushed with the command's push; never lowers it; does nothing otherwise. The one place the raise happens |
-| `R/forward-compat.R` | `.datom_writer_floor_gate(conn, pull = TRUE, raise = TRUE)` | new | Pull (unless `pull = FALSE`), `.datom_check_writer_floor()`, then `.datom_raise_writer_floor()` (unless `raise = FALSE`). Used by the four `datom_repo_*` commands. The write routes get the same three steps from their entry check, `.datom_pull_before_write()` (which re-runs the entry check when it brought anything in) and a raise just before their first step |
-| `R/read_write.R`, `R/set.R` | `datom_write()`, `datom_write_set()` | changed | Call `.datom_raise_writer_floor()` after change detection and before the data file upload, when there is something to write |
+| `R/repo.R` | `datom_repo_set_data_store()`, `datom_repo_attach_governance()`, `datom_repo_commit()`, `datom_repo_push()` | changed | Call `.datom_writer_floor_gate()` before anything changes (R3.8): they checked no floor until now. None makes a separate raise commit. `datom_repo_set_data_store()` sets the floor inside its own commit, with `.datom_floor_raised(cfg)`; the other three never raise (decision 19). `datom_repo_commit(push = FALSE)` checks the clone as it is, without a pull |
+| `R/forward-compat.R` | `.datom_min_writer_version` | new | The floor constant, `"0.3.0"`. Raised only by the owner, for a real incompatibility. A comment beside it points at the engineering note: raise `DESCRIPTION`'s `Version` with it (R6.7) |
+| `R/forward-compat.R` | `.datom_floor_raised(cfg)` | new | `cfg` (a parsed `project.yaml`) with `min_writer_version` raised to the constant when absent or lower; never lowered. The one rule, used by init, the raise commit and the repoint |
+| `R/forward-compat.R` | `.datom_raise_writer_floor(conn)` | new | For the write routes: writes `.datom_floor_raised()`'s result to the clone's `project.yaml` and commits it alone (`Raise min_writer_version to 0.3.0`) when it changed anything, pushed with the command's push; does nothing otherwise |
+| `R/forward-compat.R` | `.datom_writer_floor_gate(conn, pull = TRUE)` | new | Pull (unless `pull = FALSE`), then `.datom_check_writer_floor()`. Used by the four `datom_repo_*` commands. The write routes get the same two steps from their entry check and `.datom_pull_before_write()`, which re-runs the entry check when it brought anything in |
+| `R/read_write.R`, `R/set.R` | `datom_write()`, `datom_write_set()` | changed | Call `.datom_raise_writer_floor()` after their opening pull and change detection, before the data file upload, when there is something to write; skipped when `.healed = TRUE`, since `datom_sync()` raised already |
+| `R/sync.R` | `datom_sync()` | changed | Calls `.datom_raise_writer_floor()` once, after its batch's opening pull (`.datom_pull_before_write()`) and before the per-table loop, when there is a table to write, so no table's write moves HEAD with a raise commit (review 5, point 1) |
 | `DESCRIPTION` | `Version` | changed | `0.3.0`, so `dev` builds and the suite pass their own floor |
 | `R/heal.R` | `.datom_publish_artifacts()` | changed | Its loop uses `lapply()`, with `.datom_pass_credentials(e)` as the first line of its handler, so a credential failure stops at the first artifact rather than calling the function once per artifact |
 | `R/sync.R` | `datom_sync()` | changed | On a credential failure: says which tables were synced and which were not attempted, then passes the failure on (R4a.2) |
@@ -414,17 +416,32 @@ the repo, and nothing below it commits or pushes after that, apart from a write 
   Only the owner raises it. `0.3.0` rather than `0.2.1`: a CRAN fix of 0.2.0, made from `main`
   without this feature, would be numbered 0.2.1 and must not pass. `DESCRIPTION` goes to `0.3.0` on
   this branch, so `dev` builds pass their own floor.
-- **Raised by the first commit**, through `.datom_raise_writer_floor()`: `datom_init_repo()` writes
-  it into the first `project.yaml`; every other command that commits raises an absent or lower floor
-  as its own small commit after its opening pull and floor check and before its first step, pushed
-  with its push. For a write, that is after change detection and before the data file upload, and
-  only when there is something to write. It never lowers the floor.
+- **Raised where data is written** (decision 19), all through `.datom_floor_raised()`, which never
+  lowers it:
+  - `datom_init_repo()` writes it into the first `project.yaml`;
+  - a write route makes a small raise commit at its opening pull, after the floor check and before
+    its first step, when there is something to write, pushed with its push. For `datom_write()` and
+    `datom_write_set()` that is after change detection and before the data file upload;
+    `datom_sync()` raises once, before its per-table loop. **The raise belongs at the command's
+    opening pull, never inside a step a caller tracks**: `datom_sync()` records HEAD before each
+    table and reads any move as "this write failed partway" (`.datom_write_left_changes()`), so a
+    raise inside the first table's write would stop the whole sync when that write failed at its
+    upload;
+  - `datom_repo_set_data_store()` sets it inside its own commit, which already rewrites
+    `project.yaml`.
+  - `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_push()` never raise. A
+    separate raise commit in `datom_repo_commit()` would carry the user's staged files under the
+    raise's message, since a commit takes the whole index; and none of the three writes data, so a
+    repo only they touch gets its floor at the next write.
 - **Checked at the start of every command that commits or pushes**: the write routes through their
   entry check and `.datom_pull_before_write()`, which re-runs it when the pull brought anything in;
   the four `datom_repo_*` commands through `.datom_writer_floor_gate()`, new here, since they checked
   nothing. `datom_repo_commit(push = FALSE)` checks the clone as it is, without a pull: a local
   commit should not need the network, and its later push goes through `datom_repo_push()`, which
-  pulls and checks. `datom_repo_push()` checks and does not raise, since it makes no commit.
+  pulls and checks.
+- **Raising the constant later**: whoever raises `.datom_min_writer_version` bumps `DESCRIPTION`'s
+  `Version` to at least that number in the same change, or `dev` builds and the suite refuse their own
+  repos. Written in `dev/engineering-notes.md` next to the floor, with a comment at the constant (R6.7).
 - **No re-check at the push** (decision 18). A write already running when a teammate on a newer
   release pushes a higher floor still lands: its push-time pull merges the higher floor, and its
   push carries it, since the write does not touch `project.yaml`. Every command after it refuses at
@@ -536,7 +553,7 @@ The table is R4b in `requirements.md`; this maps each guarded row to its test.
 | FM16 | The sweep on `datom_init_repo()`, like every other command |
 | FM17 | R5.8: each write route stops on each kind of disagreement; connecting warns; the approve command lets the next write through |
 | FM18 | R5.8: the message for a location from `ref.json` that is not standard AWS, and none otherwise |
-| FM19 | R5.10: init writes the floor; the first commit of each command raises an absent or lower floor and never lowers one; each `datom_repo_*` command refuses before changing anything with a floor of `"99.0.0"`; the raise commit is a step of the break-at-each-step test |
+| FM19 | R5.10: init writes the floor; a write and the repoint raise an absent or lower floor and never lower one; the other three `datom_repo_*` commands do not raise, and `datom_repo_commit()` commits exactly the staged files; each `datom_repo_*` command refuses before changing anything with a floor of `"99.0.0"`; a first sync whose first table's upload fails goes on to the next table; the raise commit is a step of the break-at-each-step test |
 | (R3.9) | R5.9: moves off MinIO, from S3 to local, onto MinIO, each followed by a write; every location writer agrees with the others for the same store; an unknown `storage.data` key survives a repoint |
 
 ## 11. Correctness properties (what the tests pin)
@@ -656,3 +673,11 @@ the moment the first build at or above it touches the repo. Each claim was verif
 | 3 | One floor check for every command that commits or pushes; a re-check after the push-time pull, undoing the commit when it refuses | Yes: `.datom_check_writer_floor()` runs only from the entry check; the four `datom_repo_*` commands check nothing; the one `git2r::push()` is in `.datom_git_push()`, which pulls and pushes with no check between | `.datom_writer_floor_gate()` at the start of the four `datom_repo_*` commands; **no re-check at the push** (decision 18) | The owner set aside the push-time re-check and undo once its cost was laid out: the one refusal after a commit, a reset after a merge that must spare the user's other files, for a window one write long. That write lowers nothing. Also `datom_repo_commit(push = FALSE)` checks without a pull |
 | 4 | The gap during a move | Yes: `dev/datomanager_scope.md` plans `gov_migrate_data()` | A note there: switch `ref.json` and run `datom_repo_set_data_store()` in one call | No |
 | 5 | 0.2.0 can make one more write after the floor rises | Yes: at 0.2.0's release commit `1581240`, `datom_write()` checks the floor first and pulls only in `.datom_git_push()`, after its commit | NEWS says so next to "upgrade everyone who writes to a repo at the same time" (R6.4) | No |
+
+### Review 5, of `fd138e0` (2026-11-12)
+
+| # | Finding | Verified | Outcome | Differs from the review |
+|---|---|---|---|---|
+| 1 | A raise inside the first table's write makes `datom_sync()` read a failed write as "failed partway" | Yes, by reading: `datom_sync()` records HEAD before each table; `.datom_write_left_changes()` returns TRUE once HEAD moved | `datom_sync()` raises once, before its loop; the rule "the raise belongs at the opening pull" (section 6) | No |
+| 2 | `datom_repo_commit()` would raise even with nothing to commit | Yes: it decides "made a commit" by comparing HEAD before and after | Superseded: it never raises (decision 19) | Found while checking: a separate raise commit takes everything staged, so the user's files would land in the raise commit. Laid out as scenarios, the owner chose to raise only where data is written: init, the write routes, and inside the repoint's own commit |
+| 3 | Whoever raises the floor bumps `DESCRIPTION` | Yes: no engineering note covers the floor | R6.7: a note and a comment at the constant | No |

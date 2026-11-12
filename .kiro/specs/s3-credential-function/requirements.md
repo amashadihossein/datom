@@ -21,7 +21,10 @@ The spec stays one spec (owner, 2026-11-11). Amended a fifth time, after a fourt
 decided with the owner on 2026-11-12 (`design.md`, section 14, review 4): the writer floor becomes
 a fixed `0.3.0`, raised by the first commit of a 0.3.0 build and checked at the start of every
 command that commits or pushes. R3.8, R5.9, R6.4, R6.5, FM19, decision 16 and AC15 changed; FM20,
-FM21 and decision 18 added.
+FM21 and decision 18 added. Amended a sixth time the same day, after a fifth review (`design.md`,
+section 14, review 5): the floor is raised only at init, by the write routes at their opening pull
+(once per `datom_sync()`), and by `datom_repo_set_data_store()`. R3.8, R5.10, R6.5 and AC15
+changed; R6.7 and decision 19 added.
 **Test baseline**: 6354 expectations, 0 failed, 0 skipped (`devtools::test()` on this branch after
 merging `dev` at `c539516`, 2026-11-10; 5142 on `347a403` before #155).
 **Reference contract**: datom-py's `.kiro/specs/s3-reader/requirements.md`, R3. Where R differs, the
@@ -210,13 +213,23 @@ handed in is specific to paws.
      `DESCRIPTION` goes to `Version: 0.3.0` on this branch, so `dev` builds and the suite pass their
      own floor. `0.3.0`, not `0.2.1`: a CRAN fix of 0.2.0 would be 0.2.1, made from `main` without
      this feature, and must not pass the floor.
-   - **The floor rises at the first commit**: every command that commits to the data repo raises
+   - **The floor rises where data is written** (decision 19, amended 2026-11-12): three places raise
      `min_writer_version` in `.datom/project.yaml` to the constant when it is absent or lower, and
-     never lowers it. `datom_init_repo()` writes it into the first `project.yaml`. Elsewhere the
-     raise is its own small commit, made after the command's opening pull and floor check and before
-     its first step (for a write, before the data file upload, and only when there is something to
-     write), and pushed with the command's push. One function does the raise. `datom_repo_push()`
-     makes no commit, so it checks the floor and does not raise it.
+     none ever lowers it. One function does the raise.
+     - `datom_init_repo()` writes it into the first `project.yaml`;
+     - the write routes (`datom_write()`, `datom_write_set()`, `datom_sync()`) make it their own small
+       commit at the command's opening pull, after the floor check and before the first step, only
+       when there is something to write, pushed with the command's push. `datom_sync()` raises once,
+       after its batch's opening pull and before its per-table loop, so no table's write makes a
+       raise commit. The rule: **the raise belongs at the command's opening pull, never inside a step
+       a caller tracks** (a raise inside the first table's write would move HEAD, and a failure of
+       that write before its own commit would read as "failed partway" and stop the sync);
+     - `datom_repo_set_data_store()` sets it inside its own commit, which already rewrites
+       `project.yaml`.
+     - `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_push()` check the floor
+       and never raise it. A separate raise commit there would take whatever the user had staged (a
+       commit takes the whole index), and none of them writes data, so a repo they alone touch gets
+       its floor at the next write.
    - **One floor check at the start of every command that commits or pushes**: the write routes,
      through the entry check, as today, and now also `datom_repo_set_data_store()`,
      `datom_repo_attach_governance()`, `datom_repo_commit()` and `datom_repo_push()`, which check
@@ -365,8 +378,12 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
     - each of `datom_repo_set_data_store()`, `datom_repo_attach_governance()`, `datom_repo_commit()`
       and `datom_repo_push()`, with a floor above the installed version (`"99.0.0"`), refuses before
       changing anything;
-    - the raise: `datom_init_repo()` writes the constant; the first commit by a command raises an
-      absent or lower floor; a higher floor is never lowered; `datom_repo_push()` does not raise;
+    - the raise: `datom_init_repo()` writes the constant; a write and `datom_repo_set_data_store()`
+      raise an absent or lower floor; a higher floor is never lowered; `datom_repo_commit()`,
+      `datom_repo_attach_governance()` and `datom_repo_push()` do not raise, and
+      `datom_repo_commit()` with staged files commits exactly them;
+    - a first 0.3.0 `datom_sync()` of a repo with no floor, where the first table's data upload
+      fails and `continue_on_error = TRUE`, goes on to the next table;
     - #155's break-at-each-step test of the write routes includes the raise commit as a step, and a
       re-run after a break there finishes the write.
 
@@ -387,8 +404,11 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
    Then the credential function, the endpoint on the store, and the agreement check before writes.
 5. `?datom_store_s3`: the `endpoint` argument (moved from `datom_get_conn()`, with its notes on
    S3-compatible services); `?datom_repo_set_data_store`: its use as the approval of R3.6, that it
-   replaces the location fields as a set. The help of every command that commits says it raises
-   `min_writer_version`, and of every command that commits or pushes that it checks it (R3.8).
+   replaces the location fields as a set. The help of each command that raises `min_writer_version`
+   says so, and of every command that commits or pushes that it checks it (R3.8).
+7. `dev/engineering-notes.md`, next to the writer floor: whoever raises `.datom_min_writer_version`
+   bumps `DESCRIPTION`'s `Version` to at least that number in the same change, or `dev` builds and
+   the suite refuse their own repos. A comment beside the constant points at the note.
 6. **The pattern rule, where every session reads it** (decision 15): a line in the "Don'ts" of
    `.github/copilot-instructions.md`, and the credential case added to "Two ways a condition's class
    silently disappears" in `dev/engineering-notes.md`.
@@ -505,7 +525,7 @@ Each is taken one at a time with the owner and recorded here.
     at each site, and a code-reading test (about a second of CI, deterministic) fails on a new loop or
     handler that breaks it. The design had broken the engineering note's rule while the note was
     only loaded on demand.
-16. **The writer floor is a fixed `0.3.0`, raised by the first commit of a 0.3.0 build. DECIDED
+16. **The writer floor is a fixed `0.3.0`, raised by a 0.3.0 build (where: decision 19). DECIDED
     (owner, 2026-11-12) (R3.8).** Replaces the decision of 2026-11-11 (a floor only where an
     endpoint is recorded, chosen to keep 0.2.0 teammates writing plain-AWS repos), and #155's D11
     (mixed-version teams not guarded) for every repo a 0.3.0 build commits to: the owner is cutting
@@ -528,6 +548,14 @@ Each is taken one at a time with the owner and recorded here.
     anyway. It closes a window as long as one write in flight, which opens only when a later release
     raises the floor, narrower than the 0.2.0 exposure already accepted. That one write lowers
     nothing: it does not change `project.yaml`, so its push carries the merged, higher floor.
+19. **The floor is raised only where data is written. DECIDED (owner, 2026-11-12) (R3.8).** At init,
+    at the opening pull of a write route (once per `datom_sync()`), and inside
+    `datom_repo_set_data_store()`'s own commit. `datom_repo_commit()` and
+    `datom_repo_attach_governance()` only check. Set aside: raising inside every committing command's
+    own commit, or a separate raise commit refused when files are staged. A separate raise commit in
+    `datom_repo_commit()` would carry the user's staged files under the raise's message; and the
+    floor needs to be on GitHub only before an old build can write data, which only the write routes
+    do.
 
 ## Parity with datom-py
 
@@ -567,5 +595,5 @@ PR (one repo per change). Points to carry over:
 | AC12 | With governance attached, every write route stops before changing anything when `ref.json`, `project.yaml` and the connection disagree on location; `datom_get_conn()` warns instead of stopping; after `datom_repo_set_data_store()` the write goes through | R3.6 |
 | AC13 | A location from `ref.json` that is not standard AWS S3 produces a message at connect; one from the caller's own store does not | R3.7 |
 | AC14 | The code-reading test passes on the finished code and fails when one pass-on line is removed or one `lapply()` turned back into `purrr::map()` | R5.7 |
-| AC15 | `min_writer_version` is written by init and raised to `0.3.0` by the first commit of any command, never lowered; every command that commits or pushes refuses before changing anything when the floor is above the installed version | R3.8 |
+| AC15 | `min_writer_version` is written by init and raised to `0.3.0` by a write or `datom_repo_set_data_store()`, never lowered; every command that commits or pushes refuses before changing anything when the floor is above the installed version | R3.8 |
 | AC16 | After a move off MinIO, from S3 to a local folder, or onto MinIO, approved once, the next write goes through; every writer of a location record agrees with the others for the same store | R3.9 |
