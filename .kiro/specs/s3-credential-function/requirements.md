@@ -19,7 +19,8 @@ third design review decided with the owner on 2026-11-11 (`design.md`, section 1
 R5.7, R6.5, FM19 and decision 14 changed; R3.8, R3.9, R5.9, decisions 16-17 and AC15-AC16 added.
 The spec stays one spec (owner, 2026-11-11). Amended a fifth time, after a fourth design review
 decided with the owner on 2026-11-12 (`design.md`, section 14, review 4): the writer floor becomes
-a fixed `0.3.0`, raised by the first commit of a 0.3.0 build and checked at the start of every
+a fixed `0.3.0`, raised once a 0.3.0 build has initialised the repo, written to it, or repointed
+it, and checked at the start of every
 command that commits or pushes. R3.8, R5.9, R6.4, R6.5, FM19, decision 16 and AC15 changed; FM20,
 FM21 and decision 18 added. Amended a sixth time the same day, after a fifth review (`design.md`,
 section 14, review 5): the floor is raised only at init, by the write routes at their opening pull
@@ -205,7 +206,8 @@ handed in is specific to paws.
    in their own store. A forged `ref.json` can still feed readers forged data, as it can today by
    naming another AWS bucket: readers have no second record to check against. The help recommends
    tight write access to the governance store, with versioning and an audit log on it.
-8. **Older writers are refused once a 0.3.0 build has committed to the repo** (decisions 16 and
+8. **Older writers are refused once a 0.3.0 build has initialised the repo, written to it, or
+   repointed it** (decisions 16 and
    18; rewritten 2026-11-12, owner). An older datom ignores `endpoint` (its `.datom_parse_ref()`
    reads root, prefix and region only, and its write checks compare bucket and prefix only), so for
    a location with an endpoint it would write to standard AWS, into a same-named bucket if one
@@ -256,7 +258,8 @@ handed in is specific to paws.
      higher floor still lands; every command after it refuses at its opening pull. Documented.
    - **A reader cannot raise the floor**: readers have no clone and do not push. Readers are never
      checked against it either, since it lives only in `project.yaml`.
-   - Repos made by 0.2.0 or earlier carry no floor until their first commit by a 0.3.0 build; a
+   - Repos made by 0.2.0 or earlier carry no floor until a 0.3.0 build has initialised, written
+     to or repointed them; a
      0.2.0 writer can write there until then. Accepted.
    - 0.1.1 onward read the floor and refuse; 0.1.0 does not read it and cannot be stopped. 0.2.0
      checks the floor at the start of a write, before its only pull, which comes at push time, so an
@@ -352,9 +355,9 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 | FM16 | Login expires during `datom_init_repo()` after its push (added 2026-11-10, reworded the same day) | The credential failure. Re-running `datom_init_repo()` after logging in refuses and names the repair (`datom_get_conn()`, then `datom_validate(conn, fix = TRUE)`) | test | yes |
 | FM17 | `ref.json` points somewhere `project.yaml` does not: a move not yet pulled, or a change made to governance alone (added 2026-11-10) | `datom_get_conn()` warns; every write stops before changing anything, naming the locations, reconnecting, and the approve command (R3.6) | test | yes |
 | FM18 | `ref.json` sends readers somewhere other than standard AWS (added 2026-11-10) | A message at connect saying where the data comes from (R3.7). A forged `ref.json` can still feed readers forged data | test | yes |
-| FM19 | An older datom meets a project whose location records an `endpoint` (added 2026-11-10, reworded 2026-11-11 and 12) | It ignores the field and goes to standard AWS. Usually that fails there; but after a move to another service that kept the bucket name, the old copy kept until its sunset answers. **Writes**: refused by the writer floor (R3.8) once a 0.3.0 build has committed to the repo, on 0.1.1 onward; 0.1.0 cannot be stopped; an out-of-date 0.2.0 clone makes one more write. **Reads**: an older reader reads the old copy with only the "Data was migrated" warning (accepted) | test (the floor is written, raised and checked, R5.10) | yes |
+| FM19 | An older datom meets a project whose location records an `endpoint` (added 2026-11-10, reworded 2026-11-11 and 12) | It ignores the field and goes to standard AWS. Usually that fails there; but after a move to another service that kept the bucket name, the old copy kept until its sunset answers. **Writes**: refused by the writer floor (R3.8) once a 0.3.0 build has initialised the repo, written to it, or repointed it, on 0.1.1 onward; 0.1.0 cannot be stopped; an out-of-date 0.2.0 clone makes one more write. **Reads**: an older reader reads the old copy with only the "Data was migrated" warning (accepted) | test (the floor is written, raised and checked, R5.10) | yes |
 | FM20 | A teammate on a newer release pushes a higher floor while this clone's write is running (added 2026-11-12) | That one write lands; every command after it refuses at its opening pull. The write publishes one version of its own artifact and lowers nothing | | yes |
-| FM21 | A repo made by 0.2.0 or earlier, not yet committed to by a 0.3.0 build (added 2026-11-12) | No floor yet: a 0.2.0 writer can still write there | | yes |
+| FM21 | A repo made by 0.2.0 or earlier, not yet written to or repointed by a 0.3.0 build (added 2026-11-12) | No floor yet: a 0.2.0 writer can still write there | | yes |
 
 ### R5. Tests
 
@@ -424,7 +427,7 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
    a saved session or cache can write them to disk; the function form keeps them out. Recommend
    never saving the workspace (`usethis::use_blank_slate()`).
 4. `NEWS.md`: the four breaking changes of R1.2 first, each with what to do instead, and the writer
-   floor: the first commit by 0.3.0 makes a repo refuse writers older than 0.3.0. Next to the
+   floor: the first write or repoint by 0.3.0 makes a repo refuse writers older than 0.3.0. Next to the
    existing "upgrade everyone who writes to a repo at the same time": an out-of-date 0.2.0 clone can
    make one more write after the floor rises, and a write already in flight when it rises lands.
    Then the credential function, the endpoint on the store, and the agreement check before writes.

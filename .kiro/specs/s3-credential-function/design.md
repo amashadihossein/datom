@@ -7,8 +7,8 @@ each item landed is in section 13. Three reviews (of `53b4a71` and `030b07f` on 
 `55ce81f` on 2026-11-11) were evaluated with the owner point by point and their outcomes are applied
 here; the record is section 14. The second moved the endpoint onto the store and added the location
 agreement check; the third added one shape for a location record and a writer floor; the fourth (of
-`40f62b1`, 2026-11-12) made the floor a fixed `0.3.0`, raised by the first commit and checked by
-every command that commits or pushes (section 6).
+`40f62b1`, 2026-11-12) made the floor a fixed `0.3.0`, raised once a 0.3.0 build has initialised, written to or
+repointed the repo, and checked by every command that commits or pushes (section 6).
 
 Read first: `requirements.md` (approved 2026-10-27, amended five times, 2026-11-10 to 12).
 Decisions 1-18 referred to here are recorded there; DD1 and the choices in section 8 are this
@@ -108,7 +108,7 @@ code in its own file, recorded 2026-10-28). The S3 client builder stays with its
 | `R/repo.R` | `datom_repo_set_data_store()` | changed | Replaces `storage.data`'s location fields as a set: removes every name in `.datom_location_fields`, then adds `.datom_location_record(new_store)`, keeping any other key (it merged with `utils::modifyList()`, which kept stale fields). It is the approval of R3.6, and does not call the entry check, so the location check never blocks it; it does pass the floor gate at its start, like the other three `datom_repo_*` commands (next row) |
 | `R/repo.R` | `datom_repo_set_data_store()`, `datom_repo_attach_governance()`, `datom_repo_commit()`, `datom_repo_push()` | changed | Call `.datom_writer_floor_gate()` before anything changes (R3.8): they checked no floor until now. None makes a separate raise commit. `datom_repo_set_data_store()` sets the floor inside its own commit, with `.datom_floor_raised(cfg)`; the other three never raise (decision 19). `datom_repo_commit(push = FALSE)` checks the clone as it is, without a pull |
 | `R/forward-compat.R` | `.datom_min_writer_version` | new | The floor constant, `"0.3.0"`. Raised only by the owner, for a real incompatibility. A comment beside it points at the engineering note: raise `DESCRIPTION`'s `Version` with it (R6.7) |
-| `R/forward-compat.R` | `.datom_floor_raised(cfg)` | new | `cfg` (a parsed `project.yaml`) with `min_writer_version` raised to the constant when absent or lower; never lowered. The one rule, used by init, the raise commit and the repoint |
+| `R/forward-compat.R` | `.datom_floor_raised(cfg)` | new | `cfg` (a parsed `project.yaml`) with `min_writer_version` raised to the constant when absent or lower; never lowered. The one rule, used by init, the write routes (through `.datom_write_floor_local()`) and the repoint |
 | `R/forward-compat.R` | `.datom_write_floor_local(conn)` | new | For the write routes: writes `.datom_floor_raised()`'s result to the clone's `project.yaml` when it changes anything, and returns `".datom/project.yaml"` so the caller adds it to its commit; otherwise returns nothing. Makes no commit |
 | `R/forward-compat.R` | `.datom_reset_floor_leftover(path)` | new | When `.datom/project.yaml` differs from HEAD only in `min_writer_version` raised to `.datom_min_writer_version` (a write that stopped after step 2), restores it from HEAD; otherwise does nothing, and also when either copy does not parse or HEAD has none, never erroring. `.datom_unfinished_files()` and `.datom_reset_unfinished()` are unchanged and never see `project.yaml` (review 7) |
 | `R/utils-git.R` | `.datom_git_pull()` | changed | Calls `.datom_reset_floor_leftover()` right after `.datom_check_merge()` and before the fetch, so it never edits the clone during a merge (review 8). Every pull goes through it: a write's opening pull, the push-time pull, `datom_pull()`, the pull at connect after a data move, and the `datom_repo_*` floor gate |
@@ -462,8 +462,8 @@ the repo, and nothing below it commits or pushes after that, apart from a write 
   after a commit, for a window one write long.
 - **Not stopped**: 0.1.0, which does not read the floor; an out-of-date 0.2.0 clone, for one write,
   because 0.2.0 checks the floor before its only pull, which comes at push time (checked at its
-  release commit `1581240`); a repo made by 0.2.0 or earlier, until a 0.3.0 build first commits to
-  it; and older readers. All accepted and documented.
+  release commit `1581240`); a repo made by 0.2.0 or earlier, until a 0.3.0 build has initialised,
+  written to or repointed it; and older readers. All accepted and documented.
 - **A reader cannot raise the floor**, and is never checked against it: it lives only in the data
   repo's `project.yaml`, not in storage, `ref.json` or the manifest.
 
@@ -594,7 +594,7 @@ The table is R4b in `requirements.md`; this maps each guarded row to its test.
     the credential function (R5.7).
 13. Every record of a location built for the same store compares equal, and a repoint leaves no
     field of the old location behind (R3.9).
-14. Once a 0.3.0 build has committed to a repo, its floor is at least `0.3.0`; no command lowers
+14. Once a 0.3.0 build has initialised the repo, written to it, or repointed it, its floor is at least `0.3.0`; no command lowers
     it; and no command that commits or pushes changes anything when the floor is above the installed
     version (R3.8).
 
@@ -713,3 +713,12 @@ the moment the first build at or above it touches the repo. Each claim was verif
 | # | Finding | Verified | Outcome | Differs from the review |
 |---|---|---|---|---|
 | 1 | Run at the start of `.datom_git_pull()`, the reset would edit the clone during a merge, and a conflicted `project.yaml` would give a parse error instead of the merge message | Yes: `.datom_git_pull()` begins with `.datom_check_merge()`, commented "nothing below may touch the clone while it lasts" | The reset runs right after the merge check, before the fetch, and does nothing when either copy does not parse or HEAD has none | No |
+
+### Review 9, of `d5e1dff` (2026-11-12)
+
+Wording that predated decision 19. Docs only.
+
+| # | Finding | Verified | Outcome | Differs from the review |
+|---|---|---|---|---|
+| 1 | "Committed to" / "first commit" is no longer what raises the floor; correctness property 14 was false as written | Yes, by grep | The trigger reads "once a 0.3.0 build has initialised the repo, written to it, or repointed it" in both status lines, property 14, section 6, R3.8 and FM19 | Two more found by the same grep: FM21 and R6.4's NEWS line |
+| 2 | `.datom_floor_raised()` still named the removed raise commit | Yes | "used by init, the write routes (through `.datom_write_floor_local()`) and the repoint" | No |
