@@ -29,7 +29,8 @@ changed; R6.7 and decision 19 added. Amended a seventh time the same day, after 
 heal's reset restores a leftover floor edit. R3.8, R5.10 and decision 19 changed. Amended an
 eighth time the same day, after a seventh review (`design.md`, section 14, review 7): the leftover
 floor edit is restored by its own small step at the start of every pull, not by the reset of
-unfinished artifact work. R3.8 and R5.10 changed.
+unfinished artifact work. R3.8 and R5.10 changed. Review 8 (same day) placed it after the pull's
+merge check and made it skip a file that does not parse; R3.8 and R5.10 changed.
 **Test baseline**: 6354 expectations, 0 failed, 0 skipped (`devtools::test()` on this branch after
 merging `dev` at `c539516`, 2026-11-10; 5142 on `347a403` before #155).
 **Reference contract**: datom-py's `.kiro/specs/s3-reader/requirements.md`, R3. Where R differs, the
@@ -230,13 +231,16 @@ handed in is specific to paws.
        moves HEAD by itself. A table that fails at its data upload (step 1) has not touched
        `project.yaml`, so the sync moves on;
      - a write that stops after step 2 and before its commit leaves the floor edit uncommitted.
-       Every pull, at its start, restores `.datom/project.yaml` from HEAD when its only difference
+       Every pull, right after its merge check and before its fetch (review 8), restores
+       `.datom/project.yaml` from HEAD when its only difference
        is `min_writer_version` raised to the constant, which is certain to be datom's own leftover
        (amended 2026-11-12, review 7). Any other difference is left alone. Without it, a teammate's
        change to `project.yaml` would block the pull, and the re-run would find the floor already
        raised and never commit it. This is its own small step, not part of the reset of unfinished
        artifact work: that list is read as artifacts' files by four callers, which would report
-       `project.yaml` as an artifact named `.datom`;
+       `project.yaml` as an artifact named `.datom`. It does nothing, without error, when either copy
+       of `project.yaml` does not parse or HEAD has none, so a conflicted file still gets the merge
+       check's stop;
      - `datom_repo_set_data_store()` sets it inside its own commit, which already rewrites
        `project.yaml`.
      - `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_push()` check the floor
@@ -404,7 +408,10 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
       that write's own commit; a `project.yaml` with any other uncommitted difference is not reset;
     - after that break, `datom_repo_set_data_store()`, `datom_repo_commit()` and `datom_pull()` run
       without refusing, no message names an artifact `.datom`, and `datom_sync()`'s "failed
-      partway" behaviour is unchanged.
+      partway" behaviour is unchanged;
+    - with a merge in progress and `project.yaml` conflicted, a pull gives the merge check's stop,
+      not a parse error, and the file is untouched; with a working `project.yaml` that does not
+      parse, the reset leaves it alone and the pull goes on as usual.
 
 ### R6. Documentation
 
