@@ -239,8 +239,8 @@ and refuses it -- blocking the **upgrade** direction, the one direction that mus
 so the check cannot fire on the upgrade path. A guard for that case would be dead code protecting an
 unreachable state.
 
-**All write-side refusals bind from 0.1.1 forward only.** 0.1.0 has no schema check, no vocabulary
-check and no floor read, and none can be added to a released build. When describing these refusals,
+**All write-side refusals bind from 0.2.0 forward only.** 0.1.0 to 0.1.2 have no schema check, no
+vocabulary check and no floor read, and none can be added to a released build. When describing these refusals,
 separate the population that can be stopped from the one that cannot -- "an older build writing into a
 newer repo" hides that distinction.
 

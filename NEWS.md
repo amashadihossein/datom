@@ -212,9 +212,10 @@ carries a top-level field this build cannot classify.
   that limps produces a file nobody agreed on.
 * A too-new **per-artifact** document is refused at any role, because nothing can
   rebuild it.
-* **All of this binds 0.1.1 and later.** 0.1.0 has no schema check, no field
-  check and no version floor, and none can be added to a build that has shipped.
-  If a 0.1.0 writer exists in your group, upgrading it is the only remedy.
+* **All of this binds 0.2.0 and later.** Releases before it (0.1.0 to 0.1.2)
+  have no schema check, no field check and no version floor, and none can be
+  added to a build that has shipped. If a writer on one of them exists in your
+  group, upgrading it is the only remedy.
 * A field this build does not recognise is **preserved** rather than deleted, in
   per-artifact metadata, manifest entries, the manifest top level and
   version-history entries. So a document written by a newer datom survives a

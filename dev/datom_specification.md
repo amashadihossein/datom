@@ -757,9 +757,9 @@ Two of the four need no code, because those documents are read, edited and writt
 
 Every forward-compatibility check runs before any hashing, any local file write, and any commit. Aborting mid-pipeline would leave a half-finished write, which is worse than the disagreement being prevented.
 
-### Enforcement begins at 0.1.1, and 0.1.0 writers cannot be stopped
+### Enforcement begins at 0.2.0, and earlier writers cannot be stopped
 
-Stated separately from the mechanisms, because "an older build writing into a newer repo" hides the distinction that matters: **0.1.0 has no schema check, no vocabulary check and no floor read, and none of the three can be added to a build that has shipped.** Every write-side refusal described above therefore binds builds from **0.1.1 forward only. For 0.1.0 the remedy is a release note, not engineering.** The one lever that would make it fail loudly -- relocating the manifest so 0.1.0's existing "could not read manifest" abort fires -- costs a storage-layout change and two filenames carried forever, which is not worth it for a population that is the team.
+Stated separately from the mechanisms, because "an older build writing into a newer repo" hides the distinction that matters: **0.1.0 to 0.1.2 have no schema check, no vocabulary check and no floor read, and none of the three can be added to a build that has shipped.** Every write-side refusal described above therefore binds builds from **0.2.0 forward only. For 0.1.0 to 0.1.2 the remedy is a release note, not engineering.** The one lever that would make them fail loudly -- relocating the manifest so their existing "could not read manifest" abort fires -- costs a storage-layout change and two filenames carried forever, which is not worth it for a population that is the team.
 
 `schema_version` is the **contract** and `datom_version` is **provenance**, and one format spans many releases -- so neither field answers the only question a refusal message raises, which is *which datom do I need?* That mapping is published separately and is tracked in [#103](https://github.com/amashadihossein/datom/issues/103).
 

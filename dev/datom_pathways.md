@@ -102,7 +102,7 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 
 **Primary functions/files:** `.datom_check_write_entry()`, `.datom_check_writer_floor()`, `.datom_check_document_vocabulary()`, `.datom_manifest_known_fields`, `.datom_manifest_entry_known_fields`, `.datom_metadata_known_fields()` (all `R/forward-compat.R`); `.datom_clone_artifact_names()` (`R/sync.R`).
 
-**Why this matters:** a build that rewrites a document it cannot fully account for recomputes that document's version identity from the fields it knows, reaching a different answer from the build that wrote it -- on content that never moved. All of it binds **0.1.1 forward only**: 0.1.0 has none of these checks and none can be added to a released build.
+**Why this matters:** a build that rewrites a document it cannot fully account for recomputes that document's version identity from the fields it knows, reaching a different answer from the build that wrote it -- on content that never moved. All of it binds **0.2.0 forward only**: 0.1.0 to 0.1.2 have none of these checks and none can be added to a released build.
 
 **Do not:** Add directional logic. A newer build's vocabulary is a superset of every older one's, so the vocabulary check cannot fire on the upgrade path, and a guard for it would be dead code. Do not prune a name from a vocabulary list: a build that forgets a name meets an **older** document, fails to place a key it should know, and refuses it -- blocking the one direction that must always work. Do not put the per-artifact half of the check on storage's copy: git is written first and gates the mirror, so the newer document arrives in the clone.
 
