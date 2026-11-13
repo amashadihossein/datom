@@ -8,10 +8,13 @@ each item landed is in section 13. Three reviews (of `53b4a71` and `030b07f` on 
 here; the record is section 14. The second moved the endpoint onto the store and added the location
 agreement check; the third added one shape for a location record and a writer floor; the fourth (of
 `40f62b1`, 2026-11-12) made the floor a fixed `0.3.0`, raised once a 0.3.0 build has initialised, written to or
-repointed the repo, and checked by every command that commits or pushes (section 6).
+repointed the repo, and checked by every command that commits or pushes (section 6). Reviews 5
+to 9 settled where the floor rises. Review 10 (of `ea5aa54`), a review of the whole design,
+corrected what released builds do once the floor rises; its two proposals to simplify (raise the
+floor only at init and at a repoint; one kind of connection) were considered and set aside.
 
-Read first: `requirements.md` (approved 2026-10-27, amended five times, 2026-11-10 to 12).
-Decisions 1-18 referred to here are recorded there; DD1 and the choices in section 8 are this
+Read first: `requirements.md` (approved 2026-10-27, amended after most reviews, 2026-11-10 to
+12). Decisions 1-19 referred to here are recorded there; DD1 and the choices in section 8 are this
 document's.
 
 ## 1. The shape
@@ -411,6 +414,7 @@ prefix only.
 
 The owner's intent: a raised floor takes effect the moment the first build at or above it touches
 the repo, and nothing below it commits or pushes after that, apart from a write already in flight.
+That holds for builds from 0.3.0 on; what older builds still do is in R3.8's table (review 10).
 
 - **One fixed number**, `.datom_min_writer_version <- "0.3.0"`, with no endpoint condition. Not the
   running version, which would make a repo created by a later release refuse earlier ones that work.
@@ -460,10 +464,13 @@ the repo, and nothing below it commits or pushes after that, apart from a write 
   push carries it, since the write does not touch `project.yaml`. Every command after it refuses at
   its opening pull. Re-checking there would mean undoing a commit after a merge, the one refusal
   after a commit, for a window one write long.
-- **Not stopped**: 0.1.0, which does not read the floor; an out-of-date 0.2.0 clone, for one write,
-  because 0.2.0 checks the floor before its only pull, which comes at push time (checked at its
-  release commit `1581240`); a repo made by 0.2.0 or earlier, until a 0.3.0 build has initialised,
-  written to or repointed it; and older readers. All accepted and documented.
+- **Not stopped**, all accepted and documented (R3.8's table): 0.1.0 to 0.1.2, which do not read
+  the floor; 0.2.0's `datom_repo_*` commands, since 0.2.0 checks the floor only in its writes; a
+  0.2.0 connection made before the floor reached its clone, for as long as it is used, because 0.2.0
+  copies the floor into the connection when `datom_get_conn()` builds it and never reads the file
+  again (run at its release commit `1581240`, section 9; a connection made afterwards refuses its
+  first write); a repo made by 0.2.0 or earlier, until a 0.3.0 build has initialised, written to or
+  repointed it; and older readers.
 - **A reader cannot raise the floor**, and is never checked against it: it lives only in the data
   repo's `project.yaml`, not in storage, `ref.json` or the manifest.
 
@@ -542,6 +549,8 @@ Scripts are in `research/`; fake keys only, nothing sent to AWS.
 | Regions whose S3 address is not under `amazonaws.com` | botocore 1.43's `endpoints.json` (in datom-py's environment) lists `aws-cn`, `aws-iso`, `aws-iso-b`, `aws-iso-e`, `aws-iso-f`, `aws-eusc` with their region patterns | -- |
 | S3 does not use paws's bearer-token variables (paws.common 0.8.6) | paws.storage builds S3 with the `s3` signer: `new_handlers("restxml", "s3")` | -- |
 | datom-py takes no endpoint and does not read `ref.json` | Read `src/datom/_s3.py` and grepped `src/datom/` (2026-11-10) | -- |
+| datom 0.2.0 checks a copy of the floor taken when it connects: after a teammate pushed a raised floor, the same connection wrote three times, a connection made before the clone had pulled wrote, and one made after refused its first write. No 0.2.0 write lowered the floor | `research/writer-floor-0.2.0/probe.R`, run 2026-11-12 on 0.2.0's release commit `1581240` (folder git remote, local store); review 10 | `git worktree add -q --detach /tmp/datom-1581240 1581240`; `Rscript .kiro/specs/s3-credential-function/research/writer-floor-0.2.0/probe.R /tmp/datom-1581240` from the repo root; `git worktree remove --force /tmp/datom-1581240` |
+| 0.1.1 and 0.1.2 have no write-side check (no floor, format-number or field-name check); 0.2.0 is the first release that reads the floor | `git grep min_writer_version v0.1.2 -- R/` is empty; the floor came with datom-sets (`2f2cdac`), first tagged `v0.2.0` | -- |
 
 A probe pitfall met on the saved-session check: the first run reported a leak because the marker
 string was written literally in the probe's own `main()`, which the saved session contains. Build a
@@ -627,7 +636,7 @@ list.
 
 ## 14. Reviews
 
-Both by another agent (Claude Code), reading the design against the code without running R. Each
+All by another agent (Claude Code), reading the design against the code without running R. Each
 finding was verified (in R where it turned on behaviour) and decided with the owner one at a time.
 
 ### Review 1, of `53b4a71` (2026-11-10)
@@ -685,7 +694,7 @@ the moment the first build at or above it touches the repo. Each claim was verif
 | 2 | The floor rises at the first commit of a 0.3.0 build | -- | `.datom_raise_writer_floor()`, its own commit before a command's first step (section 6); replaces the endpoint-only floor of review 3 and #155's D11 | `datom_repo_push()` makes no commit, so it checks and does not raise |
 | 3 | One floor check for every command that commits or pushes; a re-check after the push-time pull, undoing the commit when it refuses | Yes: `.datom_check_writer_floor()` runs only from the entry check; the four `datom_repo_*` commands check nothing; the one `git2r::push()` is in `.datom_git_push()`, which pulls and pushes with no check between | `.datom_writer_floor_gate()` at the start of the four `datom_repo_*` commands; **no re-check at the push** (decision 18) | The owner set aside the push-time re-check and undo once its cost was laid out: the one refusal after a commit, a reset after a merge that must spare the user's other files, for a window one write long. That write lowers nothing. Also `datom_repo_commit(push = FALSE)` checks without a pull |
 | 4 | The gap during a move | Yes: `dev/datomanager_scope.md` plans `gov_migrate_data()` | A note there: switch `ref.json` and run `datom_repo_set_data_store()` in one call | No |
-| 5 | 0.2.0 can make one more write after the floor rises | Yes: at 0.2.0's release commit `1581240`, `datom_write()` checks the floor first and pulls only in `.datom_git_push()`, after its commit | NEWS says so next to "upgrade everyone who writes to a repo at the same time" (R6.4) | No |
+| 5 | 0.2.0 can make one more write after the floor rises | Yes: at 0.2.0's release commit `1581240`, `datom_write()` checks the floor first and pulls only in `.datom_git_push()`, after its commit. **Corrected by review 10**: that checked when 0.2.0 checks, not what it reads; it checks a copy taken at connect, so a connection already open keeps writing | NEWS says so next to "upgrade everyone who writes to a repo at the same time" (R6.4) | No |
 
 ### Review 5, of `fd138e0` (2026-11-12)
 
@@ -722,3 +731,17 @@ Wording that predated decision 19. Docs only.
 |---|---|---|---|---|
 | 1 | "Committed to" / "first commit" is no longer what raises the floor; correctness property 14 was false as written | Yes, by grep | The trigger reads "once a 0.3.0 build has initialised the repo, written to it, or repointed it" in both status lines, property 14, section 6, R3.8 and FM19 | Two more found by the same grep: FM21 and R6.4's NEWS line |
 | 2 | `.datom_floor_raised()` still named the removed raise commit | Yes | "used by init, the write routes (through `.datom_write_floor_local()`) and the repoint" | No |
+
+### Review 10, of `ea5aa54` (2026-11-12)
+
+A review of the whole design, asked for by the owner: does it rest on a few rules, or has it become
+case-by-case logic? It accepted the error pass-through design (section 5) as it stands.
+
+| # | Finding | Verified | Outcome | Differs from the review |
+|---|---|---|---|---|
+| 1 | 0.2.0 checks a copy of the floor taken when the connection is built, not the clone's file, so a connected 0.2.0 session keeps writing; reviews 4 to 9 said "one more write" | Yes, in R on `1581240` (section 9): the same connection wrote three times after the raise; a connection made after the clone had pulled refused its first write | R3.8 gains a table of what each older build still does once the floor is raised; FM19, R6.4's NEWS line and section 6's "Not stopped" corrected; review 4's row 5 marked | 0.2.0's `datom_get_conn()` does not refuse; the first write on the new connection does. Added while checking: no release before 0.2.0 reads the floor (the spec said 0.1.1 onward), and 0.2.0's four `datom_repo_*` commands are never stopped, so the owner's intent holds from 0.3.0 on. The table was the owner's request |
+| 2 | Raising the floor inside a write is where the design became case-by-case: raise it only in `datom_init_repo()` and `datom_repo_set_data_store()` | Yes: only those two commands write `project.yaml` today, an endpoint enters it only through them in this design, and each special case of reviews 6 to 8 follows from a write editing `project.yaml` | **Considered and set aside** (owner): decisions 16 and 19 stand. Under the alternative a repo made by 0.2.0 would never refuse a 0.2.0 writer, whose write order (a write stopped after its push leaves a version with no data file) is why 0.2.0 was cut loose. Point 1 narrows what the raise stops, to new connections, but does not remove it | Added while checking: under the alternative a later raise of the constant would never reach an existing repo either, since the floor would rise only at init and at a repoint, so the write-time raise would come back with the next raise |
+| 3 | Two kinds of connection: every connection could build its client per request, keys passed directly included, which would remove DD1 and the reachability check's early return | Yes, by reading: 7 test reads of `conn$client` or `conn$gov_client`, all in `tests/testthat/test-conn.R` | **Considered and left as designed** (owner): R4.4, decision 6 and DD1 stand. Test fakes on the connection (413 calls of `mock_datom_conn()` in 27 test files) would keep the accessor's three paths and the reachability check's early return, so the gain is DD1 alone, a state no released tool creates | 38 tests replace the client builder, not 67 (67 is every test line naming it) |
+
+Found while editing: section 14's opening said "Both" reviews, and the "Read first" line still
+counted five amendments and decisions 1-18; both brought up to date.
