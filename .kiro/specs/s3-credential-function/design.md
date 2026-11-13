@@ -1,6 +1,7 @@
 # Design -- S3 credential function
 
-**Status (2026-11-10)**: ready for the owner's review, **not approved**. Drafted 2026-10-27, paused
+**Status (2026-11-12)**: **approved by the owner on 2026-11-12**, after ten reviews; the task list
+comes next. Drafted 2026-10-27, paused
 for [#155](https://github.com/amashadihossein/datom/issues/155), resumed once #155 merged into `dev`
 (PR #159). The "Not yet traced" list of the draft was finished with the owner on 2026-11-10; where
 each item landed is in section 13. Three reviews (of `53b4a71` and `030b07f` on 2026-11-10, of
@@ -611,7 +612,8 @@ The table is R4b in `requirements.md`; this maps each guarded row to its test.
 
 - **Design spot-check** before implementation: the change spans the store, the connection, every
   storage call site, 31 error handlers in 16 files, 9 loops, and the location records in `ref.json`
-  and `project.yaml`.
+  and `project.yaml`. **Done**: review 10, a review of the whole design by another model (Claude
+  Code, 2026-11-12), counts as it (owner, 2026-11-12).
 - **Purity audit** after the accessor and handler changes: 19 call sites, 31 handlers, 9 loops.
 - **Test coverage review** before completion: the failure-mode table has 15 guarded rows, the sweep
   covers every exported function that reaches storage, and the code-reading test covers the rest.

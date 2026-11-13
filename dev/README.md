@@ -215,7 +215,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Branch | Status |
 |---|---|---|
-| [s3-credential-function](../.kiro/specs/s3-credential-function/) (#134, part 3b) | `spec/s3-credential-function` | Requirements approved 2026-10-27, amended three times on 2026-11-10 (after #155 merged into `dev`, PR #159, and after two design reviews; the endpoint moved to the store and writes now need governance and the data repo to agree). Design complete, four reviews applied (its section 14; the fourth, on 2026-11-12, made the writer floor a fixed `0.3.0` checked by every command that commits or pushes; a fifth, the same day, placed its raise), and **waiting for the owner's review**; the task list comes after. |
+| [s3-credential-function](../.kiro/specs/s3-credential-function/) (#134, part 3b) | `spec/s3-credential-function` | Requirements approved 2026-10-27, amended three times on 2026-11-10 (after #155 merged into `dev`, PR #159, and after two design reviews; the endpoint moved to the store and writes now need governance and the data repo to agree). Requirements amended again after later reviews, through 2026-11-12. Design **approved by the owner on 2026-11-12** after ten reviews (its section 14: the writer floor became a fixed `0.3.0`, raised by init, writes and repoints and checked by every command that commits or pushes; review 10, of the whole design, counts as the design spot-check). Next: the task list. |
 
 In the sibling repo `datom-py` (the Python reader, #129 part 2): 0.1.0 is on PyPI (released
 2026-10-20), with S3 as a preview. Its spec `s3-reader` still has three hardening tasks open
